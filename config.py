@@ -15,8 +15,8 @@ TOP_N_COINS = 10
 
 # Trade settings
 LEVERAGE = 20
-TP_PCT = 0.005   # +0.5% price move = +10% ROI at 20x
-SL_PCT = 0.005   # -0.5% price move = -10% ROI at 20x
+TP_PCT = 0.0015  # +0.15% price move = +3% ROI at 20x  (tight TP → higher win rate)
+SL_PCT = 0.005   # -0.5%  price move = -10% ROI at 20x
 RISK_PCT = 0.80  # 80% of account per trade (informational, shown in signal)
 
 # Scanner
