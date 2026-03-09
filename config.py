@@ -11,7 +11,7 @@ TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 EXCLUDE_COINS = {"BTC_USDT", "ETH_USDT", "SOL_USDT"}
 
 # How many coins to track
-TOP_N_COINS = 10
+TOP_N_COINS = 20
 
 # Trade settings
 LEVERAGE = 20

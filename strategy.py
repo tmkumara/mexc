@@ -41,8 +41,8 @@ from config import TP_PCT, SL_PCT, LEVERAGE, RISK_PCT
 
 logger = logging.getLogger(__name__)
 
-ADX_MIN = 25       # minimum ADX to confirm a strong trend (filters choppy markets)
-VOLUME_MULT = 2.0  # entry bars must exceed this multiple of recent average volume
+ADX_MIN = 20       # minimum ADX to confirm a strong trend (filters choppy markets)
+VOLUME_MULT = 1.3  # entry bars must exceed this multiple of recent average volume
 
 
 @dataclass
