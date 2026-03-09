@@ -207,41 +207,33 @@ async def main():
     scheduler = AsyncIOScheduler(timezone="UTC")
 
     scheduler.add_job(
-        lambda: asyncio.ensure_future(scan_and_signal(app)),
+        scan_and_signal,
         IntervalTrigger(seconds=SCAN_INTERVAL_SECONDS),
-        id="scanner",
+        args=[app], id="scanner",
     )
     scheduler.add_job(
-        lambda: asyncio.ensure_future(check_outcomes(app)),
+        check_outcomes,
         IntervalTrigger(seconds=SCAN_INTERVAL_SECONDS),
-        id="outcome_checker",
+        args=[app], id="outcome_checker",
     )
     scheduler.add_job(
         coin_scanner.get_zero_fee_coins,
         IntervalTrigger(hours=COIN_REFRESH_HOURS),
         id="coin_refresh",
     )
-    scheduler.add_job(
-        lambda: asyncio.ensure_future(tg.auto_daily_report(
-            type("ctx", (), {"application": app})()
-        )),
-        CronTrigger(hour=23, minute=55),
-        id="daily_report",
-    )
-    scheduler.add_job(
-        lambda: asyncio.ensure_future(tg.auto_weekly_report(
-            type("ctx", (), {"application": app})()
-        )),
-        CronTrigger(day_of_week="mon", hour=7, minute=0),
-        id="weekly_report",
-    )
-    scheduler.add_job(
-        lambda: asyncio.ensure_future(tg.auto_monthly_report(
-            type("ctx", (), {"application": app})()
-        )),
-        CronTrigger(day=1, hour=7, minute=0),
-        id="monthly_report",
-    )
+
+    async def _daily(app=app):
+        await tg.auto_daily_report(type("ctx", (), {"application": app})())
+
+    async def _weekly(app=app):
+        await tg.auto_weekly_report(type("ctx", (), {"application": app})())
+
+    async def _monthly(app=app):
+        await tg.auto_monthly_report(type("ctx", (), {"application": app})())
+
+    scheduler.add_job(_daily,   CronTrigger(hour=23, minute=55),               id="daily_report")
+    scheduler.add_job(_weekly,  CronTrigger(day_of_week="mon", hour=7),        id="weekly_report")
+    scheduler.add_job(_monthly, CronTrigger(day=1, hour=7),                    id="monthly_report")
 
     scheduler.start()
     logger.info("Scheduler started")
