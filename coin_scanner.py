@@ -7,10 +7,23 @@ logger = logging.getLogger(__name__)
 _cached_coins: list[str] = []
 
 
+def _get_fee(contract: dict, *field_names: str) -> float:
+    """Try multiple fee field name variants; return 1.0 (non-zero) if none found."""
+    for name in field_names:
+        v = contract.get(name)
+        if v is not None:
+            try:
+                return float(v)
+            except (ValueError, TypeError):
+                pass
+    return 1.0
+
+
 def get_zero_fee_coins() -> list[str]:
     """
     Fetch all MEXC futures contracts, filter for zero-fee USDT-margined
     perpetuals (excluding BTC/ETH/SOL), and return top N by 24h volume.
+    Falls back to top-volume USDT coins if no zero-fee contracts exist.
     """
     global _cached_coins
 
@@ -18,6 +31,14 @@ def get_zero_fee_coins() -> list[str]:
         contracts = get_all_contracts()
         tickers = get_tickers()
 
+        if not contracts:
+            logger.warning("No contracts returned from MEXC API")
+            return _cached_coins
+
+        # Log first contract keys once to aid debugging
+        logger.debug(f"Sample contract keys: {list(contracts[0].keys())}")
+
+        usdt_active = []
         zero_fee = []
         for c in contracts:
             symbol = c.get("symbol", "")
@@ -25,17 +46,23 @@ def get_zero_fee_coins() -> list[str]:
                 continue
             if symbol in EXCLUDE_COINS:
                 continue
-            # Check for zero maker and taker fees
-            maker_fee = float(c.get("makerFee", 1))
-            taker_fee = float(c.get("takerFee", 1))
-            if maker_fee != 0.0 or taker_fee != 0.0:
+            # Accept both state==0 (listed) and missing state field
+            state = c.get("state")
+            if state is not None and state != 0:
                 continue
-            # Must be active (state 0 = listed)
-            if c.get("state", 1) != 0:
-                continue
-            zero_fee.append(symbol)
+            usdt_active.append(symbol)
+            # Try both naming conventions used across MEXC API versions
+            maker_fee = _get_fee(c, "makerFeeRate", "makerFee")
+            taker_fee = _get_fee(c, "takerFeeRate", "takerFee")
+            if maker_fee == 0.0 and taker_fee == 0.0:
+                zero_fee.append(symbol)
 
-        # Sort by 24h volume descending
+        logger.info(
+            f"Contracts: {len(contracts)} total, "
+            f"{len(usdt_active)} active USDT, "
+            f"{len(zero_fee)} zero-fee"
+        )
+
         def vol(sym):
             t = tickers.get(sym, {})
             try:
@@ -43,19 +70,27 @@ def get_zero_fee_coins() -> list[str]:
             except (ValueError, TypeError):
                 return 0.0
 
-        zero_fee.sort(key=vol, reverse=True)
-        top = zero_fee[:TOP_N_COINS]
-
-        if top:
+        if zero_fee:
+            zero_fee.sort(key=vol, reverse=True)
+            top = zero_fee[:TOP_N_COINS]
             _cached_coins = top
             logger.info(f"Zero-fee coins refreshed: {top}")
+        elif usdt_active:
+            # MEXC has no zero-fee contracts; fall back to top-volume coins
+            usdt_active.sort(key=vol, reverse=True)
+            top = usdt_active[:TOP_N_COINS]
+            _cached_coins = top
+            logger.warning(
+                f"No zero-fee coins on MEXC — tracking top {TOP_N_COINS} "
+                f"by volume instead: {top}"
+            )
         else:
-            logger.warning("No zero-fee coins found, keeping previous list")
+            logger.warning("No active USDT contracts found, keeping previous list")
 
         return _cached_coins
 
     except Exception as e:
-        logger.error(f"Error scanning coins: {e}")
+        logger.error(f"Error scanning coins: {e}", exc_info=True)
         return _cached_coins
 
 
