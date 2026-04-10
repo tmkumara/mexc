@@ -24,27 +24,73 @@ from telegram.ext import Application
 
 import database as db
 import coin_scanner
-import strategy
+import hull_strategy as strategy
 import bot as tg
 from mexc_client import get_current_price
+from strategy.signal_engine import ScalpingEngine
 from config import (
-    SCAN_INTERVAL_SECONDS,
     COIN_REFRESH_HOURS,
     SIGNAL_EXPIRE_HOURS,
     SIGNAL_COOLDOWN_MINUTES,
-    TP_PCT,
-    SL_PCT,
+    SCALPING_SCAN_INTERVAL,
 )
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
         logging.FileHandler("mexc_bot.log"),
     ],
 )
+# Keep noisy libs at INFO
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("apscheduler").setLevel(logging.INFO)
+logging.getLogger("telegram").setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ─────────────────── scalping scanner job ───────────────────────
+
+async def scalping_scan(app: Application) -> None:
+    """
+    Runs every SCALPING_SCAN_INTERVAL seconds.
+    Delegates to ScalpingEngine.scan_all() which handles session/funding
+    filters and per-symbol deduplication internally.
+    """
+    engine: ScalpingEngine = app.bot_data.get("scalping_engine")
+    if engine is None:
+        return
+
+    try:
+        signals = await engine.scan_all()
+    except Exception as e:
+        logger.error(f"[scalping_scan] scan_all() raised: {e}", exc_info=True)
+        return
+
+    for signal in signals:
+        signal_id = db.save_signal(
+            symbol      = signal.symbol,
+            direction   = signal.direction,
+            entry_price = signal.entry_price,
+            tp_price    = signal.tp_price,
+            sl_price    = signal.sl_price,
+            leverage    = signal.leverage,
+            generated_at= signal.generated_at,
+        )
+        engine.mark_signal_sent(signal.symbol, signal.direction)
+        signal_count = engine.get_signal_count()
+
+        logger.info(
+            f"[SCALP] Signal #{signal_count} saved: "
+            f"{signal.direction} {signal.symbol} @ {signal.entry_price} "
+            f"id={signal_id}"
+        )
+        try:
+            await tg.broadcast_scalping_signal(app, signal, signal_count, signal_id)
+        except Exception as e:
+            logger.error(f"Failed to broadcast scalping signal for {signal.symbol}: {e}")
+
 
 # ─────────────────────── scanner job ────────────────────────────
 
@@ -57,15 +103,21 @@ async def scan_and_signal(app: Application):
     now = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
 
+    signals_found = 0
+    skipped_cooldown = 0
+    logger.info(f"[SCAN] Starting scan of {len(coins)} coins...")
+
     for symbol in coins:
         # Skip if we already have a recent pending signal for this coin
         if db.signal_exists_for_coin(symbol, cooldown_since):
+            skipped_cooldown += 1
             continue
 
         signal = strategy.analyze_coin(symbol)
         if signal is None:
             continue
 
+        signals_found += 1
         signal_id = db.save_signal(
             symbol      = signal.symbol,
             direction   = signal.direction,
@@ -82,6 +134,8 @@ async def scan_and_signal(app: Application):
             await tg.broadcast_signal(app, signal, signal_id)
         except Exception as e:
             logger.error(f"Failed to send signal for {symbol}: {e}")
+
+    logger.info(f"[SCAN] Done — {signals_found} signal(s) found, {skipped_cooldown} skipped (cooldown)")
 
 
 # ────────────────── outcome checker job ─────────────────────────
@@ -122,7 +176,11 @@ async def check_outcomes(app: Application):
             hit_sl = current_price >= sl_price
 
         if hit_tp:
-            pnl = TP_PCT * sig["leverage"] * 100
+            # Derive ROI from stored prices so both hull & scalping signals are correct
+            if direction == "LONG":
+                pnl = (tp_price / sig["entry_price"] - 1) * sig["leverage"] * 100
+            else:
+                pnl = (1 - tp_price / sig["entry_price"]) * sig["leverage"] * 100
             db.update_signal_outcome(sig["id"], "win", pnl)
             logger.info(f"Signal {sig['id']} WIN ({symbol}) +{pnl:.1f}%")
             try:
@@ -131,7 +189,10 @@ async def check_outcomes(app: Application):
                 logger.error(f"Failed to notify win for {symbol}: {e}")
 
         elif hit_sl:
-            pnl = -SL_PCT * sig["leverage"] * 100
+            if direction == "LONG":
+                pnl = (sl_price / sig["entry_price"] - 1) * sig["leverage"] * 100
+            else:
+                pnl = (1 - sl_price / sig["entry_price"]) * sig["leverage"] * 100
             db.update_signal_outcome(sig["id"], "loss", pnl)
             logger.info(f"Signal {sig['id']} LOSS ({symbol}) {pnl:.1f}%")
             try:
@@ -201,25 +262,38 @@ async def main():
     # Build telegram app
     app = tg.build_app()
 
+    # Initialise scalping engine and attach to bot_data so commands can access it
+    scalping_engine = ScalpingEngine()
+    app.bot_data["scalping_engine"] = scalping_engine
+    logger.info(f"Scalping engine initialised with pairs: {scalping_engine.active_pairs}")
+
     # Patch auto-report jobs to have the real app context
     # (APScheduler doesn't support passing Application easily through cron args,
     #  so we wrap them here using closures)
     scheduler = AsyncIOScheduler(timezone="UTC")
 
+    # Clock-aligned to 15m candle close
     scheduler.add_job(
         scan_and_signal,
-        IntervalTrigger(seconds=SCAN_INTERVAL_SECONDS),
+        CronTrigger(minute="0,15,30,45"),
         args=[app], id="scanner",
     )
     scheduler.add_job(
         check_outcomes,
-        IntervalTrigger(seconds=SCAN_INTERVAL_SECONDS),
+        CronTrigger(minute="0,15,30,45"),
         args=[app], id="outcome_checker",
     )
     scheduler.add_job(
         coin_scanner.get_zero_fee_coins,
-        IntervalTrigger(hours=COIN_REFRESH_HOURS),
+        CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
         id="coin_refresh",
+    )
+
+    # Scalping scanner: every SCALPING_SCAN_INTERVAL seconds (default 60 s)
+    scheduler.add_job(
+        scalping_scan,
+        IntervalTrigger(seconds=SCALPING_SCAN_INTERVAL),
+        args=[app], id="scalping_scanner",
     )
 
     async def _daily(app=app):

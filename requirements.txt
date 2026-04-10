@@ -6,3 +6,5 @@ python-dotenv==1.0.0
 apscheduler==3.10.4
 aiohttp>=3.9.1
 numpy>=2.2.6
+ccxt>=4.3.0
+pytz>=2024.1
