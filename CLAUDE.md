@@ -9,24 +9,57 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Run
+# Run bot
 python main.py
 
+# Run dashboard
+python webui.py     # http://localhost:6060/?token=<WEBUI_TOKEN>
+
 # Server: managed by systemd
-systemctl start mexc-bot
-systemctl stop mexc-bot
-systemctl restart mexc-bot
-journalctl -u mexc-bot -f          # live logs
+systemctl start|stop|restart mexc-bot
+systemctl start|stop|restart mexc-dashboard
+journalctl -u mexc-bot -f          # live bot logs
+journalctl -u mexc-dashboard -f    # live dashboard logs
 tail -f /opt/signals/mexc_bot.log  # file logs
 ```
 
 ## Deployment
 
 - **Server:** Ubuntu 24.04 at `68.168.222.74`, app at `/opt/signals/`, venv at `/opt/signals/venv/`
-- **Service name:** `mexc-bot`
-- **Auto-deploy:** push to `main` branch → GitHub Actions SSHs in, git pulls, pip installs, restarts service
+- **Bot service:** `mexc-bot`
+- **Dashboard service:** `mexc-dashboard` — runs `webui.py` on port `6060`
+- **Dashboard URL:** `http://68.168.222.74:6060/?token=<WEBUI_TOKEN>`
+- **Auto-deploy:** push to `main` → GitHub Actions SSHs in, git pulls, pip installs, restarts both services
 - **Workflow file:** `.github/workflows/deploy.yml`
 - **DB clear utility:** `python clear_db.py` (or `python clear_db.py --yes` to skip confirm)
+
+### One-time dashboard service setup (run once on server)
+```bash
+cat > /etc/systemd/system/mexc-dashboard.service << 'EOF'
+[Unit]
+Description=MEXC Bot Dashboard
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/signals
+ExecStart=/opt/signals/venv/bin/python /opt/signals/webui.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/signals/mexc_bot.log
+StandardError=append:/opt/signals/mexc_bot.log
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable mexc-dashboard
+systemctl start mexc-dashboard
+systemctl status mexc-dashboard
+```
 
 ## Architecture
 

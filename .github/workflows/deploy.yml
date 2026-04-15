@@ -31,8 +31,10 @@ jobs:
             pip install -r requirements.txt -q
             deactivate
 
-            echo "==> Restarting service..."
+            echo "==> Restarting services..."
             systemctl restart mexc-bot
+            systemctl restart mexc-dashboard
 
             echo "==> Status:"
             systemctl status mexc-bot --no-pager -l
+            systemctl status mexc-dashboard --no-pager -l
