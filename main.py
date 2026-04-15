@@ -22,11 +22,12 @@ from telegram.ext import Application
 import database as db
 import strategy
 import bot as tg
+import coin_scanner
 from mexc_client import get_current_price
 from config import (
-    TRADING_PAIRS,
     SIGNAL_COOLDOWN_MINUTES,
     SIGNAL_EXPIRE_HOURS,
+    COIN_REFRESH_HOURS,
 )
 
 logging.basicConfig(
@@ -52,13 +53,14 @@ async def scan_and_signal(app: Application) -> None:
         logger.info("[SCAN] Paused, skipping")
         return
 
+    pairs          = coin_scanner.get_cached_coins()
     now            = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
     signals_found  = 0
 
-    logger.info(f"[SCAN] Scanning {len(TRADING_PAIRS)} pairs...")
+    logger.info(f"[SCAN] Scanning {len(pairs)} pairs...")
 
-    for symbol in TRADING_PAIRS:
+    for symbol in pairs:
         if db.signal_exists_for_coin(symbol, cooldown_since):
             logger.debug(f"[SCAN] {symbol}: cooldown active, skipping")
             continue
@@ -152,6 +154,11 @@ async def main():
     logger.info("Starting MEXC Signal Bot (Supertrend strategy)...")
 
     db.init_db()
+
+    logger.info("Loading zero-fee coin list...")
+    coins = coin_scanner.get_zero_fee_coins()
+    logger.info(f"Tracking {len(coins)} pairs: {coins}")
+
     app = tg.build_app()
 
     scheduler = AsyncIOScheduler(timezone="UTC")
@@ -166,6 +173,13 @@ async def main():
     scheduler.add_job(
         check_outcomes, IntervalTrigger(minutes=15),
         args=[app], id="outcome_checker",
+    )
+
+    # Refresh zero-fee coin list every N hours
+    scheduler.add_job(
+        coin_scanner.get_zero_fee_coins,
+        CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
+        id="coin_refresh",
     )
 
     async def _daily(app=app):

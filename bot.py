@@ -120,16 +120,18 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from config import TRADING_PAIRS, TIMEFRAME, ST_LENGTH, ST_MULTIPLIER, EMA_TREND_PERIOD
+    import coin_scanner
+    from config import TIMEFRAME, ST_LENGTH, ST_MULTIPLIER, EMA_TREND_PERIOD
     state = "⏸ PAUSED" if paused else "▶️ RUNNING"
-    pairs = ", ".join(p.replace("_USDT", "") for p in TRADING_PAIRS)
+    coins = coin_scanner.get_cached_coins()
+    pairs_str = "  ".join(p.replace("_USDT", "") for p in coins)
     msg = (
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
         f"Strategy:   `Supertrend({ST_LENGTH},{ST_MULTIPLIER}) + EMA{EMA_TREND_PERIOD}`\n"
         f"Timeframe:  `{TIMEFRAME}`\n"
-        f"Pairs:      `{pairs}`\n"
+        f"Pairs ({len(coins)}): `{pairs_str}`\n"
         f"Time (UTC): `{datetime.now(timezone.utc).strftime('%H:%M')}`"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)

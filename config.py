@@ -7,16 +7,15 @@ load_dotenv()
 TELEGRAM_TOKEN      = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 
-# ── Trading pairs (MEXC futures format) ──────────────────────────
-TRADING_PAIRS: list[str] = [
-    "BTC_USDT",
-    "ETH_USDT",
-    "SOL_USDT",
-    "BNB_USDT",
-    "XRP_USDT",
-    "DOGE_USDT",
-    "ADA_USDT",
-]
+# ── Coin scanner ─────────────────────────────────────────────────
+# Pairs always excluded from scanning
+EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT"}
+
+# How many top-volume zero-fee coins to track
+TOP_N_COINS: int = 20
+
+# Refresh the coin list every N hours
+COIN_REFRESH_HOURS: int = 6
 
 # ── Strategy settings ─────────────────────────────────────────────
 LEVERAGE   = 10
