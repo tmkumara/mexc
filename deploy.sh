@@ -6,9 +6,9 @@
 set -e
 
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
-SERVICE_NAME="mexc-signal-bot"
+SERVICE_NAME="mexc-bot"
 PYTHON="python3"
-VENV="$APP_DIR/.venv"
+VENV="$APP_DIR/venv"
 
 echo "=== MEXC Signal Bot Deployment ==="
 echo "App directory: $APP_DIR"

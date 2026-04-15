@@ -20,18 +20,19 @@ jobs:
           port:     ${{ secrets.SSH_PORT || 22 }}
           script: |
             set -e
-            cd ${{ secrets.APP_PATH }}
+            cd /opt/signals
 
             echo "==> Pulling latest code..."
             git fetch origin main
             git reset --hard origin/main
 
             echo "==> Installing dependencies..."
-            source .venv/bin/activate
+            source venv/bin/activate
             pip install -r requirements.txt -q
+            deactivate
 
             echo "==> Restarting service..."
-            sudo systemctl restart mexc-signal-bot
+            systemctl restart mexc-bot
 
             echo "==> Status:"
-            sudo systemctl status mexc-signal-bot --no-pager -l
+            systemctl status mexc-bot --no-pager -l
