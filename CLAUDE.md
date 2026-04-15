@@ -60,12 +60,46 @@ Runs every 15 minutes. Polls current price via `get_current_price()` for all `pe
 
 ## Signal Logic (strategy.py)
 
-```
-LONG:  Supertrend flips -1 → +1  AND  close > EMA200  AND  RSI(14) > 50
-SHORT: Supertrend flips +1 → -1  AND  close < EMA200  AND  RSI(14) < 50
+All 7 conditions must be true simultaneously:
 
-SL = Supertrend band value (ATR-adaptive)
-TP = entry ± REWARD_RATIO × |entry − SL|
+```
+1. Supertrend flips direction   -1 → +1 (LONG)  /  +1 → -1 (SHORT)
+2. Close on correct EMA200 side  close > EMA200  /  close < EMA200
+3. RSI(14) momentum              RSI > 50        /  RSI < 50
+── fakeout filters (4 independent layers) ──────────────────────────
+4. Consecutive EMA200 closes   prev candle ALSO above/below EMA200
+                               → kills single-candle spikes
+5. Candle body quality         body >= 50% of candle range
+                               AND body direction matches signal
+                               → kills wick/doji spikes
+6. ADX(14) >= 25               market must be trending, not sideways
+                               → kills consolidation whipsaws
+7. Volume >= 1.5× 20-bar MA    genuine participation required
+                               → kills low-volume stop-hunts
+
+SL = Supertrend band value (ATR-adaptive dynamic stop)
+TP = entry ± REWARD_RATIO × |entry − SL|   (2:1 R:R)
+```
+
+### Why each fakeout filter exists
+
+| Filter | Root cause it prevents |
+|---|---|
+| Consecutive closes | One aggressive candle spikes through EMA200 then reverses |
+| Body ratio >= 50% | Wick-heavy candle (doji/pin bar) falsely flips Supertrend |
+| ADX >= 25 | Supertrend flips repeatedly during sideways chop |
+| Volume >= 1.5× MA | Institutional stop-hunt spike with no real momentum |
+
+### Tuning constants (top of strategy.py)
+
+```python
+RSI_PERIOD      = 14
+ADX_PERIOD      = 14
+VOLUME_MA_BARS  = 20
+VOLUME_MIN_MULT = 1.5   # raise to 2.0 for stricter volume gate
+BODY_RATIO_MIN  = 0.50  # raise to 0.60 for stricter body quality
+ADX_MIN         = 25    # raise to 30 in high-noise market conditions
+KLINE_COUNT     = 300   # must cover EMA200 + all indicator warm-up bars
 ```
 
 ## MEXC API (`mexc_client.py`)
