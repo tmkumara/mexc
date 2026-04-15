@@ -364,7 +364,9 @@ function setPeriod(p) {
 
 async function load() {
   try {
-    const res = await fetch(`/api/data?token=${TOKEN}`);
+    // Use relative URL so it works under any path prefix (e.g. /dashboard/)
+    const base = location.pathname.replace(/\/+$/, '');
+    const res = await fetch(`${base}/api/data?token=${TOKEN}`);
     if (res.status === 401) {
       document.body.innerHTML = "<div style='padding:2rem;color:#f85149;font-family:sans-serif'>401 — Invalid token. Add ?token=YOUR_TOKEN to the URL.</div>";
       return;
