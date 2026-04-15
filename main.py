@@ -196,7 +196,7 @@ async def main():
     scheduler.add_job(_monthly, CronTrigger(day=1, hour=7), id="monthly_report")
 
     scheduler.start()
-    logger.info(f"Scheduler started. Watching {len(TRADING_PAIRS)} pairs on 1h.")
+    logger.info(f"Scheduler started. Watching {len(coins)} pairs on 1h.")
 
     async with app:
         await app.initialize()
