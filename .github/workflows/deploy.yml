@@ -1,0 +1,37 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: SSH deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key:      ${{ secrets.SSH_PRIVATE_KEY }}
+          port:     ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd ${{ secrets.APP_PATH }}
+
+            echo "==> Pulling latest code..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "==> Installing dependencies..."
+            source .venv/bin/activate
+            pip install -r requirements.txt -q
+
+            echo "==> Restarting service..."
+            sudo systemctl restart mexc-signal-bot
+
+            echo "==> Status:"
+            sudo systemctl status mexc-signal-bot --no-pager -l

@@ -1,1 +1,0 @@
-# Scalping strategy package

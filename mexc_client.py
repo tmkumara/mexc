@@ -67,13 +67,15 @@ def get_klines(symbol: str, interval: str, count: int = 100) -> pd.DataFrame:
     if not raw or "time" not in raw:
         return pd.DataFrame()
 
+    vol_data = raw.get("realVolume") or raw.get("vol") or raw.get("volume") or []
+
     df = pd.DataFrame({
         "timestamp": raw["time"],
         "open":      [float(x) for x in raw["realOpen"]],
         "high":      [float(x) for x in raw["realHigh"]],
         "low":       [float(x) for x in raw["realLow"]],
         "close":     [float(x) for x in raw["realClose"]],
-        "volume":    [float(x) for x in raw["realVolume"]],
+        "volume":    [float(x) for x in vol_data] if vol_data else [0.0] * len(raw["time"]),
     })
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
     df.set_index("timestamp", inplace=True)
