@@ -119,81 +119,148 @@ HTML = r"""<!DOCTYPE html>
   --red:     #f85149;
   --yellow:  #e3b341;
   --blue:    #58a6ff;
-  --purple:  #bc8cff;
 }
 
-body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif;
-       font-size: 14px; min-height: 100vh; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+}
 
+/* ── header ── */
 .header {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 14px 24px;
-  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
 }
-.logo { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
-.logo-icon { font-size: 20px; }
-.meta { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 16px; }
-.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green);
-              box-shadow: 0 0 6px var(--green); display: inline-block; margin-right: 6px; }
+.logo {
+  font-size: 15px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px;
+}
+.meta {
+  color: var(--muted); font-size: 11px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 6px var(--green);
+  display: inline-block; margin-right: 5px;
+}
 
-.container { max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
+/* ── layout ── */
+.container { max-width: 1200px; margin: 0 auto; padding: 16px; }
 
-/* ── stat cards ── */
-.section-title { font-size: 12px; font-weight: 600; color: var(--muted);
-                 text-transform: uppercase; letter-spacing: .08em; margin-bottom: 12px; }
+.section-title {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .08em;
+  margin-bottom: 10px;
+}
 
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 28px; }
+/* ── toolbar ── */
+.toolbar {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin-bottom: 16px;
+}
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tab {
+  padding: 5px 14px; border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent; color: var(--muted);
+  font-family: inherit; font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.tab:hover { border-color: var(--blue); color: var(--blue); }
+.tab.active { background: #1f3a5c; border-color: var(--blue); color: var(--blue); }
+
+.refresh-btn {
+  padding: 5px 12px; border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent; color: var(--muted);
+  font-family: inherit; font-size: 12px;
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+  margin-left: auto;
+}
+.refresh-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+/* ── stat cards — 4 cols desktop, 2 cols mobile ── */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+@media (max-width: 900px) {
+  .cards { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 600px) {
+  .cards { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+}
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 16px;
+  padding: 14px;
   transition: border-color .2s;
 }
 .card:hover { border-color: #484f58; }
-.card-label { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase;
-              letter-spacing: .06em; margin-bottom: 8px; }
-.card-value { font-size: 28px; font-weight: 700; line-height: 1; }
-.card-sub   { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.card-label {
+  font-size: 10px; color: var(--muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px;
+}
+.card-value { font-size: 26px; font-weight: 700; line-height: 1; }
+
+@media (max-width: 600px) {
+  .card { padding: 12px; }
+  .card-value { font-size: 22px; }
+}
 
 .green  { color: var(--green); }
 .red    { color: var(--red); }
-.yellow { color: var(--yellow); }
 .blue   { color: var(--blue); }
-.purple { color: var(--purple); }
 .white  { color: var(--text); }
 
-/* ── period tabs ── */
-.tabs { display: flex; gap: 6px; margin-bottom: 20px; }
-.tab {
-  padding: 5px 14px; border-radius: 20px; border: 1px solid var(--border);
-  background: transparent; color: var(--muted); font-family: inherit;
-  font-size: 12px; font-weight: 500; cursor: pointer; transition: all .15s;
-}
-.tab:hover { border-color: var(--blue); color: var(--blue); }
-.tab.active { background: #1f3a5c; border-color: var(--blue); color: var(--blue); }
+.wr-bar  { height: 3px; background: var(--border); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+.wr-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width .6s; }
 
-/* ── signal table ── */
-.table-wrap {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; overflow: hidden;
+/* ── signal list ── */
+.sig-list { display: flex; flex-direction: column; gap: 8px; }
+
+.sig-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px 14px;
+  transition: border-color .2s;
 }
-table { width: 100%; border-collapse: collapse; }
-th {
-  background: #0d1117; padding: 10px 14px; text-align: left;
-  font-size: 11px; font-weight: 600; color: var(--muted);
-  text-transform: uppercase; letter-spacing: .06em;
-  border-bottom: 1px solid var(--border);
-}
-td { padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; }
-tr:last-child td { border-bottom: none; }
-tr:hover td { background: #1c2128; }
+.sig-card:hover { border-color: #484f58; }
+
+/* left accent by direction */
+.sig-card.long  { border-left: 3px solid var(--green); }
+.sig-card.short { border-left: 3px solid var(--red); }
+
+.sig-id    { color: var(--muted); font-size: 11px; min-width: 28px; }
+.sig-main  { min-width: 0; }
+.sig-sym   { font-weight: 700; font-size: 14px; }
+.sig-meta  { font-size: 11px; color: var(--muted); margin-top: 2px;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sig-prices { text-align: right; font-size: 12px; line-height: 1.8; white-space: nowrap; }
+.sig-status { text-align: right; }
 
 .badge {
-  display: inline-block; padding: 2px 8px; border-radius: 10px;
-  font-size: 11px; font-weight: 600; letter-spacing: .04em;
+  display: inline-block; padding: 3px 9px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; letter-spacing: .03em;
 }
 .badge-win     { background: #0a3d1f; color: var(--green); }
 .badge-loss    { background: #3d1111; color: var(--red); }
@@ -202,66 +269,64 @@ tr:hover td { background: #1c2128; }
 .badge-long    { background: #0a3d1f; color: var(--green); }
 .badge-short   { background: #3d1111; color: var(--red); }
 
+.roi-val { font-size: 13px; font-weight: 600; margin-top: 4px; }
+
+/* mobile: stack prices and status below main row */
+@media (max-width: 480px) {
+  .sig-card {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+  }
+  .sig-prices { grid-column: 2; text-align: left; }
+  .sig-status { grid-column: 2; text-align: left; display: flex; gap: 8px; align-items: center; }
+}
+
+/* ── empty state ── */
+.empty {
+  text-align: center; padding: 40px 20px;
+  color: var(--muted); font-size: 13px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
 /* ── loading overlay ── */
-#loading { position: fixed; inset: 0; background: var(--bg);
-           display: flex; align-items: center; justify-content: center;
-           z-index: 99; font-size: 14px; color: var(--muted); }
-
-/* ── refresh bar ── */
-.refresh-bar {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 20px; color: var(--muted); font-size: 12px;
-}
-.refresh-btn {
-  padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border);
-  background: transparent; color: var(--muted); font-family: inherit;
-  font-size: 12px; cursor: pointer; transition: all .15s;
-}
-.refresh-btn:hover { border-color: var(--blue); color: var(--blue); }
-
-/* ── win rate bar ── */
-.wr-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
-.wr-fill { height: 100%; background: var(--green); border-radius: 2px; transition: width .5s; }
-
-/* ── responsive ── */
-@media (max-width: 600px) {
-  .card-value { font-size: 22px; }
-  td, th { padding: 8px 10px; }
-  .hide-mobile { display: none; }
+#loading {
+  position: fixed; inset: 0; background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 99; font-size: 14px; color: var(--muted);
 }
 </style>
 </head>
 <body>
 
-<div id="loading">Loading dashboard…</div>
+<div id="loading">Loading…</div>
 
 <div class="header">
   <div class="logo">
-    <span class="logo-icon">📡</span>
-    MEXC Signal Bot
+    <span>📡</span> MEXC Signal Bot
   </div>
   <div class="meta">
     <span><span class="status-dot"></span>Live</span>
     <span id="serverTime">—</span>
-    <span id="nextRefresh">Refreshing…</span>
+    <span id="nextRefresh"></span>
   </div>
 </div>
 
 <div class="container">
 
-  <!-- period tabs -->
-  <div class="refresh-bar">
+  <!-- toolbar -->
+  <div class="toolbar">
     <div class="tabs">
-      <button class="tab active" onclick="setPeriod('today')">Today</button>
-      <button class="tab" onclick="setPeriod('week')">7 Days</button>
-      <button class="tab" onclick="setPeriod('alltime')">All Time</button>
+      <button class="tab active" data-period="today"   onclick="setPeriod('today')">Today</button>
+      <button class="tab"        data-period="week"    onclick="setPeriod('week')">7 Days</button>
+      <button class="tab"        data-period="alltime" onclick="setPeriod('alltime')">All Time</button>
     </div>
     <button class="refresh-btn" onclick="load()">↻ Refresh</button>
   </div>
 
   <!-- stat cards -->
   <div class="section-title">Performance</div>
-  <div class="cards" id="cards">
+  <div class="cards">
     <div class="card"><div class="card-label">Signals</div><div class="card-value white" id="c-total">—</div></div>
     <div class="card"><div class="card-label">Wins</div><div class="card-value green" id="c-wins">—</div></div>
     <div class="card"><div class="card-label">Losses</div><div class="card-value red" id="c-losses">—</div></div>
@@ -272,50 +337,28 @@ tr:hover td { background: #1c2128; }
       <div class="wr-bar"><div class="wr-fill" id="wr-fill" style="width:0%"></div></div>
     </div>
     <div class="card"><div class="card-label">Net ROI</div><div class="card-value" id="c-roi">—</div></div>
-    <div class="card"><div class="card-label">Best Signal</div><div class="card-value green" id="c-best">—</div></div>
-    <div class="card"><div class="card-label">Worst Signal</div><div class="card-value red" id="c-worst">—</div></div>
+    <div class="card"><div class="card-label">Best</div><div class="card-value green" id="c-best">—</div></div>
+    <div class="card"><div class="card-label">Worst</div><div class="card-value red" id="c-worst">—</div></div>
   </div>
 
-  <!-- recent signals table -->
-  <div class="section-title" style="margin-top:8px">Recent Signals</div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Symbol</th>
-          <th>Dir</th>
-          <th>Entry</th>
-          <th>TP</th>
-          <th>SL</th>
-          <th>Status</th>
-          <th>ROI</th>
-          <th class="hide-mobile">Time</th>
-        </tr>
-      </thead>
-      <tbody id="tbody">
-        <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">Loading…</td></tr>
-      </tbody>
-    </table>
-  </div>
+  <!-- signal list -->
+  <div class="section-title" style="margin-top:4px">Recent Signals</div>
+  <div id="siglist"></div>
 
-</div><!-- /container -->
+</div>
 
 <script>
-const TOKEN  = new URLSearchParams(location.search).get("token") || "";
-let period   = "today";
-let data     = null;
+const TOKEN = new URLSearchParams(location.search).get("token") || "";
+let period  = "today";
+let data    = null;
 let countdown = 30;
 let timer;
 
 function setPeriod(p) {
   period = p;
-  document.querySelectorAll(".tab").forEach(t => {
-    t.classList.toggle("active", t.textContent.toLowerCase().replace(" ","") === p ||
-      (p === "week" && t.textContent === "7 Days") ||
-      (p === "alltime" && t.textContent === "All Time") ||
-      (p === "today" && t.textContent === "Today"));
-  });
+  document.querySelectorAll(".tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.period === p)
+  );
   if (data) render();
 }
 
@@ -323,16 +366,14 @@ async function load() {
   try {
     const res = await fetch(`/api/data?token=${TOKEN}`);
     if (res.status === 401) {
-      document.body.innerHTML = "<div style='padding:2rem;font-family:monospace;color:#f85149'>401 — Invalid token. Add ?token=YOUR_TOKEN to the URL.</div>";
+      document.body.innerHTML = "<div style='padding:2rem;color:#f85149;font-family:sans-serif'>401 — Invalid token. Add ?token=YOUR_TOKEN to the URL.</div>";
       return;
     }
     data = await res.json();
     render();
     document.getElementById("loading").style.display = "none";
     document.getElementById("serverTime").textContent = data.server_time;
-  } catch(e) {
-    console.error(e);
-  }
+  } catch(e) { console.error(e); }
   resetCountdown();
 }
 
@@ -349,51 +390,65 @@ function render() {
   const roi = s.net_roi;
   const roiEl = document.getElementById("c-roi");
   roiEl.textContent = (roi >= 0 ? "+" : "") + roi + "%";
-  roiEl.className = "card-value " + (roi >= 0 ? "green" : "red");
+  roiEl.className   = "card-value " + (roi >= 0 ? "green" : "red");
 
   set("c-best",  "+" + s.best + "%");
   set("c-worst", s.worst + "%");
 
-  // table
-  const tbody = document.getElementById("tbody");
-  if (!data.recent.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">No signals yet</td></tr>`;
+  renderSignals(data.recent);
+}
+
+function renderSignals(list) {
+  const el = document.getElementById("siglist");
+  if (!list.length) {
+    el.innerHTML = `<div class="empty">No signals recorded yet.</div>`;
     return;
   }
-  tbody.innerHTML = data.recent.map(r => {
-    const roi   = r.pnl_roi != null ? ((r.pnl_roi >= 0 ? "+" : "") + r.pnl_roi.toFixed(1) + "%") : "—";
-    const roiCls = r.pnl_roi > 0 ? "green" : r.pnl_roi < 0 ? "red" : "";
-    const time  = r.generated_at ? r.generated_at.slice(0,16).replace("T"," ") : "—";
-    const sym   = r.symbol.replace("_USDT","/USDT");
-    return `<tr>
-      <td style="color:var(--muted)">${r.id}</td>
-      <td><strong>${sym}</strong></td>
-      <td><span class="badge badge-${r.direction.toLowerCase()}">${r.direction}</span></td>
-      <td>$${fmt(r.entry_price)}</td>
-      <td style="color:var(--green)">$${fmt(r.tp_price)}</td>
-      <td style="color:var(--red)">$${fmt(r.sl_price)}</td>
-      <td><span class="badge badge-${r.status}">${r.status.toUpperCase()}</span></td>
-      <td class="${roiCls}">${roi}</td>
-      <td class="hide-mobile" style="color:var(--muted)">${time}</td>
-    </tr>`;
-  }).join("");
+
+  el.innerHTML = `<div class="sig-list">` + list.map(r => {
+    const dir    = r.direction.toLowerCase();
+    const sym    = r.symbol.replace("_USDT", "/USDT");
+    const roi    = r.pnl_roi != null ? (r.pnl_roi >= 0 ? "+" : "") + r.pnl_roi.toFixed(1) + "%" : null;
+    const roiCls = r.pnl_roi > 0 ? "green" : r.pnl_roi < 0 ? "red" : "muted";
+    const time   = r.generated_at ? r.generated_at.slice(0,16).replace("T"," ") + " UTC" : "—";
+
+    return `
+    <div class="sig-card ${dir}">
+      <div class="sig-id">#${r.id}</div>
+      <div class="sig-main">
+        <div class="sig-sym">
+          <span class="badge badge-${dir}">${r.direction}</span>
+          &nbsp;${sym}
+        </div>
+        <div class="sig-meta">${time}</div>
+      </div>
+      <div class="sig-prices">
+        <div>Entry <strong>$${fmt(r.entry_price)}</strong></div>
+        <div style="color:var(--green)">TP &nbsp;$${fmt(r.tp_price)}</div>
+        <div style="color:var(--red)">SL &nbsp;$${fmt(r.sl_price)}</div>
+      </div>
+      <div class="sig-status">
+        <span class="badge badge-${r.status}">${r.status.toUpperCase()}</span>
+        ${roi ? `<div class="roi-val ${roiCls}">${roi}</div>` : ""}
+      </div>
+    </div>`;
+  }).join("") + `</div>`;
 }
 
 function fmt(n) {
   if (n == null) return "—";
-  return parseFloat(n).toPrecision(6).replace(/\.?0+$/, "");
+  const f = parseFloat(n);
+  return f >= 1 ? f.toFixed(4) : f.toPrecision(5);
 }
 
-function set(id, val) {
-  document.getElementById(id).textContent = val;
-}
+function set(id, val) { document.getElementById(id).textContent = val; }
 
 function resetCountdown() {
   countdown = 30;
   clearInterval(timer);
   timer = setInterval(() => {
     countdown--;
-    document.getElementById("nextRefresh").textContent = `Next refresh in ${countdown}s`;
+    document.getElementById("nextRefresh").textContent = `↻ ${countdown}s`;
     if (countdown <= 0) load();
   }, 1000);
 }
