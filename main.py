@@ -2,11 +2,11 @@
 Main entry point.
 
 Scheduler jobs:
-  • Every 1h (candle-aligned)  → scan all pairs for Supertrend signals
-  • Every 15 min               → check pending signal outcomes (TP / SL)
-  • 23:55 daily                → post daily report
-  • Mon 07:00                  → post weekly report
-  • 1st 07:00                  → post monthly report
+  • Every 15m (:01, :16, :31, :46) → scan all pairs for Hull Suite signals
+  • Every 15 min                   → check placed signal outcomes (TP / SL)
+  • 23:55 daily                    → post daily report
+  • Mon 07:00                      → post weekly report
+  • 1st 07:00                      → post monthly report
 """
 
 import asyncio
@@ -28,11 +28,14 @@ from config import (
     SIGNAL_COOLDOWN_MINUTES,
     SIGNAL_EXPIRE_HOURS,
     COIN_REFRESH_HOURS,
+    MAX_CONCURRENT_SIGNALS,
+    TP_ROI_PCT,
+    SL_ROI_PCT,
 )
 
 logging.basicConfig(
-    level   = logging.INFO,
-    format  = "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    level    = logging.INFO,
+    format   = "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     handlers = [
         logging.StreamHandler(sys.stdout),
         logging.FileHandler("mexc_bot.log"),
@@ -53,14 +56,23 @@ async def scan_and_signal(app: Application) -> None:
         logger.info("[SCAN] Paused, skipping")
         return
 
+    active = db.count_active_signals()
+    slots  = MAX_CONCURRENT_SIGNALS - active
+    if slots <= 0:
+        logger.info(f"[SCAN] {active}/{MAX_CONCURRENT_SIGNALS} active signals, skipping")
+        return
+
     pairs          = coin_scanner.get_cached_coins()
     now            = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
-    signals_found  = 0
+    signals_sent   = 0
 
-    logger.info(f"[SCAN] Scanning {len(pairs)} pairs...")
+    logger.info(f"[SCAN] Scanning {len(pairs)} pairs (slots available: {slots})...")
 
     for symbol in pairs:
+        if signals_sent >= slots:
+            break
+
         if db.signal_exists_for_coin(symbol, cooldown_since):
             logger.debug(f"[SCAN] {symbol}: cooldown active, skipping")
             continue
@@ -69,7 +81,6 @@ async def scan_and_signal(app: Application) -> None:
         if sig is None:
             continue
 
-        signals_found += 1
         signal_id = db.save_signal(
             symbol       = sig.symbol,
             direction    = sig.direction,
@@ -82,16 +93,17 @@ async def scan_and_signal(app: Application) -> None:
 
         try:
             await tg.broadcast_signal(app, sig, signal_id)
+            signals_sent += 1
         except Exception as e:
             logger.error(f"Failed to broadcast signal for {symbol}: {e}")
 
-    logger.info(f"[SCAN] Done — {signals_found} signal(s) sent")
+    logger.info(f"[SCAN] Done — {signals_sent} signal(s) sent")
 
 
-# ── outcome checker ───────────────────────────────────────────────
+# ── outcome checker (placed signals only) ─────────────────────────
 
 async def check_outcomes(app: Application) -> None:
-    pending = db.get_pending_signals()
+    pending = db.get_pending_signals()   # placed=1 only
     now     = datetime.now(timezone.utc)
 
     for sig in pending:
@@ -103,7 +115,6 @@ async def check_outcomes(app: Application) -> None:
         if generated.tzinfo is None:
             generated = generated.replace(tzinfo=timezone.utc)
 
-        # Expire stale signals
         if (now - generated).total_seconds() > SIGNAL_EXPIRE_HOURS * 3600:
             db.update_signal_outcome(sig["id"], "expired", 0.0)
             logger.info(f"Signal {sig['id']} expired ({symbol})")
@@ -126,9 +137,7 @@ async def check_outcomes(app: Application) -> None:
             hit_sl = price >= sl_price
 
         if hit_tp:
-            pnl = abs(tp_price / sig["entry_price"] - 1) * sig["leverage"] * 100
-            if direction == "SHORT":
-                pnl = abs(1 - tp_price / sig["entry_price"]) * sig["leverage"] * 100
+            pnl = TP_ROI_PCT
             db.update_signal_outcome(sig["id"], "win", pnl)
             logger.info(f"Signal {sig['id']} WIN ({symbol}) +{pnl:.1f}%")
             try:
@@ -137,9 +146,7 @@ async def check_outcomes(app: Application) -> None:
                 logger.error(f"Failed to notify win for {symbol}: {e}")
 
         elif hit_sl:
-            pnl = -abs(sig["entry_price"] / sl_price - 1) * sig["leverage"] * 100
-            if direction == "SHORT":
-                pnl = -abs(1 - sl_price / sig["entry_price"]) * sig["leverage"] * 100
+            pnl = -SL_ROI_PCT
             db.update_signal_outcome(sig["id"], "loss", pnl)
             logger.info(f"Signal {sig['id']} LOSS ({symbol}) {pnl:.1f}%")
             try:
@@ -148,10 +155,27 @@ async def check_outcomes(app: Application) -> None:
                 logger.error(f"Failed to notify loss for {symbol}: {e}")
 
 
+# ── unplaced signal cleanup (silent expiry) ───────────────────────
+
+async def cleanup_unplaced() -> None:
+    """Silently expire old unplaced signals to keep DB clean."""
+    all_pending = db.get_all_pending_signals()
+    now         = datetime.now(timezone.utc)
+    for sig in all_pending:
+        if sig.get("placed", 0) == 1:
+            continue
+        generated = datetime.fromisoformat(sig["generated_at"])
+        if generated.tzinfo is None:
+            generated = generated.replace(tzinfo=timezone.utc)
+        if (now - generated).total_seconds() > SIGNAL_EXPIRE_HOURS * 3600:
+            db.update_signal_outcome(sig["id"], "expired", 0.0)
+            logger.info(f"Signal {sig['id']} expired unplaced ({sig['symbol']})")
+
+
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot (Supertrend strategy)...")
+    logger.info("Starting MEXC Signal Bot (Hull Suite strategy)...")
 
     db.init_db()
 
@@ -163,16 +187,23 @@ async def main():
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # Scan at the top of every hour (1h candle close)
+    # Scan at :01, :16, :31, :46 — just after 15m candle close
     scheduler.add_job(
-        scan_and_signal, CronTrigger(minute=1),
+        scan_and_signal,
+        CronTrigger(minute="1,16,31,46"),
         args=[app], id="scanner",
     )
 
-    # Check outcomes every 15 minutes
+    # Check placed signal outcomes every 15 minutes
     scheduler.add_job(
         check_outcomes, IntervalTrigger(minutes=15),
         args=[app], id="outcome_checker",
+    )
+
+    # Silently expire old unplaced signals every 30 minutes
+    scheduler.add_job(
+        cleanup_unplaced, IntervalTrigger(minutes=30),
+        id="unplaced_cleanup",
     )
 
     # Refresh zero-fee coin list every N hours
@@ -196,7 +227,7 @@ async def main():
     scheduler.add_job(_monthly, CronTrigger(day=1, hour=7), id="monthly_report")
 
     scheduler.start()
-    logger.info(f"Scheduler started. Watching {len(coins)} pairs on 1h.")
+    logger.info(f"Scheduler started. Watching {len(coins)} pairs on 15m.")
 
     async with app:
         await app.initialize()

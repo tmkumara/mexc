@@ -5,31 +5,52 @@ Telegram bot: handles commands and broadcasts signals to the channel.
 import logging
 from datetime import datetime, timezone
 
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler, ContextTypes,
+)
 from telegram.constants import ParseMode
 
+import database as db
 import reports
 from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID
 
 logger = logging.getLogger(__name__)
 
-# ── module-level pause flag ───────────────────────────────────────
 paused: bool = False
 
 
-async def _send(app: Application, text: str, chat_id: str = None):
+async def _send(app: Application, text: str, chat_id: str = None, reply_markup=None):
     target = chat_id or TELEGRAM_CHANNEL_ID
     await app.bot.send_message(
-        chat_id    = target,
-        text       = text,
-        parse_mode = ParseMode.MARKDOWN,
+        chat_id      = target,
+        text         = text,
+        parse_mode   = ParseMode.MARKDOWN,
+        reply_markup = reply_markup,
     )
+
+
+# ── admin check ───────────────────────────────────────────────────
+
+async def _is_admin(bot, user_id: int) -> bool:
+    try:
+        admins = await bot.get_chat_administrators(TELEGRAM_CHANNEL_ID)
+        return any(a.user.id == user_id for a in admins)
+    except Exception:
+        return False
 
 
 # ── signal formatting ─────────────────────────────────────────────
 
-def format_signal(signal) -> str:
+def _placed_keyboard(signal_id: int, is_placed: bool) -> InlineKeyboardMarkup:
+    if is_placed:
+        btn = InlineKeyboardButton("↩️ Unmark Placed", callback_data=f"unplace_{signal_id}")
+    else:
+        btn = InlineKeyboardButton("✅ Mark as Placed", callback_data=f"place_{signal_id}")
+    return InlineKeyboardMarkup([[btn]])
+
+
+def format_signal(signal, signal_id: int) -> str:
     arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
     coin  = signal.symbol.replace("_", "/")
 
@@ -43,14 +64,15 @@ def format_signal(signal) -> str:
         f"📊 {signal.timeframe_summary}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"⏰ `{signal.generated_at.strftime('%Y-%m-%d %H:%M UTC')}`",
+        f"🆔 Signal ID: `{signal_id}`",
         "_⚠️ Not financial advice. Use risk management._",
     ])
 
 
 async def broadcast_signal(app: Application, signal, signal_id: int) -> None:
-    msg = format_signal(signal)
-    msg += f"\n🆔 Signal ID: `{signal_id}`"
-    await _send(app, msg)
+    msg      = format_signal(signal, signal_id)
+    keyboard = _placed_keyboard(signal_id, is_placed=False)
+    await _send(app, msg, reply_markup=keyboard)
 
 
 async def notify_outcome(app: Application, signal_db: dict) -> None:
@@ -80,12 +102,55 @@ async def notify_outcome(app: Application, signal_db: dict) -> None:
     await _send(app, msg)
 
 
+# ── placed button callback ─────────────────────────────────────────
+
+async def callback_placed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data or ""
+    if data.startswith("place_"):
+        action    = "place"
+        signal_id = int(data[len("place_"):])
+    elif data.startswith("unplace_"):
+        action    = "unplace"
+        signal_id = int(data[len("unplace_"):])
+    else:
+        return
+
+    if not await _is_admin(context.bot, query.from_user.id):
+        await query.answer("Only channel admins can mark signals as placed.", show_alert=True)
+        return
+
+    if action == "place":
+        ok = db.mark_placed(signal_id)
+        if ok:
+            await query.answer("Signal marked as placed ✅")
+        else:
+            await query.answer("Signal already closed or not found.", show_alert=True)
+            return
+        keyboard = _placed_keyboard(signal_id, is_placed=True)
+    else:
+        ok = db.unmark_placed(signal_id)
+        if ok:
+            await query.answer("Signal unmarked ↩️")
+        else:
+            await query.answer("Signal already closed or not found.", show_alert=True)
+            return
+        keyboard = _placed_keyboard(signal_id, is_placed=False)
+
+    try:
+        await query.edit_message_reply_markup(reply_markup=keyboard)
+    except Exception:
+        pass  # message may be too old to edit
+
+
 # ── commands ──────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "👋 *MEXC Futures Signal Bot*\n\n"
-        "*Performance:*\n"
+        "*Performance (placed trades only):*\n"
         "/daily — Today's report\n"
         "/weekly — Last 7 days\n"
         "/monthly — This month\n"
@@ -121,16 +186,19 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
-    from config import TIMEFRAME, ST_LENGTH, ST_MULTIPLIER, EMA_TREND_PERIOD
-    state = "⏸ PAUSED" if paused else "▶️ RUNNING"
-    coins = coin_scanner.get_cached_coins()
+    from config import TIMEFRAME, HULL_LENGTH, MAX_CONCURRENT_SIGNALS, TP_ROI_PCT, SL_ROI_PCT
+    state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
+    coins  = coin_scanner.get_cached_coins()
+    active = db.count_active_signals()
     pairs_str = "  ".join(p.replace("_USDT", "") for p in coins)
     msg = (
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `Supertrend({ST_LENGTH},{ST_MULTIPLIER}) + EMA{EMA_TREND_PERIOD}`\n"
+        f"Strategy:   `Hull Suite({HULL_LENGTH})`\n"
         f"Timeframe:  `{TIMEFRAME}`\n"
+        f"TP / SL:    `+{TP_ROI_PCT}% / -{SL_ROI_PCT}% ROI`\n"
+        f"Active:     `{active}/{MAX_CONCURRENT_SIGNALS}`\n"
         f"Pairs ({len(coins)}): `{pairs_str}`\n"
         f"Time (UTC): `{datetime.now(timezone.utc).strftime('%H:%M')}`"
     )
@@ -140,20 +208,16 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_pause(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global paused
     paused = True
-    await update.message.reply_text(
-        "⏸ Signal sending *paused*.", parse_mode=ParseMode.MARKDOWN
-    )
+    await update.message.reply_text("⏸ Signal sending *paused*.", parse_mode=ParseMode.MARKDOWN)
 
 
 async def cmd_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global paused
     paused = False
-    await update.message.reply_text(
-        "▶️ Signal sending *resumed*.", parse_mode=ParseMode.MARKDOWN
-    )
+    await update.message.reply_text("▶️ Signal sending *resumed*.", parse_mode=ParseMode.MARKDOWN)
 
 
-# ── scheduled report helpers ─────────────────────────────────────
+# ── scheduled report helpers ──────────────────────────────────────
 
 async def auto_daily_report(context: ContextTypes.DEFAULT_TYPE):
     await _send(context.application, reports.daily_report())
@@ -180,4 +244,5 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("status",  cmd_status))
     app.add_handler(CommandHandler("pause",   cmd_pause))
     app.add_handler(CommandHandler("resume",  cmd_resume))
+    app.add_handler(CallbackQueryHandler(callback_placed, pattern=r"^(place|unplace)_\d+$"))
     return app

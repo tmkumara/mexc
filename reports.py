@@ -1,5 +1,6 @@
 """
 Report formatter for daily / weekly / monthly / all-time stats.
+Only placed signals (placed=1) are counted in all statistics.
 """
 
 from datetime import datetime, timezone, timedelta
@@ -7,27 +8,33 @@ from database import get_signals_in_range, get_all_signals
 
 
 def _stats(signals: list[dict]) -> dict:
-    total   = len(signals)
-    wins    = [s for s in signals if s["status"] == "win"]
-    losses  = [s for s in signals if s["status"] == "loss"]
-    pending = [s for s in signals if s["status"] == "pending"]
-    expired = [s for s in signals if s["status"] == "expired"]
+    # Only count signals the user actually placed
+    placed  = [s for s in signals if s.get("placed", 0) == 1]
+
+    total   = len(placed)
+    wins    = [s for s in placed if s["status"] == "win"]
+    losses  = [s for s in placed if s["status"] == "loss"]
+    pending = [s for s in placed if s["status"] == "pending"]
+    expired = [s for s in placed if s["status"] == "expired"]
 
     win_count  = len(wins)
     loss_count = len(losses)
     closed     = win_count + loss_count
     win_rate   = (win_count / closed * 100) if closed else 0
 
-    net_roi = sum(s["pnl_roi"] or 0 for s in signals if s["status"] in ("win", "loss"))
+    net_roi = sum(s["pnl_roi"] or 0 for s in placed if s["status"] in ("win", "loss"))
 
-    best  = max((s["pnl_roi"] or 0 for s in wins),  default=0)
-    worst = min((s["pnl_roi"] or 0 for s in losses), default=0)
+    best  = max((s["pnl_roi"] or 0 for s in wins),   default=0)
+    worst = min((s["pnl_roi"] or 0 for s in losses),  default=0)
 
-    longs  = [s for s in signals if s["direction"] == "LONG"]
-    shorts = [s for s in signals if s["direction"] == "SHORT"]
+    longs  = [s for s in placed if s["direction"] == "LONG"]
+    shorts = [s for s in placed if s["direction"] == "SHORT"]
+
+    sent = len(signals)  # total signals sent (including unplaced)
 
     return {
-        "total": total, "wins": win_count, "losses": loss_count,
+        "total": total, "sent": sent,
+        "wins": win_count, "losses": loss_count,
         "pending": len(pending), "expired": len(expired),
         "win_rate": win_rate, "net_roi": net_roi,
         "best": best, "worst": worst,
@@ -44,15 +51,17 @@ def _format_report(title: str, signals: list[dict]) -> str:
     s = _stats(signals)
 
     if s["total"] == 0:
-        return f"📊 *{title}*\n\nNo signals recorded yet."
+        sent_note = f" ({s['sent']} sent, none placed)" if s["sent"] else ""
+        return f"📊 *{title}*\n\nNo placed trades recorded yet.{sent_note}"
 
-    sign   = "+" if s["net_roi"] >= 0 else ""
-    emoji  = "🟢" if s["net_roi"] >= 0 else "🔴"
+    sign  = "+" if s["net_roi"] >= 0 else ""
+    emoji = "🟢" if s["net_roi"] >= 0 else "🔴"
 
     lines = [
         f"📊 *{title}*",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"📡 Total signals:  `{s['total']}`",
+        f"📡 Signals sent:   `{s['sent']}`",
+        f"✔️ Placed trades:  `{s['total']}`",
         f"✅ Wins:           `{s['wins']}`",
         f"❌ Losses:         `{s['losses']}`",
         f"⏳ Pending:        `{s['pending']}`",
@@ -64,8 +73,8 @@ def _format_report(title: str, signals: list[dict]) -> str:
         f"📈 Longs:   `{s['longs']}`",
         f"📉 Shorts:  `{s['shorts']}`",
         "",
-        f"🔥 Best signal:   `+{s['best']:.1f}%`",
-        f"💀 Worst signal:  `{s['worst']:.1f}%`",
+        f"🔥 Best trade:   `+{s['best']:.1f}%`",
+        f"💀 Worst trade:  `{s['worst']:.1f}%`",
         "━━━━━━━━━━━━━━━━━━━━",
         f"_Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}_",
     ]
