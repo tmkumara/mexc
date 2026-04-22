@@ -2,8 +2,8 @@
 Main entry point.
 
 Scheduler jobs:
-  • Every 15m (:01, :16, :31, :46) → scan all pairs for Hull Suite signals
-  • Every 15 min                   → check placed signal outcomes (TP / SL)
+  • Every 5m (:01,:06,:11,...,:56) → scan all pairs for ZLSMA+CE signals
+  • Every 5 min                    → check pending signal outcomes (wick-based TP/SL)
   • 23:55 daily                    → post daily report
   • Mon 07:00                      → post weekly report
   • 1st 07:00                      → post monthly report
@@ -23,7 +23,7 @@ import database as db
 import strategy
 import bot as tg
 import coin_scanner
-from mexc_client import get_current_price
+from mexc_client import get_klines
 from config import (
     SIGNAL_COOLDOWN_MINUTES,
     SIGNAL_EXPIRE_HOURS,
@@ -31,6 +31,7 @@ from config import (
     MAX_CONCURRENT_SIGNALS,
     TP_ROI_PCT,
     SL_ROI_PCT,
+    TIMEFRAME,
 )
 
 logging.basicConfig(
@@ -59,7 +60,7 @@ async def scan_and_signal(app: Application) -> None:
     active = db.count_active_signals()
     slots  = MAX_CONCURRENT_SIGNALS - active
     if slots <= 0:
-        logger.info(f"[SCAN] {active}/{MAX_CONCURRENT_SIGNALS} active signals, skipping")
+        logger.info(f"[SCAN] {active}/{MAX_CONCURRENT_SIGNALS} active signal, skipping")
         return
 
     pairs          = coin_scanner.get_cached_coins()
@@ -100,10 +101,10 @@ async def scan_and_signal(app: Application) -> None:
     logger.info(f"[SCAN] Done — {signals_sent} signal(s) sent")
 
 
-# ── outcome checker (placed signals only) ─────────────────────────
+# ── outcome checker (wick-based high/low) ─────────────────────────
 
 async def check_outcomes(app: Application) -> None:
-    pending = db.get_pending_signals()   # placed=1 only
+    pending = db.get_pending_signals()
     now     = datetime.now(timezone.utc)
 
     for sig in pending:
@@ -115,6 +116,7 @@ async def check_outcomes(app: Application) -> None:
         if generated.tzinfo is None:
             generated = generated.replace(tzinfo=timezone.utc)
 
+        # Expire stale signals
         if (now - generated).total_seconds() > SIGNAL_EXPIRE_HOURS * 3600:
             db.update_signal_outcome(sig["id"], "expired", 0.0)
             logger.info(f"Signal {sig['id']} expired ({symbol})")
@@ -124,28 +126,26 @@ async def check_outcomes(app: Application) -> None:
                 logger.error(f"Failed to notify expiry for {symbol}: {e}")
             continue
 
-        price = get_current_price(symbol)
-        if price is None:
+        # Fetch last completed candle for wick-based detection
+        try:
+            df = get_klines(symbol, TIMEFRAME, count=2)
+            if df.empty or len(df) < 2:
+                continue
+            candle_high = float(df["high"].iloc[-2])
+            candle_low  = float(df["low"].iloc[-2])
+        except Exception as e:
+            logger.warning(f"Could not fetch candle for {symbol}: {e}")
             continue
 
-        hit_tp = hit_sl = False
         if direction == "LONG":
-            hit_tp = price >= tp_price
-            hit_sl = price <= sl_price
+            hit_tp = candle_high >= tp_price
+            hit_sl = candle_low  <= sl_price
         else:
-            hit_tp = price <= tp_price
-            hit_sl = price >= sl_price
+            hit_tp = candle_low  <= tp_price
+            hit_sl = candle_high >= sl_price
 
-        if hit_tp:
-            pnl = TP_ROI_PCT
-            db.update_signal_outcome(sig["id"], "win", pnl)
-            logger.info(f"Signal {sig['id']} WIN ({symbol}) +{pnl:.1f}%")
-            try:
-                await tg.notify_outcome(app, {**sig, "status": "win", "pnl_roi": pnl})
-            except Exception as e:
-                logger.error(f"Failed to notify win for {symbol}: {e}")
-
-        elif hit_sl:
+        # SL wins if both wick touches happen in the same candle
+        if hit_sl:
             pnl = -SL_ROI_PCT
             db.update_signal_outcome(sig["id"], "loss", pnl)
             logger.info(f"Signal {sig['id']} LOSS ({symbol}) {pnl:.1f}%")
@@ -154,28 +154,20 @@ async def check_outcomes(app: Application) -> None:
             except Exception as e:
                 logger.error(f"Failed to notify loss for {symbol}: {e}")
 
-
-# ── unplaced signal cleanup (silent expiry) ───────────────────────
-
-async def cleanup_unplaced() -> None:
-    """Silently expire old unplaced signals to keep DB clean."""
-    all_pending = db.get_all_pending_signals()
-    now         = datetime.now(timezone.utc)
-    for sig in all_pending:
-        if sig.get("placed", 0) == 1:
-            continue
-        generated = datetime.fromisoformat(sig["generated_at"])
-        if generated.tzinfo is None:
-            generated = generated.replace(tzinfo=timezone.utc)
-        if (now - generated).total_seconds() > SIGNAL_EXPIRE_HOURS * 3600:
-            db.update_signal_outcome(sig["id"], "expired", 0.0)
-            logger.info(f"Signal {sig['id']} expired unplaced ({sig['symbol']})")
+        elif hit_tp:
+            pnl = TP_ROI_PCT
+            db.update_signal_outcome(sig["id"], "win", pnl)
+            logger.info(f"Signal {sig['id']} WIN ({symbol}) +{pnl:.1f}%")
+            try:
+                await tg.notify_outcome(app, {**sig, "status": "win", "pnl_roi": pnl})
+            except Exception as e:
+                logger.error(f"Failed to notify win for {symbol}: {e}")
 
 
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot (Hull Suite strategy)...")
+    logger.info("Starting MEXC Signal Bot (ZLSMA+CE strategy)...")
 
     db.init_db()
 
@@ -187,23 +179,17 @@ async def main():
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # Scan at :01, :16, :31, :46 — just after 15m candle close
+    # Scan just after each 5m candle close (:01, :06, :11, ..., :56)
     scheduler.add_job(
         scan_and_signal,
-        CronTrigger(minute="1,16,31,46"),
+        CronTrigger(minute="1,6,11,16,21,26,31,36,41,46,51,56"),
         args=[app], id="scanner",
     )
 
-    # Check placed signal outcomes every 15 minutes
+    # Check outcomes every 5 minutes (wick-based)
     scheduler.add_job(
-        check_outcomes, IntervalTrigger(minutes=15),
+        check_outcomes, IntervalTrigger(minutes=5),
         args=[app], id="outcome_checker",
-    )
-
-    # Silently expire old unplaced signals every 30 minutes
-    scheduler.add_job(
-        cleanup_unplaced, IntervalTrigger(minutes=30),
-        id="unplaced_cleanup",
     )
 
     # Refresh zero-fee coin list every N hours
@@ -227,7 +213,7 @@ async def main():
     scheduler.add_job(_monthly, CronTrigger(day=1, hour=7), id="monthly_report")
 
     scheduler.start()
-    logger.info(f"Scheduler started. Watching {len(coins)} pairs on 15m.")
+    logger.info(f"Scheduler started. Watching {len(coins)} pairs on 5m.")
 
     async with app:
         await app.initialize()
