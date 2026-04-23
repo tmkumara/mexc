@@ -43,6 +43,16 @@ ZLSMA_LENGTH: int = 200
 CE_ATR_PERIOD: int   = 1
 CE_ATR_MULT:   float = 2.0
 
+# ── Signal filter tuning ──────────────────────────────────────────
+# Mode A: previous N candle wicks must not touch ZLSMA (raise to 10 for stricter)
+ZLSMA_SEPARATION_CANDLES: int = 5
+
+# Mode B: consecutive candles above/below ZLSMA required to confirm crossover
+ZLSMA_CROSS_CONFIRM: int = 2
+
+# Mode B: how many bars back to search for a CE flip that occurred before the ZLSMA cross
+CE_CROSS_LOOKBACK: int = 15
+
 # Fixed ROI targets (at LEVERAGE)
 TP_ROI_PCT: float = 3.0   # +3% ROI on position
 SL_ROI_PCT: float = 10.0  # -10% ROI on position

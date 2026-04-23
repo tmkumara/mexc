@@ -41,21 +41,12 @@ from config import (
     LEVERAGE, TIMEFRAME,
     ZLSMA_LENGTH, CE_ATR_PERIOD, CE_ATR_MULT,
     TP_ROI_PCT, SL_ROI_PCT,
+    ZLSMA_SEPARATION_CANDLES, ZLSMA_CROSS_CONFIRM, CE_CROSS_LOOKBACK,
 )
 
 logger = logging.getLogger(__name__)
 
 KLINE_COUNT = ZLSMA_LENGTH * 2 + 50
-
-# ── Mode A tuning ─────────────────────────────────────────────────
-# Previous candles whose wicks must not touch ZLSMA (raise to 10 for stricter).
-ZLSMA_SEPARATION_CANDLES = 5
-
-# ── Mode B tuning ─────────────────────────────────────────────────
-# Candles that must continuously stay above/below ZLSMA after the crossover.
-ZLSMA_CROSS_CONFIRM = 2
-# How far back (bars) to search for a CE flip that occurred before the ZLSMA cross.
-CE_CROSS_LOOKBACK = 15
 
 
 @dataclass
