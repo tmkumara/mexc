@@ -14,7 +14,27 @@ COIN_REFRESH_HOURS: int = 6
 
 # ── Strategy settings ─────────────────────────────────────────────
 LEVERAGE  = 20
-TIMEFRAME = "5m"
+TIMEFRAME = "5m"   # change here → cron and outcome interval update automatically
+
+# Cron minute string for each supported timeframe (fires just after candle close)
+_TIMEFRAME_CRON: dict[str, str] = {
+    "1m":  "*",
+    "5m":  "1,6,11,16,21,26,31,36,41,46,51,56",
+    "15m": "1,16,31,46",
+    "30m": "1,31",
+    "1h":  "1",
+    "4h":  "1",
+}
+# Outcome-check interval in minutes (check every half-timeframe, min 5m)
+_TIMEFRAME_MINUTES: dict[str, int] = {
+    "1m": 1, "5m": 5, "15m": 5, "30m": 10, "1h": 15, "4h": 30,
+}
+
+if TIMEFRAME not in _TIMEFRAME_CRON:
+    raise ValueError(f"Unsupported TIMEFRAME '{TIMEFRAME}'. Choose from: {list(_TIMEFRAME_CRON)}")
+
+SCAN_CRON_MINUTES:    str = _TIMEFRAME_CRON[TIMEFRAME]
+OUTCOME_CHECK_MINUTES: int = _TIMEFRAME_MINUTES[TIMEFRAME]
 
 # ZLSMA (Zero Lag Least Squares Moving Average)
 ZLSMA_LENGTH: int = 200

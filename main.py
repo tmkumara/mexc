@@ -32,6 +32,8 @@ from config import (
     TP_ROI_PCT,
     SL_ROI_PCT,
     TIMEFRAME,
+    SCAN_CRON_MINUTES,
+    OUTCOME_CHECK_MINUTES,
 )
 
 logging.basicConfig(
@@ -179,16 +181,16 @@ async def main():
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # Scan just after each 5m candle close (:01, :06, :11, ..., :56)
+    # Scan just after each candle close — interval driven by TIMEFRAME in config.py
     scheduler.add_job(
         scan_and_signal,
-        CronTrigger(minute="1,6,11,16,21,26,31,36,41,46,51,56"),
+        CronTrigger(minute=SCAN_CRON_MINUTES),
         args=[app], id="scanner",
     )
 
-    # Check outcomes every 5 minutes (wick-based)
+    # Check outcomes — interval driven by TIMEFRAME in config.py
     scheduler.add_job(
-        check_outcomes, IntervalTrigger(minutes=5),
+        check_outcomes, IntervalTrigger(minutes=OUTCOME_CHECK_MINUTES),
         args=[app], id="outcome_checker",
     )
 
