@@ -1,13 +1,19 @@
 """
 ZLSMA + Chandelier Exit strategy on 5m candles.
 
-Entry conditions (last completed candle):
-  LONG  — Chandelier Exit flips bullish (-1 → 1)  AND  close > ZLSMA
-  SHORT — Chandelier Exit flips bearish ( 1 → -1) AND  close < ZLSMA
+Entry conditions (last completed candle, ALL must be true):
+  LONG  — Chandelier Exit flips bullish (-1 → 1)
+          AND  close > ZLSMA
+          AND  lows of previous ZLSMA_SEPARATION_CANDLES candles all stayed ABOVE ZLSMA
+               (no wick touched ZLSMA — confirms clean uptrend separation)
+
+  SHORT — Chandelier Exit flips bearish ( 1 → -1)
+          AND  close < ZLSMA
+          AND  highs of previous ZLSMA_SEPARATION_CANDLES candles all stayed BELOW ZLSMA
+               (no wick touched ZLSMA — confirms clean downtrend separation)
 
 Indicators:
-  ZLSMA(200)   — Zero Lag Least Squares MA: linreg(2*linreg(close,200) - linreg(linreg(close,200),200), 200)
-                 simplified to: lsma = linreg(close,200); zlsma = 2*lsma - linreg(lsma,200)
+  ZLSMA(200)   — Zero Lag Least Squares MA: lsma = linreg(close,200); zlsma = 2*lsma - linreg(lsma,200)
   CE(1, 2.0)   — Chandelier Exit; ATR period=1, multiplier=2.0
                  LongStop  = highest(close, 1) - 2*ATR(1)  [ratcheted up]
                  ShortStop = lowest(close, 1)  + 2*ATR(1)  [ratcheted down]
@@ -37,6 +43,10 @@ logger = logging.getLogger(__name__)
 
 # linreg applied twice: ZLSMA needs ~2×ZLSMA_LENGTH bars to warm up
 KLINE_COUNT = ZLSMA_LENGTH * 2 + 50
+
+# Candles before the signal candle whose wicks must NOT touch ZLSMA.
+# Raise to 10 for a stricter "cleanly separated" requirement.
+ZLSMA_SEPARATION_CANDLES = 5
 
 
 @dataclass
@@ -151,6 +161,31 @@ def analyze_coin(symbol: str) -> Signal | None:
                 f"but close {'above' if above_zlsma else 'below'} ZLSMA — filtered"
             )
             return None
+
+        # ── ZLSMA separation filter ────────────────────────────────
+        # Previous N candles must show clean separation from ZLSMA:
+        #   LONG:  lows all above ZLSMA  (no wick touched or crossed it)
+        #   SHORT: highs all below ZLSMA (no wick touched or crossed it)
+        # Candles checked: idx=-3 back through idx=-(2+ZLSMA_SEPARATION_CANDLES)
+        for lookback in range(3, 3 + ZLSMA_SEPARATION_CANDLES):
+            candle_zlsma = float(zlsma.iloc[-lookback])
+            if pd.isna(candle_zlsma):
+                logger.debug(f"{symbol}: NaN ZLSMA at lookback {lookback}, skipping")
+                return None
+            if direction == "LONG":
+                if float(df["low"].iloc[-lookback]) <= candle_zlsma:
+                    logger.debug(
+                        f"{symbol}: LONG separation failed — low touched ZLSMA "
+                        f"{ZLSMA_SEPARATION_CANDLES - (lookback - 3)} candles back"
+                    )
+                    return None
+            else:
+                if float(df["high"].iloc[-lookback]) >= candle_zlsma:
+                    logger.debug(
+                        f"{symbol}: SHORT separation failed — high touched ZLSMA "
+                        f"{ZLSMA_SEPARATION_CANDLES - (lookback - 3)} candles back"
+                    )
+                    return None
 
         entry         = close_cur
         price_move_tp = entry * (TP_ROI_PCT / 100.0 / LEVERAGE)
