@@ -33,6 +33,9 @@ def format_signal(signal, signal_id: int) -> str:
     arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
     coin  = signal.symbol.replace("_", "/")
 
+    stars = "⭐⭐⭐" if signal.score >= 80 else "⭐⭐" if signal.score >= 55 else "⭐"
+    mode_label = "Continuation" if signal.signal_mode == "A" else "Crossover"
+
     return "\n".join([
         f"{arrow} — *{coin}* Futures",
         "━━━━━━━━━━━━━━━━━━━━",
@@ -41,6 +44,7 @@ def format_signal(signal, signal_id: int) -> str:
         f"🛑 SL:       `${signal.sl_price:,.6g}`  _(-{signal.sl_roi_pct:.1f}% ROI)_",
         f"⚡ Leverage: `{signal.leverage}x`  _(Isolated)_",
         f"📊 {signal.timeframe_summary}",
+        f"🏅 Quality:  `{signal.score}/100`  {stars}  _{mode_label}_",
         "━━━━━━━━━━━━━━━━━━━━",
         f"⏰ `{signal.generated_at.strftime('%Y-%m-%d %H:%M UTC')}`",
         f"🆔 Signal ID: `{signal_id}`",

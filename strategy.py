@@ -61,6 +61,8 @@ class Signal:
     sl_roi_pct:        float
     timeframe_summary: str
     generated_at:      datetime
+    score:             float = 0.0   # 0–100 quality score
+    signal_mode:       str   = "A"   # "A" = continuation, "B" = crossover
 
 
 # ── Indicator helpers ─────────────────────────────────────────────
@@ -267,10 +269,34 @@ def analyze_coin(symbol: str) -> Signal | None:
         sl_roi = risk / entry * LEVERAGE * 100
         tp_roi = risk * REWARD_RATIO / entry * LEVERAGE * 100
 
+        # ── Multi-factor quality score (0–100) ────────────────────
+        # Factor 1 — ZLSMA separation (35%): how far price is from ZLSMA
+        sep_pct   = abs(entry - zlsma_cur) / entry * 100
+        sep_score = min(sep_pct / 2.0, 1.0)          # 2% separation = max
+
+        # Factor 2 — CE stop width (25%): wider ATR stop = stronger move
+        risk_pct   = risk / entry * 100
+        risk_score = min(risk_pct / 1.0, 1.0)         # 1% CE distance = max
+
+        # Factor 3 — Signal mode (20%): Mode A (established) > Mode B (crossover)
+        mode_score = 1.0 if mode == "A" else 0.5
+
+        # Factor 4 — Volume vs 20-bar MA (20%): genuine participation
+        vol_ma = df["volume"].rolling(20).mean().iloc[-2]
+        vol_cur = float(df["volume"].iloc[-2])
+        vol_ratio = (vol_cur / vol_ma) if vol_ma > 0 else 1.0
+        vol_score = min(vol_ratio / 3.0, 1.0)          # 3× MA = max
+
+        score = round(
+            (0.35 * sep_score + 0.25 * risk_score +
+             0.20 * mode_score + 0.20 * vol_score) * 100,
+            1,
+        )
+
         logger.info(
             f"[SIGNAL/{mode}] {direction} {symbol} @ {entry} | "
-            f"SL={sl_price} (-{sl_roi:.1f}% ROI) TP={tp_price} (+{tp_roi:.1f}% ROI) | "
-            f"risk={risk/entry*100:.3f}% ZLSMA={zlsma_cur:.6g}"
+            f"SL={sl_price} (-{sl_roi:.1f}%) TP={tp_price} (+{tp_roi:.1f}%) | "
+            f"score={score} sep={sep_pct:.3f}% risk={risk_pct:.3f}% vol={vol_ratio:.1f}x"
         )
 
         return Signal(
@@ -284,6 +310,8 @@ def analyze_coin(symbol: str) -> Signal | None:
             sl_roi_pct        = sl_roi,
             timeframe_summary = f"ZLSMA({ZLSMA_LENGTH}) + CE({CE_ATR_PERIOD}, {CE_ATR_MULT}) | {TIMEFRAME}",
             generated_at      = datetime.now(timezone.utc),
+            score             = score,
+            signal_mode       = mode,
         )
 
     except Exception as e:

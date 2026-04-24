@@ -67,39 +67,45 @@ async def scan_and_signal(app: Application) -> None:
     pairs          = coin_scanner.get_cached_coins()
     now            = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
-    signals_sent   = 0
 
-    logger.info(f"[SCAN] Scanning {len(pairs)} pairs (slots available: {slots})...")
+    logger.info(f"[SCAN] Scanning all {len(pairs)} pairs...")
 
+    # Collect every signal that fires this scan
+    candidates = []
     for symbol in pairs:
-        if signals_sent >= slots:
-            break
-
         if db.signal_exists_for_coin(symbol, cooldown_since):
             logger.debug(f"[SCAN] {symbol}: cooldown active, skipping")
             continue
-
         sig = strategy.analyze_coin(symbol)
-        if sig is None:
-            continue
+        if sig is not None:
+            candidates.append(sig)
 
-        signal_id = db.save_signal(
-            symbol       = sig.symbol,
-            direction    = sig.direction,
-            entry_price  = sig.entry_price,
-            tp_price     = sig.tp_price,
-            sl_price     = sig.sl_price,
-            leverage     = sig.leverage,
-            generated_at = sig.generated_at,
-        )
+    if not candidates:
+        logger.info("[SCAN] Done — 0 signals found")
+        return
 
-        try:
-            await tg.broadcast_signal(app, sig, signal_id)
-            signals_sent += 1
-        except Exception as e:
-            logger.error(f"Failed to broadcast signal for {symbol}: {e}")
+    # Sort by quality score, send the best one
+    candidates.sort(key=lambda s: s.score, reverse=True)
+    logger.info(
+        f"[SCAN] {len(candidates)} signal(s) found — "
+        + ", ".join(f"{s.symbol}({s.score})" for s in candidates)
+    )
 
-    logger.info(f"[SCAN] Done — {signals_sent} signal(s) sent")
+    best = candidates[0]
+    signal_id = db.save_signal(
+        symbol       = best.symbol,
+        direction    = best.direction,
+        entry_price  = best.entry_price,
+        tp_price     = best.tp_price,
+        sl_price     = best.sl_price,
+        leverage     = best.leverage,
+        generated_at = best.generated_at,
+    )
+    try:
+        await tg.broadcast_signal(app, best, signal_id)
+        logger.info(f"[SCAN] Done — sent {best.symbol} score={best.score}")
+    except Exception as e:
+        logger.error(f"Failed to broadcast signal for {best.symbol}: {e}")
 
 
 # ── outcome checker (wick-based high/low) ─────────────────────────
