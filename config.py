@@ -53,9 +53,8 @@ ZLSMA_CROSS_CONFIRM: int = 2
 # Mode B: how many bars back to search for a CE flip that occurred before the ZLSMA cross
 CE_CROSS_LOOKBACK: int = 15
 
-# Fixed ROI targets (at LEVERAGE)
-TP_ROI_PCT: float = 3.0   # +3% ROI on position
-SL_ROI_PCT: float = 10.0  # -10% ROI on position
+# Risk:Reward ratio — TP = REWARD_RATIO × |entry − CE_stop|
+REWARD_RATIO: float = 2.0
 
 # Max concurrent pending signals in the channel
 MAX_CONCURRENT_SIGNALS: int = 1

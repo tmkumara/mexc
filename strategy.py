@@ -40,7 +40,7 @@ from mexc_client import get_klines
 from config import (
     LEVERAGE, TIMEFRAME,
     ZLSMA_LENGTH, CE_ATR_PERIOD, CE_ATR_MULT,
-    TP_ROI_PCT, SL_ROI_PCT,
+    REWARD_RATIO,
     ZLSMA_SEPARATION_CANDLES, ZLSMA_CROSS_CONFIRM, CE_CROSS_LOOKBACK,
 )
 
@@ -71,10 +71,13 @@ def _zlsma(close: pd.Series, length: int) -> pd.Series:
     return 2 * lsma - lsma2
 
 
-def _chandelier_exit(df: pd.DataFrame, atr_period: int, mult: float) -> pd.Series:
+def _chandelier_exit(
+    df: pd.DataFrame, atr_period: int, mult: float
+) -> tuple[pd.Series, pd.Series, pd.Series]:
     """
-    Returns direction series: 1 = bullish, -1 = bearish.
-    Implements ratcheting stops from the original Lazybear indicator.
+    Returns (direction, long_stop, short_stop).
+    direction: 1 = bullish, -1 = bearish.
+    long_stop / short_stop: ratcheting CE stop levels (used as SL).
     """
     close = df["close"]
     high  = df["high"]
@@ -112,7 +115,7 @@ def _chandelier_exit(df: pd.DataFrame, atr_period: int, mult: float) -> pd.Serie
         else:
             direction.iloc[i] = prev_dir
 
-    return direction.astype(int)
+    return direction.astype(int), long_stop, short_stop
 
 
 # ── Signal mode checks ────────────────────────────────────────────
@@ -223,8 +226,8 @@ def analyze_coin(symbol: str) -> Signal | None:
             logger.debug(f"{symbol}: not enough candles ({len(df)})")
             return None
 
-        zlsma  = _zlsma(df["close"], ZLSMA_LENGTH)
-        ce_dir = _chandelier_exit(df, CE_ATR_PERIOD, CE_ATR_MULT)
+        zlsma                        = _zlsma(df["close"], ZLSMA_LENGTH)
+        ce_dir, ce_long_stop, ce_short_stop = _chandelier_exit(df, CE_ATR_PERIOD, CE_ATR_MULT)
 
         min_idx = 2 + max(ZLSMA_SEPARATION_CANDLES, ZLSMA_CROSS_CONFIRM + CE_CROSS_LOOKBACK)
         if any(pd.isna(v) for v in [zlsma.iloc[-2], zlsma.iloc[-3],
@@ -241,22 +244,33 @@ def analyze_coin(symbol: str) -> Signal | None:
         if direction is None:
             return None
 
-        entry         = float(df["close"].iloc[-2])
-        zlsma_cur     = float(zlsma.iloc[-2])
-        price_move_tp = entry * (TP_ROI_PCT / 100.0 / LEVERAGE)
-        price_move_sl = entry * (SL_ROI_PCT / 100.0 / LEVERAGE)
+        entry     = float(df["close"].iloc[-2])
+        zlsma_cur = float(zlsma.iloc[-2])
+
+        # SL = CE adaptive stop; TP = entry ± REWARD_RATIO × risk
+        if direction == "LONG":
+            sl_price = round(float(ce_long_stop.iloc[-2]), 8)
+            risk     = entry - sl_price
+        else:
+            sl_price = round(float(ce_short_stop.iloc[-2]), 8)
+            risk     = sl_price - entry
+
+        if risk <= 0:
+            logger.debug(f"{symbol}: CE stop on wrong side of entry, skipping")
+            return None
 
         if direction == "LONG":
-            tp_price = round(entry + price_move_tp, 8)
-            sl_price = round(entry - price_move_sl, 8)
+            tp_price = round(entry + REWARD_RATIO * risk, 8)
         else:
-            tp_price = round(entry - price_move_tp, 8)
-            sl_price = round(entry + price_move_sl, 8)
+            tp_price = round(entry - REWARD_RATIO * risk, 8)
+
+        sl_roi = risk / entry * LEVERAGE * 100
+        tp_roi = risk * REWARD_RATIO / entry * LEVERAGE * 100
 
         logger.info(
             f"[SIGNAL/{mode}] {direction} {symbol} @ {entry} | "
-            f"TP={tp_price} (+{TP_ROI_PCT}% ROI) SL={sl_price} (-{SL_ROI_PCT}% ROI) | "
-            f"ZLSMA={zlsma_cur:.6g}"
+            f"SL={sl_price} (-{sl_roi:.1f}% ROI) TP={tp_price} (+{tp_roi:.1f}% ROI) | "
+            f"risk={risk/entry*100:.3f}% ZLSMA={zlsma_cur:.6g}"
         )
 
         return Signal(
@@ -266,8 +280,8 @@ def analyze_coin(symbol: str) -> Signal | None:
             tp_price          = tp_price,
             sl_price          = sl_price,
             leverage          = LEVERAGE,
-            tp_roi_pct        = TP_ROI_PCT,
-            sl_roi_pct        = SL_ROI_PCT,
+            tp_roi_pct        = tp_roi,
+            sl_roi_pct        = sl_roi,
             timeframe_summary = f"ZLSMA({ZLSMA_LENGTH}) + CE({CE_ATR_PERIOD}, {CE_ATR_MULT}) | {TIMEFRAME}",
             generated_at      = datetime.now(timezone.utc),
         )

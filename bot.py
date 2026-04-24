@@ -121,7 +121,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
-    from config import TIMEFRAME, ZLSMA_LENGTH, CE_ATR_PERIOD, CE_ATR_MULT, MAX_CONCURRENT_SIGNALS, TP_ROI_PCT, SL_ROI_PCT
+    from config import TIMEFRAME, ZLSMA_LENGTH, CE_ATR_PERIOD, CE_ATR_MULT, MAX_CONCURRENT_SIGNALS, REWARD_RATIO
     state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
     coins  = coin_scanner.get_cached_coins()
     active = db.count_active_signals()
@@ -132,7 +132,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"State:      `{state}`\n"
         f"Strategy:   `ZLSMA({ZLSMA_LENGTH}) + CE({CE_ATR_PERIOD}, {CE_ATR_MULT})`\n"
         f"Timeframe:  `{TIMEFRAME}`\n"
-        f"TP / SL:    `+{TP_ROI_PCT}% / -{SL_ROI_PCT}% ROI`\n"
+        f"R:R:        `1:{REWARD_RATIO} (CE adaptive stop)`\n"
         f"Active:     `{active}/{MAX_CONCURRENT_SIGNALS}`\n"
         f"Pairs ({len(coins)}): `{pairs_str}`\n"
         f"Time (UTC): `{datetime.now(timezone.utc).strftime('%H:%M')}`"

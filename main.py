@@ -29,8 +29,7 @@ from config import (
     SIGNAL_EXPIRE_HOURS,
     COIN_REFRESH_HOURS,
     MAX_CONCURRENT_SIGNALS,
-    TP_ROI_PCT,
-    SL_ROI_PCT,
+    LEVERAGE,
     TIMEFRAME,
     SCAN_CRON_MINUTES,
     OUTCOME_CHECK_MINUTES,
@@ -146,9 +145,14 @@ async def check_outcomes(app: Application) -> None:
             hit_tp = candle_low  <= tp_price
             hit_sl = candle_high >= sl_price
 
+        entry_p = sig["entry_price"]
+
         # SL wins if both wick touches happen in the same candle
         if hit_sl:
-            pnl = -SL_ROI_PCT
+            if direction == "LONG":
+                pnl = (sl_price - entry_p) / entry_p * LEVERAGE * 100
+            else:
+                pnl = (entry_p - sl_price) / entry_p * LEVERAGE * 100
             db.update_signal_outcome(sig["id"], "loss", pnl)
             logger.info(f"Signal {sig['id']} LOSS ({symbol}) {pnl:.1f}%")
             try:
@@ -157,7 +161,10 @@ async def check_outcomes(app: Application) -> None:
                 logger.error(f"Failed to notify loss for {symbol}: {e}")
 
         elif hit_tp:
-            pnl = TP_ROI_PCT
+            if direction == "LONG":
+                pnl = (tp_price - entry_p) / entry_p * LEVERAGE * 100
+            else:
+                pnl = (entry_p - tp_price) / entry_p * LEVERAGE * 100
             db.update_signal_outcome(sig["id"], "win", pnl)
             logger.info(f"Signal {sig['id']} WIN ({symbol}) +{pnl:.1f}%")
             try:
