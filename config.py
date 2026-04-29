@@ -58,7 +58,7 @@ TP_ROI_PCT: float = 5.0    # gain when TP is hit
 SL_ROI_PCT: float = 10.0   # loss when SL is hit
 
 # ── Scheduler ─────────────────────────────────────────────────────
-SIGNAL_COOLDOWN_MINUTES: int = 60
+SIGNAL_COOLDOWN_MINUTES: int = 30
 SIGNAL_EXPIRE_HOURS:     int = 4
 
 # Max concurrent pending signals in the channel
