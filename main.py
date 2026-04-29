@@ -33,6 +33,9 @@ from config import (
     TIMEFRAME,
     SCAN_CRON_MINUTES,
     OUTCOME_CHECK_MINUTES,
+    CANDLE_MINUTES,
+    TP_ROI_PCT,
+    SL_ROI_PCT,
 )
 
 logging.basicConfig(
@@ -108,7 +111,7 @@ async def scan_and_signal(app: Application) -> None:
         logger.error(f"Failed to broadcast signal for {best.symbol}: {e}")
 
 
-# ── outcome checker (wick-based high/low) ─────────────────────────
+# ── outcome checker (scans all candles since signal) ──────────────
 
 async def check_outcomes(app: Application) -> None:
     pending = db.get_pending_signals()
@@ -133,50 +136,60 @@ async def check_outcomes(app: Application) -> None:
                 logger.error(f"Failed to notify expiry for {symbol}: {e}")
             continue
 
-        # Fetch last completed candle for wick-based detection
+        # Fetch all candles that have closed since the signal was generated
+        elapsed_min = max((now - generated).total_seconds() / 60, CANDLE_MINUTES)
+        fetch_count = int(elapsed_min / CANDLE_MINUTES) + 3
+
         try:
-            df = get_klines(symbol, TIMEFRAME, count=2)
+            df = get_klines(symbol, TIMEFRAME, count=fetch_count)
             if df.empty or len(df) < 2:
                 continue
-            candle_high = float(df["high"].iloc[-2])
-            candle_low  = float(df["low"].iloc[-2])
         except Exception as e:
-            logger.warning(f"Could not fetch candle for {symbol}: {e}")
+            logger.warning(f"Could not fetch candles for {symbol}: {e}")
             continue
 
-        if direction == "LONG":
-            hit_tp = candle_high >= tp_price
-            hit_sl = candle_low  <= sl_price
-        else:
-            hit_tp = candle_low  <= tp_price
-            hit_sl = candle_high >= sl_price
+        # Scan completed candles oldest→newest (exclude iloc[-1] which is still forming).
+        # First candle to touch TP or SL wins.
+        # If both are touched in the same candle, body direction decides:
+        #   bullish candle (close >= open) → price rose first → TP hit first for LONG
+        #   bearish candle (close <  open) → price fell first → SL hit first for LONG
+        outcome = None
+        for i in range(len(df) - 1):
+            h = float(df["high"].iloc[i])
+            l = float(df["low"].iloc[i])
+            o = float(df["open"].iloc[i])
+            c = float(df["close"].iloc[i])
 
-        entry_p = sig["entry_price"]
-
-        # SL wins if both wick touches happen in the same candle
-        if hit_sl:
             if direction == "LONG":
-                pnl = (sl_price - entry_p) / entry_p * LEVERAGE * 100
+                hit_tp = h >= tp_price
+                hit_sl = l <= sl_price
             else:
-                pnl = (entry_p - sl_price) / entry_p * LEVERAGE * 100
-            db.update_signal_outcome(sig["id"], "loss", pnl)
-            logger.info(f"Signal {sig['id']} LOSS ({symbol}) {pnl:.1f}%")
-            try:
-                await tg.notify_outcome(app, {**sig, "status": "loss", "pnl_roi": pnl})
-            except Exception as e:
-                logger.error(f"Failed to notify loss for {symbol}: {e}")
+                hit_tp = l <= tp_price
+                hit_sl = h >= sl_price
 
-        elif hit_tp:
-            if direction == "LONG":
-                pnl = (tp_price - entry_p) / entry_p * LEVERAGE * 100
-            else:
-                pnl = (entry_p - tp_price) / entry_p * LEVERAGE * 100
-            db.update_signal_outcome(sig["id"], "win", pnl)
-            logger.info(f"Signal {sig['id']} WIN ({symbol}) +{pnl:.1f}%")
-            try:
-                await tg.notify_outcome(app, {**sig, "status": "win", "pnl_roi": pnl})
-            except Exception as e:
-                logger.error(f"Failed to notify win for {symbol}: {e}")
+            if hit_tp and hit_sl:
+                if direction == "LONG":
+                    outcome = "win" if c >= o else "loss"
+                else:
+                    outcome = "win" if c <= o else "loss"
+                break
+            elif hit_tp:
+                outcome = "win"
+                break
+            elif hit_sl:
+                outcome = "loss"
+                break
+
+        if outcome is None:
+            continue
+
+        pnl = TP_ROI_PCT if outcome == "win" else -SL_ROI_PCT
+        db.update_signal_outcome(sig["id"], outcome, pnl)
+        logger.info(f"Signal {sig['id']} {outcome.upper()} ({symbol}) {pnl:+.1f}%")
+        try:
+            await tg.notify_outcome(app, {**sig, "status": outcome, "pnl_roi": pnl})
+        except Exception as e:
+            logger.error(f"Failed to notify {outcome} for {symbol}: {e}")
 
 
 # ── main ──────────────────────────────────────────────────────────

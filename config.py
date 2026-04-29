@@ -25,6 +25,10 @@ _TIMEFRAME_CRON: dict[str, str] = {
     "1h":  "1",
     "4h":  "1",
 }
+# Candle duration in minutes
+_CANDLE_MINUTES: dict[str, int] = {
+    "1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240,
+}
 # Outcome-check interval in minutes (check every half-timeframe, min 5m)
 _TIMEFRAME_MINUTES: dict[str, int] = {
     "1m": 1, "5m": 5, "15m": 5, "30m": 10, "1h": 15, "4h": 30,
@@ -35,6 +39,7 @@ if TIMEFRAME not in _TIMEFRAME_CRON:
 
 SCAN_CRON_MINUTES:    str = _TIMEFRAME_CRON[TIMEFRAME]
 OUTCOME_CHECK_MINUTES: int = _TIMEFRAME_MINUTES[TIMEFRAME]
+CANDLE_MINUTES:        int = _CANDLE_MINUTES[TIMEFRAME]
 
 # ── EMA periods ───────────────────────────────────────────────────
 EMA_FAST:  int = 9
