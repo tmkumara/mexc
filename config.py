@@ -13,8 +13,8 @@ TOP_N_COINS: int = 20
 COIN_REFRESH_HOURS: int = 6
 
 # ── Strategy settings ─────────────────────────────────────────────
-LEVERAGE  = 20
-TIMEFRAME = "5m"   # change here → cron and outcome interval update automatically
+LEVERAGE:  int = 20
+TIMEFRAME: str = "15m"  # change here → cron and outcome interval update automatically
 
 # Cron minute string for each supported timeframe (fires just after candle close)
 _TIMEFRAME_CRON: dict[str, str] = {
@@ -36,38 +36,33 @@ if TIMEFRAME not in _TIMEFRAME_CRON:
 SCAN_CRON_MINUTES:    str = _TIMEFRAME_CRON[TIMEFRAME]
 OUTCOME_CHECK_MINUTES: int = _TIMEFRAME_MINUTES[TIMEFRAME]
 
-# ZLSMA (Zero Lag Least Squares Moving Average)
-ZLSMA_LENGTH: int = 200
+# ── EMA periods ───────────────────────────────────────────────────
+EMA_FAST:  int = 9
+EMA_SLOW:  int = 21
+EMA_TREND: int = 200
 
-# Chandelier Exit
-CE_ATR_PERIOD: int   = 1
-CE_ATR_MULT:   float = 2.0
+# ── RSI ───────────────────────────────────────────────────────────
+RSI_PERIOD: int = 14
 
-# ── Signal filter tuning ──────────────────────────────────────────
-# Mode A: previous N candle wicks must not touch ZLSMA (raise to 10 for stricter)
-ZLSMA_SEPARATION_CANDLES: int = 5
+# ── MACD ─────────────────────────────────────────────────────────
+MACD_FAST:          int = 12
+MACD_SLOW:          int = 26
+MACD_SIGNAL_PERIOD: int = 9
 
-# Mode B: consecutive candles above/below ZLSMA required to confirm crossover
-ZLSMA_CROSS_CONFIRM: int = 2
+# ── Volume filter ─────────────────────────────────────────────────
+VOLUME_MA_BARS:  int   = 20
+VOLUME_MIN_MULT: float = 1.5
 
-# Mode B: how many bars back to search for a CE flip that occurred before the ZLSMA cross
-CE_CROSS_LOOKBACK: int = 15
+# ── Fixed ROI targets (on leveraged position) ─────────────────────
+TP_ROI_PCT: float = 5.0    # gain when TP is hit
+SL_ROI_PCT: float = 10.0   # loss when SL is hit
 
-# Risk:Reward ratio — TP = REWARD_RATIO × |entry − CE_stop|
-REWARD_RATIO: float = 2.0
+# ── Scheduler ─────────────────────────────────────────────────────
+SIGNAL_COOLDOWN_MINUTES: int = 60
+SIGNAL_EXPIRE_HOURS:     int = 4
 
 # Max concurrent pending signals in the channel
 MAX_CONCURRENT_SIGNALS: int = 1
-
-# ── Scheduler ─────────────────────────────────────────────────────
-# Same symbol blocked for N minutes after a signal fires
-SIGNAL_COOLDOWN_MINUTES: int = 60
-
-# Pending signals auto-expire after N hours
-SIGNAL_EXPIRE_HOURS: int = 4
-
-# Refresh zero-fee coin list every N hours
-COIN_REFRESH_HOURS: int = 6
 
 # ── MEXC Futures REST API ──────────────────────────────────────────
 MEXC_BASE_URL = "https://contract.mexc.com/api/v1"

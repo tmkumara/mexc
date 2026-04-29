@@ -1,52 +1,45 @@
 """
-ZLSMA + Chandelier Exit strategy — two signal modes.
+EMA Crossover + MACD + RSI scalping strategy.
 
-MODE A — Continuation (CE fires while already above/below ZLSMA):
-  LONG:  CE flips bullish at last candle  AND  close > ZLSMA
-         AND  previous ZLSMA_SEPARATION_CANDLES candle lows all stayed ABOVE ZLSMA
+Entry conditions — all five must be true simultaneously:
 
-  SHORT: CE flips bearish at last candle  AND  close < ZLSMA
-         AND  previous ZLSMA_SEPARATION_CANDLES candle highs all stayed BELOW ZLSMA
+  LONG:  EMA(9) crosses above EMA(21) on last completed candle
+         close > EMA(200)              [uptrend filter]
+         RSI(14) > 50                  [bullish momentum]
+         MACD histogram > 0            [MACD above signal line]
+         volume >= VOLUME_MIN_MULT × 20-bar MA
 
-MODE B — Crossover confirmation (CE fires first, ZLSMA crossover follows):
-  LONG:  CE flipped bullish within last CE_CROSS_LOOKBACK bars while close was BELOW ZLSMA
-         AND  last ZLSMA_CROSS_CONFIRM candles all have close ABOVE ZLSMA (confirmed cross)
-         AND  CE direction is currently still bullish
+  SHORT: EMA(9) crosses below EMA(21) on last completed candle
+         close < EMA(200)              [downtrend filter]
+         RSI(14) < 50                  [bearish momentum]
+         MACD histogram < 0            [MACD below signal line]
+         volume >= VOLUME_MIN_MULT × 20-bar MA
 
-  SHORT: CE flipped bearish within last CE_CROSS_LOOKBACK bars while close was ABOVE ZLSMA
-         AND  last ZLSMA_CROSS_CONFIRM candles all have close BELOW ZLSMA
-         AND  CE direction is currently still bearish
-
-Either mode passing triggers a signal. Mode A is checked first.
-
-Indicators:
-  ZLSMA(200) — lsma = linreg(close,200); zlsma = 2*lsma - linreg(lsma,200)
-  CE(1, 2.0) — Chandelier Exit, ATR period=1, multiplier=2.0, ratcheting stops
-
-Risk management:
-  TP = entry ± (TP_ROI_PCT / 100 / LEVERAGE) × entry
-  SL = entry ∓ (SL_ROI_PCT / 100 / LEVERAGE) × entry
+Risk management (fixed ROI, leverage-adjusted):
+  TP = entry × (1 ± TP_ROI_PCT / 100 / LEVERAGE)
+  SL = entry × (1 ∓ SL_ROI_PCT / 100 / LEVERAGE)
 """
 
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-import numpy as np
 import pandas as pd
 import pandas_ta as ta  # noqa: F401
 
 from mexc_client import get_klines
 from config import (
     LEVERAGE, TIMEFRAME,
-    ZLSMA_LENGTH, CE_ATR_PERIOD, CE_ATR_MULT,
-    REWARD_RATIO,
-    ZLSMA_SEPARATION_CANDLES, ZLSMA_CROSS_CONFIRM, CE_CROSS_LOOKBACK,
+    EMA_FAST, EMA_SLOW, EMA_TREND,
+    RSI_PERIOD,
+    MACD_FAST, MACD_SLOW, MACD_SIGNAL_PERIOD,
+    VOLUME_MA_BARS, VOLUME_MIN_MULT,
+    TP_ROI_PCT, SL_ROI_PCT,
 )
 
 logger = logging.getLogger(__name__)
 
-KLINE_COUNT = ZLSMA_LENGTH * 2 + 50
+KLINE_COUNT = EMA_TREND + 100  # 300 candles — covers EMA(200) warm-up
 
 
 @dataclass
@@ -61,242 +54,98 @@ class Signal:
     sl_roi_pct:        float
     timeframe_summary: str
     generated_at:      datetime
-    score:             float = 0.0   # 0–100 quality score
-    signal_mode:       str   = "A"   # "A" = continuation, "B" = crossover
+    score:             float = 0.0
 
-
-# ── Indicator helpers ─────────────────────────────────────────────
-
-def _zlsma(close: pd.Series, length: int) -> pd.Series:
-    lsma  = ta.linreg(close, length=length)
-    lsma2 = ta.linreg(lsma,  length=length)
-    return 2 * lsma - lsma2
-
-
-def _chandelier_exit(
-    df: pd.DataFrame, atr_period: int, mult: float
-) -> tuple[pd.Series, pd.Series, pd.Series]:
-    """
-    Returns (direction, long_stop, short_stop).
-    direction: 1 = bullish, -1 = bearish.
-    long_stop / short_stop: ratcheting CE stop levels (used as SL).
-    """
-    close = df["close"]
-    high  = df["high"]
-    low   = df["low"]
-
-    atr = ta.atr(high, low, close, length=atr_period)
-
-    raw_long_stop  = close.rolling(atr_period).max() - mult * atr
-    raw_short_stop = close.rolling(atr_period).min() + mult * atr
-
-    n          = len(df)
-    long_stop  = raw_long_stop.copy()
-    short_stop = raw_short_stop.copy()
-    direction  = pd.Series(np.ones(n, dtype=float), index=df.index)
-
-    for i in range(1, n):
-        if pd.notna(long_stop.iloc[i]) and pd.notna(long_stop.iloc[i - 1]):
-            if close.iloc[i - 1] > long_stop.iloc[i - 1]:
-                long_stop.iloc[i] = max(long_stop.iloc[i], long_stop.iloc[i - 1])
-
-        if pd.notna(short_stop.iloc[i]) and pd.notna(short_stop.iloc[i - 1]):
-            if close.iloc[i - 1] < short_stop.iloc[i - 1]:
-                short_stop.iloc[i] = min(short_stop.iloc[i], short_stop.iloc[i - 1])
-
-        prev_long  = long_stop.iloc[i - 1]
-        prev_short = short_stop.iloc[i - 1]
-        prev_dir   = direction.iloc[i - 1]
-
-        if pd.isna(prev_long) or pd.isna(prev_short):
-            direction.iloc[i] = prev_dir
-        elif close.iloc[i] > prev_short:
-            direction.iloc[i] = 1
-        elif close.iloc[i] < prev_long:
-            direction.iloc[i] = -1
-        else:
-            direction.iloc[i] = prev_dir
-
-    return direction.astype(int), long_stop, short_stop
-
-
-# ── Signal mode checks ────────────────────────────────────────────
-
-def _check_mode_a(df: pd.DataFrame, zlsma: pd.Series, ce_dir: pd.Series) -> str | None:
-    """
-    Mode A: CE flips at the last completed candle while price is already
-    on the correct side of ZLSMA, with clean separation for previous N candles.
-    Returns 'LONG', 'SHORT', or None.
-    """
-    dir_cur  = int(ce_dir.iloc[-2])
-    dir_prev = int(ce_dir.iloc[-3])
-
-    flipped_bullish = (dir_prev == -1) and (dir_cur == 1)
-    flipped_bearish = (dir_prev ==  1) and (dir_cur == -1)
-
-    if not flipped_bullish and not flipped_bearish:
-        return None
-
-    close_cur = float(df["close"].iloc[-2])
-    zlsma_cur = float(zlsma.iloc[-2])
-
-    if flipped_bullish and close_cur > zlsma_cur:
-        direction = "LONG"
-    elif flipped_bearish and close_cur < zlsma_cur:
-        direction = "SHORT"
-    else:
-        return None
-
-    # Separation filter: previous N candle wicks must not touch ZLSMA
-    for lookback in range(3, 3 + ZLSMA_SEPARATION_CANDLES):
-        z = float(zlsma.iloc[-lookback])
-        if pd.isna(z):
-            return None
-        if direction == "LONG" and float(df["low"].iloc[-lookback]) <= z:
-            logger.debug(f"Mode A LONG sep fail at -{lookback}")
-            return None
-        if direction == "SHORT" and float(df["high"].iloc[-lookback]) >= z:
-            logger.debug(f"Mode A SHORT sep fail at -{lookback}")
-            return None
-
-    return direction
-
-
-def _check_mode_b(df: pd.DataFrame, zlsma: pd.Series, ce_dir: pd.Series) -> str | None:
-    """
-    Mode B: CE flipped while price was on the wrong side of ZLSMA (CE first),
-    followed by ZLSMA_CROSS_CONFIRM consecutive candles confirmed on the correct side.
-    Returns 'LONG', 'SHORT', or None.
-    """
-    # CE must currently be pointing in a direction
-    cur_ce = int(ce_dir.iloc[-2])
-
-    for signal_dir, ce_signal, zlsma_side in [
-        ("LONG",  1, lambda c, z: c > z),
-        ("SHORT", -1, lambda c, z: c < z),
-    ]:
-        if cur_ce != ce_signal:
-            continue
-
-        # Last ZLSMA_CROSS_CONFIRM candles must all be on correct side of ZLSMA
-        confirmed = True
-        for i in range(2, 2 + ZLSMA_CROSS_CONFIRM):
-            if pd.isna(zlsma.iloc[-i]):
-                confirmed = False
-                break
-            if not zlsma_side(float(df["close"].iloc[-i]), float(zlsma.iloc[-i])):
-                confirmed = False
-                break
-        if not confirmed:
-            continue
-
-        # Search back from before the confirmation window for a CE flip
-        # that occurred while price was on the OPPOSITE side of ZLSMA
-        start = 2 + ZLSMA_CROSS_CONFIRM
-        for k in range(start, start + CE_CROSS_LOOKBACK):
-            if k + 1 >= len(df):
-                break
-            if any(pd.isna(v) for v in [
-                ce_dir.iloc[-k], ce_dir.iloc[-(k + 1)], zlsma.iloc[-k]
-            ]):
-                break
-
-            ce_k      = int(ce_dir.iloc[-k])
-            ce_k_prev = int(ce_dir.iloc[-(k + 1)])
-            flipped   = (ce_k == ce_signal) and (ce_k_prev == -ce_signal)
-
-            if flipped:
-                # Flip must have occurred while price was on the OPPOSITE side
-                close_at_flip = float(df["close"].iloc[-k])
-                zlsma_at_flip = float(zlsma.iloc[-k])
-                wrong_side = not zlsma_side(close_at_flip, zlsma_at_flip)
-                if wrong_side:
-                    return signal_dir
-                # Found a flip but it was on the correct side already → stop search
-                break
-
-    return None
-
-
-# ── Main analysis ─────────────────────────────────────────────────
 
 def analyze_coin(symbol: str) -> Signal | None:
-    """Run ZLSMA + CE analysis (Mode A and B). Returns first matching Signal, else None."""
+    """Run EMA crossover + MACD + RSI analysis. Returns Signal or None."""
     try:
         df = get_klines(symbol, TIMEFRAME, count=KLINE_COUNT)
-        if df.empty or len(df) < ZLSMA_LENGTH * 2 + 10:
+        if df.empty or len(df) < EMA_TREND + 50:
             logger.debug(f"{symbol}: not enough candles ({len(df)})")
             return None
 
-        zlsma                        = _zlsma(df["close"], ZLSMA_LENGTH)
-        ce_dir, ce_long_stop, ce_short_stop = _chandelier_exit(df, CE_ATR_PERIOD, CE_ATR_MULT)
+        close  = df["close"]
+        volume = df["volume"]
 
-        min_idx = 2 + max(ZLSMA_SEPARATION_CANDLES, ZLSMA_CROSS_CONFIRM + CE_CROSS_LOOKBACK)
-        if any(pd.isna(v) for v in [zlsma.iloc[-2], zlsma.iloc[-3],
-                                     ce_dir.iloc[-2], ce_dir.iloc[-3]]):
+        ema_fast  = ta.ema(close, length=EMA_FAST)
+        ema_slow  = ta.ema(close, length=EMA_SLOW)
+        ema_trend = ta.ema(close, length=EMA_TREND)
+        rsi       = ta.rsi(close, length=RSI_PERIOD)
+        macd_df   = ta.macd(close, fast=MACD_FAST, slow=MACD_SLOW, signal=MACD_SIGNAL_PERIOD)
+        hist_col  = f"MACDh_{MACD_FAST}_{MACD_SLOW}_{MACD_SIGNAL_PERIOD}"
+        macd_hist = macd_df[hist_col]
+
+        required = [
+            ema_fast.iloc[-2],  ema_fast.iloc[-3],
+            ema_slow.iloc[-2],  ema_slow.iloc[-3],
+            ema_trend.iloc[-2],
+            rsi.iloc[-2],
+            macd_hist.iloc[-2],
+        ]
+        if any(pd.isna(v) for v in required):
             return None
 
-        # Try Mode A first, then Mode B
-        direction = _check_mode_a(df, zlsma, ce_dir)
-        mode = "A"
-        if direction is None:
-            direction = _check_mode_b(df, zlsma, ce_dir)
-            mode = "B"
+        # Use iloc[-2]: last completed candle; iloc[-1] is still forming
+        ef_cur  = float(ema_fast.iloc[-2])
+        ef_prev = float(ema_fast.iloc[-3])
+        es_cur  = float(ema_slow.iloc[-2])
+        es_prev = float(ema_slow.iloc[-3])
+        et      = float(ema_trend.iloc[-2])
+        rsi_cur = float(rsi.iloc[-2])
+        hist    = float(macd_hist.iloc[-2])
+        entry   = float(close.iloc[-2])
+        vol_ma  = float(volume.rolling(VOLUME_MA_BARS).mean().iloc[-2])
+        vol_cur = float(volume.iloc[-2])
 
-        if direction is None:
-            return None
+        crossed_up   = (ef_prev <= es_prev) and (ef_cur > es_cur)
+        crossed_down = (ef_prev >= es_prev) and (ef_cur < es_cur)
 
-        entry     = float(df["close"].iloc[-2])
-        zlsma_cur = float(zlsma.iloc[-2])
-
-        # SL = CE adaptive stop; TP = entry ± REWARD_RATIO × risk
-        if direction == "LONG":
-            sl_price = round(float(ce_long_stop.iloc[-2]), 8)
-            risk     = entry - sl_price
+        if   crossed_up   and entry > et and rsi_cur > 50 and hist > 0:
+            direction = "LONG"
+        elif crossed_down and entry < et and rsi_cur < 50 and hist < 0:
+            direction = "SHORT"
         else:
-            sl_price = round(float(ce_short_stop.iloc[-2]), 8)
-            risk     = sl_price - entry
-
-        if risk <= 0:
-            logger.debug(f"{symbol}: CE stop on wrong side of entry, skipping")
             return None
 
-        if direction == "LONG":
-            tp_price = round(entry + REWARD_RATIO * risk, 8)
-        else:
-            tp_price = round(entry - REWARD_RATIO * risk, 8)
+        if vol_ma > 0 and vol_cur < VOLUME_MIN_MULT * vol_ma:
+            logger.debug(f"{symbol}: volume filter fail ({vol_cur:.0f} < {VOLUME_MIN_MULT}×{vol_ma:.0f})")
+            return None
 
-        sl_roi = risk / entry * LEVERAGE * 100
-        tp_roi = risk * REWARD_RATIO / entry * LEVERAGE * 100
+        # Fixed ROI TP/SL (leverage-adjusted price levels)
+        roi_tp_frac = TP_ROI_PCT / 100 / LEVERAGE
+        roi_sl_frac = SL_ROI_PCT / 100 / LEVERAGE
+        if direction == "LONG":
+            tp_price = round(entry * (1 + roi_tp_frac), 8)
+            sl_price = round(entry * (1 - roi_sl_frac), 8)
+        else:
+            tp_price = round(entry * (1 - roi_tp_frac), 8)
+            sl_price = round(entry * (1 + roi_sl_frac), 8)
 
         # ── Multi-factor quality score (0–100) ────────────────────
-        # Factor 1 — ZLSMA separation (35%): how far price is from ZLSMA
-        sep_pct   = abs(entry - zlsma_cur) / entry * 100
-        sep_score = min(sep_pct / 2.0, 1.0)          # 2% separation = max
+        # Factor 1 — MACD histogram strength (35%)
+        hist_score = min(abs(hist) / (entry * 0.001), 1.0)
 
-        # Factor 2 — CE stop width (25%): wider ATR stop = stronger move
-        risk_pct   = risk / entry * 100
-        risk_score = min(risk_pct / 1.0, 1.0)         # 1% CE distance = max
+        # Factor 2 — RSI distance from 50 (25%)
+        rsi_score = min(abs(rsi_cur - 50) / 30.0, 1.0)
 
-        # Factor 3 — Signal mode (20%): Mode A (established) > Mode B (crossover)
-        mode_score = 1.0 if mode == "A" else 0.5
+        # Factor 3 — EMA(fast/slow) spread as % of price (20%)
+        spread_score = min(abs(ef_cur - es_cur) / entry * 100 / 0.5, 1.0)
 
-        # Factor 4 — Volume vs 20-bar MA (20%): genuine participation
-        vol_ma = df["volume"].rolling(20).mean().iloc[-2]
-        vol_cur = float(df["volume"].iloc[-2])
-        vol_ratio = (vol_cur / vol_ma) if vol_ma > 0 else 1.0
-        vol_score = min(vol_ratio / 3.0, 1.0)          # 3× MA = max
+        # Factor 4 — Volume ratio vs MA (20%)
+        vol_ratio  = (vol_cur / vol_ma) if vol_ma > 0 else 1.0
+        vol_score  = min(vol_ratio / 3.0, 1.0)
 
         score = round(
-            (0.35 * sep_score + 0.25 * risk_score +
-             0.20 * mode_score + 0.20 * vol_score) * 100,
+            (0.35 * hist_score + 0.25 * rsi_score +
+             0.20 * spread_score + 0.20 * vol_score) * 100,
             1,
         )
 
         logger.info(
-            f"[SIGNAL/{mode}] {direction} {symbol} @ {entry} | "
-            f"SL={sl_price} (-{sl_roi:.1f}%) TP={tp_price} (+{tp_roi:.1f}%) | "
-            f"score={score} sep={sep_pct:.3f}% risk={risk_pct:.3f}% vol={vol_ratio:.1f}x"
+            f"[SIGNAL] {direction} {symbol} @ {entry} | "
+            f"SL={sl_price} (-{SL_ROI_PCT}% ROI) TP={tp_price} (+{TP_ROI_PCT}% ROI) | "
+            f"score={score} RSI={rsi_cur:.1f} MACDh={hist:.6f} vol={vol_ratio:.1f}x"
         )
 
         return Signal(
@@ -306,12 +155,15 @@ def analyze_coin(symbol: str) -> Signal | None:
             tp_price          = tp_price,
             sl_price          = sl_price,
             leverage          = LEVERAGE,
-            tp_roi_pct        = tp_roi,
-            sl_roi_pct        = sl_roi,
-            timeframe_summary = f"ZLSMA({ZLSMA_LENGTH}) + CE({CE_ATR_PERIOD}, {CE_ATR_MULT}) | {TIMEFRAME}",
+            tp_roi_pct        = TP_ROI_PCT,
+            sl_roi_pct        = SL_ROI_PCT,
+            timeframe_summary = (
+                f"EMA({EMA_FAST}/{EMA_SLOW}/{EMA_TREND}) + "
+                f"MACD({MACD_FAST},{MACD_SLOW},{MACD_SIGNAL_PERIOD}) + "
+                f"RSI({RSI_PERIOD}) | {TIMEFRAME}"
+            ),
             generated_at      = datetime.now(timezone.utc),
             score             = score,
-            signal_mode       = mode,
         )
 
     except Exception as e:

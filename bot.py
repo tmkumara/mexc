@@ -34,7 +34,6 @@ def format_signal(signal, signal_id: int) -> str:
     coin  = signal.symbol.replace("_", "/")
 
     stars = "⭐⭐⭐" if signal.score >= 80 else "⭐⭐" if signal.score >= 55 else "⭐"
-    mode_label = "Continuation" if signal.signal_mode == "A" else "Crossover"
 
     return "\n".join([
         f"{arrow} — *{coin}* Futures",
@@ -44,7 +43,7 @@ def format_signal(signal, signal_id: int) -> str:
         f"🛑 SL:       `${signal.sl_price:,.6g}`  _(-{signal.sl_roi_pct:.1f}% ROI)_",
         f"⚡ Leverage: `{signal.leverage}x`  _(Isolated)_",
         f"📊 {signal.timeframe_summary}",
-        f"🏅 Quality:  `{signal.score}/100`  {stars}  _{mode_label}_",
+        f"🏅 Quality:  `{signal.score}/100`  {stars}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"⏰ `{signal.generated_at.strftime('%Y-%m-%d %H:%M UTC')}`",
         f"🆔 Signal ID: `{signal_id}`",
@@ -125,7 +124,12 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
-    from config import TIMEFRAME, ZLSMA_LENGTH, CE_ATR_PERIOD, CE_ATR_MULT, MAX_CONCURRENT_SIGNALS, REWARD_RATIO
+    from config import (
+        TIMEFRAME, MAX_CONCURRENT_SIGNALS,
+        EMA_FAST, EMA_SLOW, EMA_TREND,
+        MACD_FAST, MACD_SLOW, MACD_SIGNAL_PERIOD,
+        RSI_PERIOD, TP_ROI_PCT, SL_ROI_PCT, LEVERAGE,
+    )
     state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
     coins  = coin_scanner.get_cached_coins()
     active = db.count_active_signals()
@@ -134,9 +138,10 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `ZLSMA({ZLSMA_LENGTH}) + CE({CE_ATR_PERIOD}, {CE_ATR_MULT})`\n"
+        f"Strategy:   `EMA({EMA_FAST}/{EMA_SLOW}/{EMA_TREND}) + MACD({MACD_FAST},{MACD_SLOW},{MACD_SIGNAL_PERIOD}) + RSI({RSI_PERIOD})`\n"
         f"Timeframe:  `{TIMEFRAME}`\n"
-        f"R:R:        `1:{REWARD_RATIO} (CE adaptive stop)`\n"
+        f"Leverage:   `{LEVERAGE}x`\n"
+        f"TP / SL:    `+{TP_ROI_PCT}% / -{SL_ROI_PCT}% ROI`\n"
         f"Active:     `{active}/{MAX_CONCURRENT_SIGNALS}`\n"
         f"Pairs ({len(coins)}): `{pairs_str}`\n"
         f"Time (UTC): `{datetime.now(timezone.utc).strftime('%H:%M')}`"

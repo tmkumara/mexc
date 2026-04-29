@@ -2,7 +2,7 @@
 Main entry point.
 
 Scheduler jobs:
-  • Every 5m (:01,:06,:11,...,:56) → scan all pairs for ZLSMA+CE signals
+  • Every 15m (:01,:16,:31,:46)    → scan all pairs for EMA+MACD+RSI signals
   • Every 5 min                    → check pending signal outcomes (wick-based TP/SL)
   • 23:55 daily                    → post daily report
   • Mon 07:00                      → post weekly report
@@ -182,7 +182,7 @@ async def check_outcomes(app: Application) -> None:
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot (ZLSMA+CE strategy)...")
+    logger.info("Starting MEXC Signal Bot (EMA+MACD+RSI strategy)...")
 
     db.init_db()
 
@@ -228,7 +228,7 @@ async def main():
     scheduler.add_job(_monthly, CronTrigger(day=1, hour=7), id="monthly_report")
 
     scheduler.start()
-    logger.info(f"Scheduler started. Watching {len(coins)} pairs on 5m.")
+    logger.info(f"Scheduler started. Watching {len(coins)} pairs on {TIMEFRAME}.")
 
     async with app:
         await app.initialize()
