@@ -71,6 +71,9 @@ async def scan_and_signal(app: Application) -> None:
     now            = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
 
+    btc_bias = strategy.get_btc_bias()
+    logger.info(f"[SCAN] BTC macro bias: {btc_bias or 'unavailable (filter bypassed)'}")
+
     logger.info(f"[SCAN] Scanning all {len(pairs)} pairs...")
 
     # Collect every signal that fires this scan
@@ -81,6 +84,9 @@ async def scan_and_signal(app: Application) -> None:
             continue
         sig = strategy.analyze_coin(symbol)
         if sig is not None:
+            if btc_bias is not None and sig.direction != btc_bias:
+                logger.debug(f"[SCAN] {symbol}: {sig.direction} filtered (BTC bias={btc_bias})")
+                continue
             candidates.append(sig)
 
     if not candidates:

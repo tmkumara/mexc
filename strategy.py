@@ -41,6 +41,8 @@ logger = logging.getLogger(__name__)
 
 KLINE_COUNT = EMA_TREND + 100  # 300 candles — covers EMA(200) warm-up
 
+BTC_EMA_PROXIMITY_PCT: float = 0.005  # 0.5% band around EMA(200) — treated as ambiguous
+
 
 @dataclass
 class Signal:
@@ -168,4 +170,38 @@ def analyze_coin(symbol: str) -> Signal | None:
 
     except Exception as e:
         logger.error(f"Error analyzing {symbol}: {e}", exc_info=True)
+        return None
+
+
+def get_btc_bias() -> str | None:
+    """
+    Return "LONG" if BTC is above its EMA(200), "SHORT" if below.
+    Returns None when data is unavailable or BTC is within BTC_EMA_PROXIMITY_PCT
+    of EMA(200) (transitional zone). None = fail-open: caller must not block signals.
+    """
+    try:
+        df = get_klines("BTC_USDT", TIMEFRAME, count=KLINE_COUNT)
+        if df.empty or len(df) < EMA_TREND + 50:
+            logger.warning("get_btc_bias: insufficient BTC klines")
+            return None
+
+        btc_ema200 = ta.ema(df["close"], length=EMA_TREND)
+        if pd.isna(btc_ema200.iloc[-2]):
+            logger.warning("get_btc_bias: BTC EMA(200) is NaN")
+            return None
+
+        btc_close = float(df["close"].iloc[-2])
+        ema_val   = float(btc_ema200.iloc[-2])
+
+        proximity = abs(btc_close - ema_val) / ema_val
+        if proximity < BTC_EMA_PROXIMITY_PCT:
+            logger.debug(f"get_btc_bias: BTC within {BTC_EMA_PROXIMITY_PCT*100:.1f}% of EMA(200) — ambiguous")
+            return None
+
+        bias = "LONG" if btc_close > ema_val else "SHORT"
+        logger.debug(f"get_btc_bias: {bias} (BTC={btc_close:.2f} EMA200={ema_val:.2f} gap={proximity*100:.2f}%)")
+        return bias
+
+    except Exception as e:
+        logger.error(f"get_btc_bias error: {e}", exc_info=True)
         return None

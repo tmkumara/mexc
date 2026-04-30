@@ -9,7 +9,7 @@ TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 
 # ── Coin scanner ─────────────────────────────────────────────────
 EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT"}
-TOP_N_COINS: int = 20
+TOP_N_COINS: int = 50
 COIN_REFRESH_HOURS: int = 6
 
 # ── Strategy settings ─────────────────────────────────────────────
@@ -67,7 +67,7 @@ SIGNAL_COOLDOWN_MINUTES: int = 30
 SIGNAL_EXPIRE_HOURS:     int = 4
 
 # Max concurrent pending signals in the channel
-MAX_CONCURRENT_SIGNALS: int = 1
+MAX_CONCURRENT_SIGNALS: int = 3
 
 # ── MEXC Futures REST API ──────────────────────────────────────────
 MEXC_BASE_URL = "https://contract.mexc.com/api/v1"
