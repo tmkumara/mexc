@@ -8,7 +8,7 @@ TELEGRAM_TOKEN      = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 
 # ── Coin scanner ─────────────────────────────────────────────────
-EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT"}
+EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
 TOP_N_COINS: int = 50
 COIN_REFRESH_HOURS: int = 6
 
