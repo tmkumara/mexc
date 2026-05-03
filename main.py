@@ -2,8 +2,9 @@
 Main entry point.
 
 Scheduler jobs:
-  • Every 15m (:01,:16,:31,:46)    → scan all pairs for EMA+MACD+RSI signals
+  • Every 15m (:01,:16,:31,:46)    → scan RSI-selected pairs for Fibonacci+EMA+MACD+RSI signals
   • Every 5 min                    → check pending signal outcomes (wick-based TP/SL)
+  • Every 4h                       → refresh RSI-ranked coin list
   • 23:55 daily                    → post daily report
   • Mon 07:00                      → post weekly report
   • 1st 07:00                      → post monthly report
@@ -34,8 +35,6 @@ from config import (
     SCAN_CRON_MINUTES,
     OUTCOME_CHECK_MINUTES,
     CANDLE_MINUTES,
-    TP_ROI_PCT,
-    SL_ROI_PCT,
 )
 
 logging.basicConfig(
@@ -64,36 +63,41 @@ async def scan_and_signal(app: Application) -> None:
     active = db.count_active_signals()
     slots  = MAX_CONCURRENT_SIGNALS - active
     if slots <= 0:
-        logger.info(f"[SCAN] {active}/{MAX_CONCURRENT_SIGNALS} active signal, skipping")
+        logger.info(f"[SCAN] {active}/{MAX_CONCURRENT_SIGNALS} active signals, skipping")
         return
 
-    pairs          = coin_scanner.get_cached_coins()
+    # RSI-ranked coin dict: {symbol: "LONG" | "SHORT"}
+    coin_bias = coin_scanner.get_cached_coins()
+    if not coin_bias:
+        logger.warning("[SCAN] No RSI-ranked coins available, skipping")
+        return
+
     now            = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
 
+    # BTC macro bias — log only, soft check (RSI bias is the primary gate)
     btc_bias = strategy.get_btc_bias()
-    logger.info(f"[SCAN] BTC macro bias: {btc_bias or 'unavailable (filter bypassed)'}")
+    logger.info(f"[SCAN] BTC macro: {btc_bias or 'unavailable'} | "
+                f"Scanning {len(coin_bias)} RSI-ranked pairs...")
 
-    logger.info(f"[SCAN] Scanning all {len(pairs)} pairs...")
-
-    # Collect every signal that fires this scan
     candidates = []
-    for symbol in pairs:
+    for symbol, direction in coin_bias.items():
         if db.signal_exists_for_coin(symbol, cooldown_since):
             logger.debug(f"[SCAN] {symbol}: cooldown active, skipping")
             continue
-        sig = strategy.analyze_coin(symbol)
+
+        # Soft BTC alignment check — log mismatch but don't hard-block
+        if btc_bias is not None and direction != btc_bias:
+            logger.debug(f"[SCAN] {symbol}: {direction} vs BTC {btc_bias} — proceeding anyway")
+
+        sig = strategy.analyze_coin(symbol, direction)
         if sig is not None:
-            if btc_bias is not None and sig.direction != btc_bias:
-                logger.debug(f"[SCAN] {symbol}: {sig.direction} filtered (BTC bias={btc_bias})")
-                continue
             candidates.append(sig)
 
     if not candidates:
         logger.info("[SCAN] Done — 0 signals found")
         return
 
-    # Sort by quality score, send the best one
     candidates.sort(key=lambda s: s.score, reverse=True)
     logger.info(
         f"[SCAN] {len(candidates)} signal(s) found — "
@@ -128,6 +132,7 @@ async def check_outcomes(app: Application) -> None:
         direction = sig["direction"]
         tp_price  = sig["tp_price"]
         sl_price  = sig["sl_price"]
+        entry_p   = sig["entry_price"]
         generated = datetime.fromisoformat(sig["generated_at"])
         if generated.tzinfo is None:
             generated = generated.replace(tzinfo=timezone.utc)
@@ -154,13 +159,20 @@ async def check_outcomes(app: Application) -> None:
             logger.warning(f"Could not fetch candles for {symbol}: {e}")
             continue
 
+        # Cutoff: skip the entry candle and any older candles.
+        # df.index is a UTC DatetimeIndex of candle open times.
+        entry_candle_cutoff = generated - timedelta(minutes=CANDLE_MINUTES)
+
         # Scan completed candles oldest→newest (exclude iloc[-1] which is still forming).
         # First candle to touch TP or SL wins.
-        # If both are touched in the same candle, body direction decides:
-        #   bullish candle (close >= open) → price rose first → TP hit first for LONG
-        #   bearish candle (close <  open) → price fell first → SL hit first for LONG
+        # If both touched in same candle, body direction decides:
+        #   bullish (close >= open) → price rose first → TP wins for LONG
+        #   bearish (close <  open) → price fell first → SL wins for LONG
         outcome = None
         for i in range(len(df) - 1):
+            if df.index[i] <= entry_candle_cutoff:
+                continue   # skip entry candle and older — only check new candles
+
             h = float(df["high"].iloc[i])
             l = float(df["low"].iloc[i])
             o = float(df["open"].iloc[i])
@@ -174,10 +186,7 @@ async def check_outcomes(app: Application) -> None:
                 hit_sl = h >= sl_price
 
             if hit_tp and hit_sl:
-                if direction == "LONG":
-                    outcome = "win" if c >= o else "loss"
-                else:
-                    outcome = "win" if c <= o else "loss"
+                outcome = ("win" if c >= o else "loss") if direction == "LONG" else ("win" if c <= o else "loss")
                 break
             elif hit_tp:
                 outcome = "win"
@@ -189,7 +198,12 @@ async def check_outcomes(app: Application) -> None:
         if outcome is None:
             continue
 
-        pnl = TP_ROI_PCT if outcome == "win" else -SL_ROI_PCT
+        # Price-based pnl (dynamic — works with Fibonacci TP/SL)
+        if outcome == "win":
+            pnl = abs(tp_price - entry_p) / entry_p * LEVERAGE * 100
+        else:
+            pnl = -abs(sl_price - entry_p) / entry_p * LEVERAGE * 100
+
         db.update_signal_outcome(sig["id"], outcome, pnl)
         logger.info(f"Signal {sig['id']} {outcome.upper()} ({symbol}) {pnl:+.1f}%")
         try:
@@ -201,34 +215,32 @@ async def check_outcomes(app: Application) -> None:
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot (EMA+MACD+RSI strategy)...")
+    logger.info("Starting MEXC Signal Bot (RSI heatmap + Fibonacci + EMA/MACD/RSI)...")
 
     db.init_db()
 
-    logger.info("Loading zero-fee coin list...")
-    coins = coin_scanner.get_zero_fee_coins()
-    logger.info(f"Tracking {len(coins)} pairs: {coins}")
+    logger.info("Loading RSI-ranked coin list...")
+    coin_bias = coin_scanner.get_rsi_ranked_coins()
+    logger.info(f"Tracking {len(coin_bias)} pairs: {dict(coin_bias)}")
 
     app = tg.build_app()
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # Scan just after each candle close — interval driven by TIMEFRAME in config.py
     scheduler.add_job(
         scan_and_signal,
         CronTrigger(minute=SCAN_CRON_MINUTES),
         args=[app], id="scanner",
     )
 
-    # Check outcomes — interval driven by TIMEFRAME in config.py
     scheduler.add_job(
         check_outcomes, IntervalTrigger(minutes=OUTCOME_CHECK_MINUTES),
         args=[app], id="outcome_checker",
     )
 
-    # Refresh zero-fee coin list every N hours
+    # Refresh RSI-ranked coin list every COIN_REFRESH_HOURS
     scheduler.add_job(
-        coin_scanner.get_zero_fee_coins,
+        coin_scanner.get_rsi_ranked_coins,
         CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
         id="coin_refresh",
     )
@@ -247,7 +259,7 @@ async def main():
     scheduler.add_job(_monthly, CronTrigger(day=1, hour=7), id="monthly_report")
 
     scheduler.start()
-    logger.info(f"Scheduler started. Watching {len(coins)} pairs on {TIMEFRAME}.")
+    logger.info(f"Scheduler started. {len(coin_bias)} RSI-ranked pairs on {TIMEFRAME}.")
 
     async with app:
         await app.initialize()

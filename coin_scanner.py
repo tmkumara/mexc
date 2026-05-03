@@ -1,15 +1,23 @@
 """
-Fetches top N zero-fee USDT-margined perpetual contracts from MEXC,
-sorted by 24h volume. Refreshed every COIN_REFRESH_HOURS hours.
+RSI-based coin selection: fetches 4h RSI for all zero-fee USDT perpetuals,
+returns the top N most oversold (LONG) and top N most overbought (SHORT).
+Refreshed every COIN_REFRESH_HOURS hours.
 """
 
 import logging
-from mexc_client import get_all_contracts, get_tickers
-from config import EXCLUDE_COINS, TOP_N_COINS
+import pandas_ta as ta
+
+from mexc_client import get_all_contracts, get_tickers, get_klines
+from config import (
+    EXCLUDE_COINS,
+    RSI_HTF, RSI_PERIOD_HTF,
+    RSI_OVERSOLD_MAX, RSI_OVERBOUGHT_MIN, RSI_TOP_N_EACH,
+)
 
 logger = logging.getLogger(__name__)
 
-_cached_coins: list[str] = []
+# Cache: {symbol: "LONG" | "SHORT"}
+_cached_coins: dict[str, str] = {}
 
 
 def _get_fee(contract: dict, *fields: str) -> float:
@@ -23,25 +31,15 @@ def _get_fee(contract: dict, *fields: str) -> float:
     return 1.0
 
 
-def get_zero_fee_coins() -> list[str]:
-    """
-    Return top N zero-fee USDT perpetuals by 24h volume,
-    excluding coins in EXCLUDE_COINS.
-    Falls back to top-volume USDT coins if no zero-fee contracts found.
-    """
-    global _cached_coins
-
+def _get_all_zero_fee_symbols() -> list[str]:
+    """Return all zero-fee USDT perpetual symbols (full list, no volume cap)."""
     try:
         contracts = get_all_contracts()
-        tickers   = get_tickers()
-
         if not contracts:
-            logger.warning("No contracts returned from MEXC API")
-            return _cached_coins
+            return []
 
+        zero_fee = []
         usdt_active = []
-        zero_fee    = []
-
         for c in contracts:
             symbol = c.get("symbol", "")
             if not symbol.endswith("_USDT"):
@@ -62,35 +60,79 @@ def get_zero_fee_coins() -> list[str]:
             f"{len(usdt_active)} active USDT | "
             f"{len(zero_fee)} zero-fee"
         )
-
-        def vol(sym: str) -> float:
-            t = tickers.get(sym, {})
-            try:
-                return float(t.get("volume24", 0) or 0)
-            except (ValueError, TypeError):
-                return 0.0
-
-        pool = zero_fee if zero_fee else usdt_active
-        if not pool:
-            logger.warning("No coins found, keeping previous list")
-            return _cached_coins
-
-        pool.sort(key=vol, reverse=True)
-        _cached_coins = pool[:TOP_N_COINS]
-
-        if not zero_fee:
-            logger.warning(f"No zero-fee coins found — using top volume instead: {_cached_coins}")
-        else:
-            logger.info(f"Zero-fee coins refreshed ({len(_cached_coins)}): {_cached_coins}")
-
-        return _cached_coins
+        return zero_fee if zero_fee else usdt_active
 
     except Exception as e:
-        logger.error(f"Error scanning coins: {e}", exc_info=True)
+        logger.error(f"Error fetching contracts: {e}", exc_info=True)
+        return []
+
+
+def get_rsi_ranked_coins() -> dict[str, str]:
+    """
+    Fetch 4h RSI for all zero-fee USDT coins, return top RSI_TOP_N_EACH
+    most oversold ({symbol: "LONG"}) and top RSI_TOP_N_EACH most overbought
+    ({symbol: "SHORT"}).  Falls back to previous cache on error.
+    """
+    global _cached_coins
+
+    symbols = _get_all_zero_fee_symbols()
+    if not symbols:
+        logger.warning("No symbols found, keeping cached list")
         return _cached_coins
 
+    # Need at least RSI_PERIOD_HTF + 1 candles; fetch 50 for reliability
+    kline_count = RSI_PERIOD_HTF + 36
 
-def get_cached_coins() -> list[str]:
+    rsi_values: dict[str, float] = {}
+    for symbol in symbols:
+        try:
+            df = get_klines(symbol, RSI_HTF, count=kline_count)
+            if df.empty or len(df) < RSI_PERIOD_HTF + 1:
+                continue
+            rsi_series = ta.rsi(df["close"], length=RSI_PERIOD_HTF)
+            rsi_val = rsi_series.iloc[-2]   # last completed candle
+            if rsi_val is not None and not (rsi_val != rsi_val):  # not NaN
+                rsi_values[symbol] = float(rsi_val)
+        except Exception as e:
+            logger.debug(f"RSI fetch failed for {symbol}: {e}")
+            continue
+
+    if not rsi_values:
+        logger.warning("Could not compute RSI for any symbol, keeping cached list")
+        return _cached_coins
+
+    # Sort ascending for LONG (oversold = low RSI), descending for SHORT
+    sorted_asc  = sorted(rsi_values.items(), key=lambda x: x[1])
+    sorted_desc = sorted(rsi_values.items(), key=lambda x: x[1], reverse=True)
+
+    long_candidates  = [(s, r) for s, r in sorted_asc  if r < RSI_OVERSOLD_MAX]
+    short_candidates = [(s, r) for s, r in sorted_desc if r > RSI_OVERBOUGHT_MIN]
+
+    selected: dict[str, str] = {}
+    for symbol, rsi in long_candidates[:RSI_TOP_N_EACH]:
+        selected[symbol] = "LONG"
+        logger.info(f"  RSI LONG  candidate: {symbol} RSI={rsi:.1f}")
+
+    for symbol, rsi in short_candidates[:RSI_TOP_N_EACH]:
+        if symbol not in selected:   # avoid direction conflict
+            selected[symbol] = "SHORT"
+            logger.info(f"  RSI SHORT candidate: {symbol} RSI={rsi:.1f}")
+
+    if not selected:
+        logger.warning(
+            f"No coins meet RSI thresholds "
+            f"(oversold<{RSI_OVERSOLD_MAX} or overbought>{RSI_OVERBOUGHT_MIN}). "
+            f"Keeping previous cache."
+        )
+        return _cached_coins
+
+    _cached_coins = selected
+    logger.info(f"RSI-ranked coins updated ({len(selected)}): {selected}")
+    return _cached_coins
+
+
+def get_cached_coins() -> dict[str, str]:
+    """Return cached RSI-ranked coin dict, fetching fresh if empty."""
     if not _cached_coins:
-        return get_zero_fee_coins()
+        return get_rsi_ranked_coins()
     return _cached_coins

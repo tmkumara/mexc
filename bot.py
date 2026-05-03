@@ -128,22 +128,27 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         TIMEFRAME, MAX_CONCURRENT_SIGNALS,
         EMA_FAST, EMA_SLOW, EMA_TREND,
         MACD_FAST, MACD_SLOW, MACD_SIGNAL_PERIOD,
-        RSI_PERIOD, TP_ROI_PCT, SL_ROI_PCT, LEVERAGE,
+        RSI_PERIOD, LEVERAGE,
+        FIB_HTF, FIB_TP_EXTENSION, MIN_TP_ROI_PCT, MIN_RR_RATIO,
+        RSI_OVERSOLD_MAX, RSI_OVERBOUGHT_MIN,
     )
-    state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
-    coins  = coin_scanner.get_cached_coins()
-    active = db.count_active_signals()
-    pairs_str = "  ".join(p.replace("_USDT", "") for p in coins)
+    state     = "⏸ PAUSED" if paused else "▶️ RUNNING"
+    coin_bias = coin_scanner.get_cached_coins()
+    active    = db.count_active_signals()
+    pairs_str = "  ".join(
+        f"{s.replace('_USDT','')}({'L' if d=='LONG' else 'S'})"
+        for s, d in coin_bias.items()
+    )
     msg = (
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `EMA({EMA_FAST}/{EMA_SLOW}/{EMA_TREND}) + MACD({MACD_FAST},{MACD_SLOW},{MACD_SIGNAL_PERIOD}) + RSI({RSI_PERIOD})`\n"
-        f"Timeframe:  `{TIMEFRAME}`\n"
-        f"Leverage:   `{LEVERAGE}x`\n"
-        f"TP / SL:    `+{TP_ROI_PCT}% / -{SL_ROI_PCT}% ROI`\n"
+        f"Strategy:   `RSI Heatmap → Fib({FIB_HTF}) → EMA/MACD/RSI({TIMEFRAME})`\n"
+        f"Leverage:   `{LEVERAGE}x`  TP ext `{FIB_TP_EXTENSION}`\n"
+        f"Min TP ROI: `{MIN_TP_ROI_PCT:.0f}%`  Min R:R `1:{MIN_RR_RATIO:.0f}`\n"
+        f"RSI gates:  `<{RSI_OVERSOLD_MAX:.0f} LONG  >{RSI_OVERBOUGHT_MIN:.0f} SHORT`\n"
         f"Active:     `{active}/{MAX_CONCURRENT_SIGNALS}`\n"
-        f"Pairs ({len(coins)}): `{pairs_str}`\n"
+        f"Pairs ({len(coin_bias)}): `{pairs_str}`\n"
         f"Time (UTC): `{datetime.now(timezone.utc).strftime('%H:%M')}`"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
