@@ -149,7 +149,7 @@ async def check_outcomes(app: Application) -> None:
             logger.warning(f"Could not fetch candles for {symbol}: {e}")
             continue
 
-        entry_candle_cutoff = generated - timedelta(minutes=CANDLE_MINUTES)
+        entry_candle_cutoff = (generated - timedelta(minutes=CANDLE_MINUTES)).replace(tzinfo=None)
 
         outcome = None
         for i in range(len(df) - 1):
