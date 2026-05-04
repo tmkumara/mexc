@@ -125,30 +125,27 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
     from config import (
-        TIMEFRAME, MAX_CONCURRENT_SIGNALS,
-        EMA_FAST, EMA_SLOW, EMA_TREND,
-        MACD_FAST, MACD_SLOW, MACD_SIGNAL_PERIOD,
-        RSI_PERIOD, LEVERAGE,
-        FIB_HTF, FIB_TP_EXTENSION, MIN_TP_ROI_PCT, MIN_RR_RATIO,
-        RSI_OVERSOLD_MAX, RSI_OVERBOUGHT_MIN,
+        ENTRY_TF, MTF_1D, MAX_CONCURRENT_SIGNALS,
+        EMA_FAST, EMA_SLOW, EMA_DAILY,
+        RSI_PERIOD, RSI_ENTRY_OVERSOLD, RSI_ENTRY_OVERBOUGHT,
+        LEVERAGE, TP_ROI_PCT, SL_ROI_PCT,
+        SIGNAL_COOLDOWN_MINUTES,
     )
-    state     = "⏸ PAUSED" if paused else "▶️ RUNNING"
-    coin_bias = coin_scanner.get_cached_coins()
-    active    = db.count_active_signals()
-    pairs_str = "  ".join(
-        f"{s.replace('_USDT','')}({'L' if d=='LONG' else 'S'})"
-        for s, d in coin_bias.items()
-    )
+    state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
+    coins  = coin_scanner.get_cached_coins()
+    active = db.count_active_signals()
+    pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
     msg = (
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `RSI Heatmap → Fib({FIB_HTF}) → EMA/MACD/RSI({TIMEFRAME})`\n"
-        f"Leverage:   `{LEVERAGE}x`  TP ext `{FIB_TP_EXTENSION}`\n"
-        f"Min TP ROI: `{MIN_TP_ROI_PCT:.0f}%`  Min R:R `1:{MIN_RR_RATIO:.0f}`\n"
-        f"RSI gates:  `<{RSI_OVERSOLD_MAX:.0f} LONG  >{RSI_OVERBOUGHT_MIN:.0f} SHORT`\n"
+        f"Strategy:   `{MTF_1D} EMA{EMA_DAILY} → {ENTRY_TF} EMA({EMA_FAST}/{EMA_SLOW})+RSI{RSI_PERIOD}`\n"
+        f"Leverage:   `{LEVERAGE}x`\n"
+        f"TP / SL:    `+{TP_ROI_PCT:.0f}% / -{SL_ROI_PCT:.0f}% ROI`\n"
+        f"RSI trigger:`<{RSI_ENTRY_OVERSOLD:.0f} LONG  >{RSI_ENTRY_OVERBOUGHT:.0f} SHORT`\n"
+        f"Cooldown:   `{SIGNAL_COOLDOWN_MINUTES} min per coin`\n"
         f"Active:     `{active}/{MAX_CONCURRENT_SIGNALS}`\n"
-        f"Pairs ({len(coin_bias)}): `{pairs_str}`\n"
+        f"Pool ({len(coins)}): `{pairs_str}`\n"
         f"Time (UTC): `{datetime.now(timezone.utc).strftime('%H:%M')}`"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
