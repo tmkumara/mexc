@@ -125,11 +125,10 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
     from config import (
-        ENTRY_TF, MTF_1D, MAX_CONCURRENT_SIGNALS,
-        EMA_FAST, EMA_SLOW, EMA_DAILY,
-        RSI_PERIOD, RSI_ENTRY_OVERSOLD, RSI_ENTRY_OVERBOUGHT,
-        LEVERAGE, TP_ROI_PCT, SL_ROI_PCT,
-        SIGNAL_COOLDOWN_MINUTES,
+        ENTRY_TF, MTF_15M, MTF_1H, MAX_CONCURRENT_SIGNALS,
+        EMA_50, EMA_200, RSI_PERIOD,
+        LEVERAGE, REWARD_RATIO, MAX_RISK_PCT,
+        SIGNAL_COOLDOWN_MINUTES, SIGNALS_PER_SCAN,
     )
     state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
     coins  = coin_scanner.get_cached_coins()
@@ -139,10 +138,10 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `{MTF_1D} EMA{EMA_DAILY} → {ENTRY_TF} EMA({EMA_FAST}/{EMA_SLOW})+RSI{RSI_PERIOD}`\n"
+        f"Strategy:   `{MTF_1H} EMA{EMA_50}/EMA{EMA_200} → {MTF_15M} Sweep → {ENTRY_TF} Confirm`\n"
         f"Leverage:   `{LEVERAGE}x`\n"
-        f"TP / SL:    `+{TP_ROI_PCT:.0f}% / -{SL_ROI_PCT:.0f}% ROI`\n"
-        f"RSI trigger:`<{RSI_ENTRY_OVERSOLD:.0f} LONG  >{RSI_ENTRY_OVERBOUGHT:.0f} SHORT`\n"
+        f"TP / SL:    `{REWARD_RATIO:.0f}R / 1R  (max SL {MAX_RISK_PCT:.0f}% move)`\n"
+        f"Per scan:   `top {SIGNALS_PER_SCAN} signals`\n"
         f"Cooldown:   `{SIGNAL_COOLDOWN_MINUTES} min per coin`\n"
         f"Active:     `{active}/{MAX_CONCURRENT_SIGNALS}`\n"
         f"Pool ({len(coins)}): `{pairs_str}`\n"

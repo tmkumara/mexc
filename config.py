@@ -12,47 +12,40 @@ COINGLASS_API_KEY: str = os.getenv("COINGLASS_API_KEY", "")
 
 # ── Coin pool ────────────────────────────────────────────────────
 EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
-TOP_N_COINS:   int      = 40      # coins to monitor
+TOP_N_COINS:   int      = 40
 COIN_REFRESH_HOURS: int = 4
 
-# ── Trade params ─────────────────────────────────────────────────
-LEVERAGE:    int   = 20
-TP_ROI_PCT:  float = 5.0    # 5 % ROI → 0.25 % price move
-SL_ROI_PCT:  float = 10.0   # 10 % ROI → 0.5 % price move
-
-# Derived price-move percentages
-TP_PRICE_PCT: float = TP_ROI_PCT / LEVERAGE / 100   # 0.0025
-SL_PRICE_PCT: float = SL_ROI_PCT / LEVERAGE / 100   # 0.005
-
 # ── Timeframes ───────────────────────────────────────────────────
-ENTRY_TF: str = "15m"   # entry signal timeframe
-MTF_4H:   str = "4h"    # momentum confirmation
-MTF_1D:   str = "1d"    # macro trend
+MTF_1H:  str = "1h"    # tier 1: trend direction
+MTF_15M: str = "15m"   # tier 2: liquidity sweep detection
+ENTRY_TF: str = "5m"   # tier 3: confirmation + outcome tracking
 
-# ── EMA periods ──────────────────────────────────────────────────
-EMA_FAST:   int = 9
-EMA_SLOW:   int = 21
-EMA_DAILY:  int = 50    # daily trend filter
+# ── EMA periods (applied on 1H) ───────────────────────────────────
+EMA_50:  int = 50    # short-term trend
+EMA_200: int = 200   # main trend filter
 
 # ── RSI ──────────────────────────────────────────────────────────
-RSI_PERIOD:         int   = 14
-RSI_4H_LONG_MIN:    float = 45.0   # 4H RSI floor for LONG signals
-RSI_4H_SHORT_MAX:   float = 55.0   # 4H RSI ceiling for SHORT signals
-RSI_ENTRY_OVERSOLD:   float = 35.0   # 15m extreme → triggers LONG
-RSI_ENTRY_OVERBOUGHT: float = 65.0   # 15m extreme → triggers SHORT
+RSI_PERIOD: int = 14
 
-# ── Volume filter ────────────────────────────────────────────────
+# ── Volume filter (on 5M confirmation candle) ─────────────────────
 VOLUME_MA_BARS:  int   = 20
-VOLUME_MIN_MULT: float = 1.2   # loose — only filters very low-vol spikes
+VOLUME_MIN_MULT: float = 1.3   # confirmation candle must be 1.3× MA
+
+# ── Trade params ─────────────────────────────────────────────────
+LEVERAGE:      int   = 10
+REWARD_RATIO:  float = 2.0    # TP2 = 2R; TP1 = 1R (shown in message)
+SL_ATR_BUFFER: float = 0.5   # additional SL distance below/above swept level in ATR units
+MAX_RISK_PCT:  float = 2.0   # skip signals where SL is > 2% away from entry
 
 # ── Scheduler ────────────────────────────────────────────────────
-SIGNAL_COOLDOWN_MINUTES: int = 60    # 1 h per coin
+SIGNAL_COOLDOWN_MINUTES: int = 60    # 1h per coin
 SIGNAL_EXPIRE_HOURS:     int = 4
 MAX_CONCURRENT_SIGNALS:  int = 10
 
-SCAN_CRON_MINUTES:     str = "1,16,31,46"   # every 15 min
+SCAN_CRON_MINUTES:     str = "1,6,11,16,21,26,31,36,41,46,51,56"   # every 5 min (1m past candle close)
+SIGNALS_PER_SCAN:      int = 3     # top N signals to send each scan (targets 10-20/day)
 OUTCOME_CHECK_MINUTES: int = 5
-CANDLE_MINUTES:        int = 15
+CANDLE_MINUTES:        int = 5
 
 # ── MEXC Futures REST API ─────────────────────────────────────────
 MEXC_BASE_URL = "https://contract.mexc.com/api/v1"

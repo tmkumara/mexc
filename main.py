@@ -33,6 +33,7 @@ from config import (
     LEVERAGE,
     ENTRY_TF,
     SCAN_CRON_MINUTES,
+    SIGNALS_PER_SCAN,
     OUTCOME_CHECK_MINUTES,
     CANDLE_MINUTES,
 )
@@ -91,26 +92,27 @@ async def scan_and_signal(app: Application) -> None:
         return
 
     candidates.sort(key=lambda s: s.score, reverse=True)
+    to_send = candidates[:min(SIGNALS_PER_SCAN, slots)]
     logger.info(
-        f"[SCAN] {len(candidates)} signal(s) found — "
+        f"[SCAN] {len(candidates)} signal(s) found, sending {len(to_send)} — "
         + ", ".join(f"{s.symbol}({s.score})" for s in candidates)
     )
 
-    best      = candidates[0]
-    signal_id = db.save_signal(
-        symbol       = best.symbol,
-        direction    = best.direction,
-        entry_price  = best.entry_price,
-        tp_price     = best.tp_price,
-        sl_price     = best.sl_price,
-        leverage     = best.leverage,
-        generated_at = best.generated_at,
-    )
-    try:
-        await tg.broadcast_signal(app, best, signal_id)
-        logger.info(f"[SCAN] Sent {best.symbol} {best.direction} score={best.score}")
-    except Exception as e:
-        logger.error(f"Failed to broadcast {best.symbol}: {e}")
+    for sig in to_send:
+        signal_id = db.save_signal(
+            symbol       = sig.symbol,
+            direction    = sig.direction,
+            entry_price  = sig.entry_price,
+            tp_price     = sig.tp_price,
+            sl_price     = sig.sl_price,
+            leverage     = sig.leverage,
+            generated_at = sig.generated_at,
+        )
+        try:
+            await tg.broadcast_signal(app, sig, signal_id)
+            logger.info(f"[SCAN] Sent {sig.symbol} {sig.direction} score={sig.score}")
+        except Exception as e:
+            logger.error(f"Failed to broadcast {sig.symbol}: {e}")
 
 
 # ── outcome checker ───────────────────────────────────────────────
@@ -201,7 +203,7 @@ async def check_outcomes(app: Application) -> None:
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot (MTF: 1D EMA50 + 15m EMA/RSI, fixed 5%/10% TP/SL)...")
+    logger.info("Starting MEXC Signal Bot (1H EMA50/200 Trend + 15M Liquidity Sweep + 5M Confirmation)...")
 
     db.init_db()
 
