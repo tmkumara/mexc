@@ -47,6 +47,7 @@ from config import (
     LEVERAGE, MTF_1H, SWEEP_TF, ENTRY_TF, EMA_50,
     RSI_PERIOD, REWARD_RATIO, SL_ATR_BUFFER,
     MAX_RISK_PCT, VOLUME_MA_BARS, VOLUME_MIN_MULT,
+    MIN_ZONE_WIDTH_PCT, ENTRY_ZONE_BUFFER, MIN_SIGNAL_SCORE,
 )
 
 logger = logging.getLogger(__name__)
@@ -211,6 +212,14 @@ def _find_long_sweep(df: pd.DataFrame) -> SweepResult | None:
             logger.debug(f"  LONG zone [{zone_low:.5g},{zone_high:.5g}] invalidated (close below wick)")
             continue
 
+        # Zone must be wide enough to represent a real liquidity level
+        if (zone_high - zone_low) / zone_high < MIN_ZONE_WIDTH_PCT / 100:
+            logger.debug(
+                f"  LONG zone [{zone_low:.5g},{zone_high:.5g}] too narrow "
+                f"({(zone_high-zone_low)/zone_high*100:.3f}% < {MIN_ZONE_WIDTH_PCT}%), skip"
+            )
+            continue
+
         logger.info(
             f"  LONG sweep zone confirmed: [{zone_low:.6g}, {zone_high:.6g}] "
             f"sweep@bar{sweep_i}"
@@ -266,6 +275,13 @@ def _find_short_sweep(df: pd.DataFrame) -> SweepResult | None:
         # Invalidation: no bar after sweep may close above zone_high
         if float(post["close"].max()) > zone_high:
             logger.debug(f"  SHORT zone [{zone_low:.5g},{zone_high:.5g}] invalidated (close above wick)")
+            continue
+
+        if (zone_high - zone_low) / zone_low < MIN_ZONE_WIDTH_PCT / 100:
+            logger.debug(
+                f"  SHORT zone [{zone_low:.5g},{zone_high:.5g}] too narrow "
+                f"({(zone_high-zone_low)/zone_low*100:.3f}% < {MIN_ZONE_WIDTH_PCT}%), skip"
+            )
             continue
 
         logger.info(
@@ -355,7 +371,7 @@ def analyze_coin(symbol: str) -> "Signal | None":
         ema_val = float(ema50.iloc[-2])  if not pd.isna(ema50.iloc[-2])  else 0.0
         atr_val = float(atr.iloc[-2])    if not pd.isna(atr.iloc[-2])    else cc * 0.001
 
-        # Zone touch: last 5M bar must be touching / inside the sweep zone
+        # Zone touch: last 5M bar's wick must reach the zone
         if direction == "LONG":
             touches_zone = cl <= zone_high * (1 + ZONE_BUFFER)
         else:
@@ -363,6 +379,20 @@ def analyze_coin(symbol: str) -> "Signal | None":
 
         if not touches_zone:
             logger.debug(f"{symbol}: {direction} 5M bar not yet touching zone")
+            return None
+
+        # Entry proximity: close must not be far above/below the zone
+        # Prevents entries where price just grazed the zone with a wick then flew away
+        if direction == "LONG":
+            entry_too_far = cc > zone_high * (1 + ENTRY_ZONE_BUFFER)
+        else:
+            entry_too_far = cc < zone_low * (1 - ENTRY_ZONE_BUFFER)
+
+        if entry_too_far:
+            logger.debug(
+                f"{symbol}: {direction} 5M close {cc:.6g} too far from zone "
+                f"[{zone_low:.6g},{zone_high:.6g}], skip"
+            )
             return None
 
         logger.info(f"{symbol}: {direction} 5M retest confirmed — verifying confirmation filters")
@@ -422,6 +452,10 @@ def analyze_coin(symbol: str) -> "Signal | None":
         score = round(
             (0.40 * rsi_score + 0.35 * vol_score + 0.25 * zone_score) * 100, 1
         )
+
+        if score < MIN_SIGNAL_SCORE:
+            logger.debug(f"{symbol}: score {score} below minimum {MIN_SIGNAL_SCORE}, skip")
+            return None
 
         logger.info(
             f"[SIGNAL] {direction} {symbol} @ {entry:.6g} | "

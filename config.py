@@ -36,6 +36,11 @@ REWARD_RATIO:  float = 2.0    # TP = 2R
 SL_ATR_BUFFER: float = 0.5   # extra SL distance beyond zone edge in ATR units
 MAX_RISK_PCT:  float = 2.0   # skip signals where SL > 2% from entry
 
+# ── Signal quality gates ──────────────────────────────────────────
+MIN_ZONE_WIDTH_PCT: float = 0.15  # skip zones narrower than 0.15% of price
+ENTRY_ZONE_BUFFER:  float = 0.003 # 5M close must be within 0.3% above zone_high (LONG) / below zone_low (SHORT)
+MIN_SIGNAL_SCORE:   int   = 40    # discard signals scored below this threshold
+
 # ── Scheduler ────────────────────────────────────────────────────
 SIGNAL_COOLDOWN_MINUTES: int = 60
 SIGNAL_EXPIRE_HOURS:     int = 4
