@@ -165,7 +165,7 @@ async def cmd_zones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         d       = "🟢" if z["direction"] == "LONG" else "🔴"
         emoji   = STATUS_EMOJI.get(z["status"], "•")
         coin    = z["symbol"].replace("_USDT", "")
-        det     = datetime.fromisoformat(z["detected_at"]).astimezone(LKT).strftime("%m/%d %H:%M")
+        det     = datetime.fromisoformat(z["detected_at"]).replace(tzinfo=timezone.utc).astimezone(LKT).strftime("%m/%d %H:%M")
         status = z["status"].replace("_", "-")   # underscores break Markdown parser
         lines.append(
             f"{d} *{coin}* {z['direction']}  "
