@@ -208,7 +208,7 @@ async def check_outcomes(app: Application) -> None:
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot — Liquidity Sweep (1H Structure + 15M Sweep/Accept + 5M Retest)...")
+    logger.info("Starting MEXC Signal Bot — Liquidity Sweep (1H LH+LL+OTE → 15M Sweep/Accept → 5M Retest)...")
 
     db.init_db()
 

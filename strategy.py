@@ -69,6 +69,11 @@ SWEEP_SEARCH_BARS = 60    # 15M bars scanned for sweep candles (~15 h)
 # ── Zone touch tolerance ──────────────────────────────────────────
 ZONE_BUFFER = 0.001       # 0.1% tolerance for zone touch on 5M
 
+# ── OTE (Optimal Trade Entry) Fibonacci levels ────────────────────
+OTE_FIB_LOW   = 0.62   # lower Fibonacci level (62% retracement)
+OTE_FIB_HIGH  = 0.79   # upper Fibonacci level (79% retracement)
+OTE_TOLERANCE = 0.15   # allow anchor 15% of OTE band width outside the zone
+
 
 class SweepResult(NamedTuple):
     zone_low:     float
@@ -122,27 +127,46 @@ def _pivot_lows(series: pd.Series) -> list[tuple[int, float]]:
 
 def _bullish_structure_idx(df_1h: pd.DataFrame) -> int | None:
     """
-    Find the most recent pair of consecutive HH in 1H.
+    Find the most recent pair of consecutive HH in 1H AND confirm at least
+    one Higher Low (HL) exists in the same window.
     Returns absolute index of the second (latest) HH, or None.
     """
     n = len(df_1h)
     ws = max(0, n - STRUCTURE_1H_BARS - PIVOT_LOOKBACK - 1)
-    ph = _pivot_highs(df_1h["high"].iloc[ws:-1])   # exclude forming bar
+    ph = _pivot_highs(df_1h["high"].iloc[ws:-1])
     if len(ph) < 2:
         return None
     ph_abs = [(ws + i, p) for i, p in ph]
+
+    hh_idx = None
     for k in range(len(ph_abs) - 1, 0, -1):
         idx2, h2 = ph_abs[k]
         idx1, h1 = ph_abs[k - 1]
         if h2 > h1:
             logger.debug(f"  1H bullish HH: {h1:.6g}@{idx1} → {h2:.6g}@{idx2}")
-            return idx2
-    return None
+            hh_idx = idx2
+            break
+
+    if hh_idx is None:
+        return None
+
+    # Also require at least one Higher Low (HL) in the same window
+    pl = _pivot_lows(df_1h["low"].iloc[ws:-1])
+    if len(pl) < 2:
+        return None
+    pl_abs = [(ws + i, p) for i, p in pl]
+    has_hl = any(pl_abs[k][1] > pl_abs[k - 1][1] for k in range(1, len(pl_abs)))
+    if not has_hl:
+        logger.debug("  1H bullish HH found but no HL — structure incomplete")
+        return None
+
+    return hh_idx
 
 
 def _bearish_structure_idx(df_1h: pd.DataFrame) -> int | None:
     """
-    Find the most recent pair of consecutive LL in 1H.
+    Find the most recent pair of consecutive LL in 1H AND confirm at least
+    one Lower High (LH) exists in the same window.
     Returns absolute index of the second (latest) LL, or None.
     """
     n = len(df_1h)
@@ -151,12 +175,94 @@ def _bearish_structure_idx(df_1h: pd.DataFrame) -> int | None:
     if len(pl) < 2:
         return None
     pl_abs = [(ws + i, p) for i, p in pl]
+
+    ll_idx = None
     for k in range(len(pl_abs) - 1, 0, -1):
         idx2, l2 = pl_abs[k]
         idx1, l1 = pl_abs[k - 1]
         if l2 < l1:
             logger.debug(f"  1H bearish LL: {l1:.6g}@{idx1} → {l2:.6g}@{idx2}")
-            return idx2
+            ll_idx = idx2
+            break
+
+    if ll_idx is None:
+        return None
+
+    # Also require at least one Lower High (LH) in the same window
+    ph = _pivot_highs(df_1h["high"].iloc[ws:-1])
+    if len(ph) < 2:
+        return None
+    ph_abs = [(ws + i, p) for i, p in ph]
+    has_lh = any(ph_abs[k][1] < ph_abs[k - 1][1] for k in range(1, len(ph_abs)))
+    if not has_lh:
+        logger.debug("  1H bearish LL found but no LH — structure incomplete")
+        return None
+
+    return ll_idx
+
+
+# ── OTE: Fibonacci 62–79% retracement of the last impulse leg ────
+
+def _compute_ote(df_1h: pd.DataFrame, direction: str, window_start: int) -> tuple[float, float] | None:
+    """
+    Compute the OTE (Optimal Trade Entry) zone = Fibonacci 62–79% retracement
+    of the most recent completed impulse leg on 1H.
+
+    SHORT: last 1H pivot high → lowest subsequent 1H pivot low (bearish leg).
+           OTE = 62–79% retrace back UP.  Entry short when price rallies into this zone.
+    LONG:  last 1H pivot low  → highest subsequent 1H pivot high (bullish leg).
+           OTE = 62–79% retrace back DOWN. Entry long when price pulls back into this zone.
+
+    Returns (ote_low, ote_high) in price, or None if no valid leg is found.
+    """
+    ws = window_start
+    ph_list = _pivot_highs(df_1h["high"].iloc[ws:-1])
+    pl_list  = _pivot_lows(df_1h["low"].iloc[ws:-1])
+
+    if not ph_list or not pl_list:
+        return None
+
+    ph_abs = [(ws + i, p) for i, p in ph_list]
+    pl_abs  = [(ws + i, p) for i, p in pl_list]
+
+    if direction == "SHORT":
+        # Walk from most-recent pivot high backwards; find a valid down leg
+        for k in range(len(ph_abs) - 1, -1, -1):
+            ph_idx, ph_price = ph_abs[k]
+            lows_after = [(i, l) for i, l in pl_abs if i > ph_idx]
+            if not lows_after:
+                continue
+            _, pl_price = min(lows_after, key=lambda x: x[1])
+            swing = ph_price - pl_price
+            if swing <= 0:
+                continue
+            ote_low  = pl_price + swing * OTE_FIB_LOW
+            ote_high = pl_price + swing * OTE_FIB_HIGH
+            logger.debug(
+                f"  OTE SHORT: leg {ph_price:.6g}→{pl_price:.6g} swing={swing:.6g} "
+                f"OTE=[{ote_low:.6g}, {ote_high:.6g}]"
+            )
+            return ote_low, ote_high
+
+    else:  # LONG
+        # Walk from most-recent pivot low backwards; find a valid up leg
+        for k in range(len(pl_abs) - 1, -1, -1):
+            pl_idx, pl_price = pl_abs[k]
+            highs_after = [(i, h) for i, h in ph_abs if i > pl_idx]
+            if not highs_after:
+                continue
+            _, ph_price = max(highs_after, key=lambda x: x[1])
+            swing = ph_price - pl_price
+            if swing <= 0:
+                continue
+            ote_low  = ph_price - swing * OTE_FIB_HIGH
+            ote_high = ph_price - swing * OTE_FIB_LOW
+            logger.debug(
+                f"  OTE LONG: leg {pl_price:.6g}→{ph_price:.6g} swing={swing:.6g} "
+                f"OTE=[{ote_low:.6g}, {ote_high:.6g}]"
+            )
+            return ote_low, ote_high
+
     return None
 
 
@@ -342,7 +448,29 @@ def analyze_coin(symbol: str) -> "Signal | None":
 
         logger.info(
             f"{symbol}: {direction} sweep zone #{zone_id} [{zone_low:.6g}, {zone_high:.6g}] "
-            f"accepted — checking 5M retest"
+            f"accepted — checking OTE + 5M retest"
+        )
+
+        # ── OTE check (Fibonacci 62–79% of last 1H impulse leg) ───
+        ws_1h = max(0, len(df_1h) - STRUCTURE_1H_BARS - PIVOT_LOOKBACK - 1)
+        ote   = _compute_ote(df_1h, direction, ws_1h)
+        if ote is None:
+            logger.debug(f"{symbol}: {direction} OTE could not be computed, skip")
+            return None
+
+        ote_low, ote_high = ote
+        anchor    = zone_high if direction == "SHORT" else zone_low
+        tolerance = (ote_high - ote_low) * OTE_TOLERANCE
+
+        if not (ote_low - tolerance <= anchor <= ote_high + tolerance):
+            logger.debug(
+                f"{symbol}: {direction} anchor {anchor:.6g} outside OTE "
+                f"[{ote_low:.6g}, {ote_high:.6g}] (±{OTE_TOLERANCE*100:.0f}% tol), skip"
+            )
+            return None
+
+        logger.info(
+            f"{symbol}: OTE ✓ anchor={anchor:.6g} in [{ote_low:.6g}, {ote_high:.6g}]"
         )
 
         # ── Tier 3: 5M retest + confirmation ──────────────────────
@@ -476,7 +604,7 @@ def analyze_coin(symbol: str) -> "Signal | None":
             sl_roi_pct        = sl_roi_pct,
             timeframe_summary = (
                 f"Liquidity Sweep | "
-                f"1H Struct → 15M Sweep+Accept → 5M Retest | "
+                f"1H LH+LL+OTE({ote_low:.5g}-{ote_high:.5g}) → 15M Sweep → 5M Retest | "
                 f"zone=[{zone_low:.5g},{zone_high:.5g}] | "
                 f"TP1=${tp1:,.6g} TP2=${tp_price:,.6g}"
             ),

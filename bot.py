@@ -139,7 +139,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
         f"Strategy:   `Liquidity Sweep`\n"
-        f"Logic:      `{MTF_1H} Structure → {SWEEP_TF} Sweep+Accept → {ENTRY_TF} Retest`\n"
+        f"Logic:      `{MTF_1H} LH+LL+OTE → {SWEEP_TF} Sweep+Accept → {ENTRY_TF} Retest`\n"
         f"Leverage:   `{LEVERAGE}x`\n"
         f"TP / SL:    `{REWARD_RATIO:.0f}R / 1R  (max SL {MAX_RISK_PCT:.0f}% move)`\n"
         f"Per scan:   `top {SIGNALS_PER_SCAN} signals`\n"
