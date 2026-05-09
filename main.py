@@ -108,6 +108,8 @@ async def scan_and_signal(app: Application) -> None:
             leverage     = sig.leverage,
             generated_at = sig.generated_at,
         )
+        if sig.zone_id:
+            db.update_zone_status(sig.zone_id, 'signal_generated', signal_id)
         try:
             await tg.broadcast_signal(app, sig, signal_id)
             logger.info(f"[SCAN] Sent {sig.symbol} {sig.direction} score={sig.score}")
@@ -231,6 +233,12 @@ async def main():
         coin_scanner.refresh_coin_list,
         CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
         id="coin_refresh",
+    )
+
+    scheduler.add_job(
+        db.expire_old_zones,
+        CronTrigger(minute=0),   # top of every hour
+        id="zone_expiry",
     )
 
     async def _daily(app=app):

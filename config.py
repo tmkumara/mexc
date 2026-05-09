@@ -39,6 +39,7 @@ MAX_RISK_PCT:  float = 2.0   # skip signals where SL > 2% from entry
 # ── Scheduler ────────────────────────────────────────────────────
 SIGNAL_COOLDOWN_MINUTES: int = 60
 SIGNAL_EXPIRE_HOURS:     int = 4
+ZONE_EXPIRE_HOURS:       int = 48   # drop unresolved sweep zones after 48h
 MAX_CONCURRENT_SIGNALS:  int = 10
 
 SCAN_CRON_MINUTES:     str = "1,6,11,16,21,26,31,36,41,46,51,56"   # every 5 min

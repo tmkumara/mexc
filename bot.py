@@ -95,6 +95,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/stats — All-time stats\n\n"
         "*Scanner:*\n"
         "/status — Scanner state\n"
+        "/zones — Active sweep zones\n"
         "/pause — Pause signals\n"
         "/resume — Resume signals\n\n"
         "/help — This message"
@@ -150,6 +151,31 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 
+async def cmd_zones(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    zones = db.get_active_zones()
+    if not zones:
+        await update.message.reply_text(
+            "📭 No active sweep zones.", parse_mode=ParseMode.MARKDOWN
+        )
+        return
+
+    STATUS_EMOJI = {"accepted": "🔍", "waiting_retest": "⏳"}
+    lines = [f"📊 *Active Sweep Zones* ({len(zones)})\n━━━━━━━━━━━━━━━━━━━━"]
+    for z in zones[:20]:
+        d       = "🟢" if z["direction"] == "LONG" else "🔴"
+        emoji   = STATUS_EMOJI.get(z["status"], "•")
+        coin    = z["symbol"].replace("_USDT", "")
+        det     = datetime.fromisoformat(z["detected_at"]).strftime("%m/%d %H:%M")
+        lines.append(
+            f"{d} *{coin}* {z['direction']}  "
+            f"`[{z['zone_low']:.5g}, {z['zone_high']:.5g}]`  "
+            f"{emoji} _{z['status']}_  _{det} UTC_"
+        )
+    if len(zones) > 20:
+        lines.append(f"_…and {len(zones) - 20} more_")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+
+
 async def cmd_pause(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global paused
     paused = True
@@ -187,6 +213,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("monthly", cmd_monthly))
     app.add_handler(CommandHandler("stats",   cmd_stats))
     app.add_handler(CommandHandler("status",  cmd_status))
+    app.add_handler(CommandHandler("zones",   cmd_zones))
     app.add_handler(CommandHandler("pause",   cmd_pause))
     app.add_handler(CommandHandler("resume",  cmd_resume))
     return app

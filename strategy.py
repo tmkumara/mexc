@@ -41,6 +41,7 @@ from typing import NamedTuple
 import pandas as pd
 import pandas_ta as ta
 
+import database as db
 from mexc_client import get_klines
 from config import (
     LEVERAGE, MTF_1H, SWEEP_TF, ENTRY_TF, EMA_50,
@@ -87,6 +88,7 @@ class Signal:
     timeframe_summary: str
     generated_at:      datetime
     score:             float = 0.0
+    zone_id:           int   = 0
 
 
 # ── Pivot helpers ────────────────────────────────────────────────
@@ -316,8 +318,14 @@ def analyze_coin(symbol: str) -> "Signal | None":
             return None
 
         zone_low, zone_high, sweep_idx = sweep_result
+
+        # Persist zone to DB (upsert: same anchor level → update timestamp, new → insert)
+        zone_id = db.upsert_zone(
+            symbol, direction, zone_low, zone_high, datetime.now(timezone.utc)
+        )
+
         logger.info(
-            f"{symbol}: {direction} sweep zone [{zone_low:.6g}, {zone_high:.6g}] "
+            f"{symbol}: {direction} sweep zone #{zone_id} [{zone_low:.6g}, {zone_high:.6g}] "
             f"accepted — checking 5M retest"
         )
 
@@ -358,6 +366,7 @@ def analyze_coin(symbol: str) -> "Signal | None":
             return None
 
         logger.info(f"{symbol}: {direction} 5M retest confirmed — verifying confirmation filters")
+        db.update_zone_status(zone_id, 'waiting_retest')
 
         # Confirmation filters
         if direction == "LONG":
@@ -439,6 +448,7 @@ def analyze_coin(symbol: str) -> "Signal | None":
             ),
             generated_at      = datetime.now(timezone.utc),
             score             = score,
+            zone_id           = zone_id,
         )
 
     except Exception as e:
