@@ -1,49 +1,77 @@
 """
-Multi-timeframe strategy: 1H Trend + 15M Liquidity Sweep + 5M Confirmation.
+Liquidity Sweep Retest Scalping Strategy.
 
-Tier 1 — 1H trend:
-  price > EMA50 > EMA200  →  LONG bias
-  price < EMA50 < EMA200  →  SHORT bias
+Inspired by the Daily Price Action liquidity sweep reversal model.
+Reference: https://dailypriceaction.com/blog/liquidity-sweep-reversals/
 
-Tier 2 — 15M liquidity sweep:
-  LONG:  a recent 15M candle swept below a prior swing low and closed back above it
-  SHORT: a recent 15M candle swept above a prior swing high and closed back below it
+Flow:
+  Tier 1 — 1H structure:
+    2 consecutive pivot HH  →  LONG bias
+    2 consecutive pivot LL  →  SHORT bias
+    If both or neither detected, skip (no clear market structure).
 
-Tier 3 — 5M confirmation (last completed candle):
-  LONG:  bullish body (body ≥ 30% of range) + RSI(14) > 50 + volume ≥ 1.3× MA
-  SHORT: bearish body (body ≥ 30% of range) + RSI(14) < 50 + volume ≥ 1.3× MA
+  Tier 2 — 15M sweep + acceptance:
+    LONG:  sweep candle wick < pivot_low  AND  close > pivot_low
+           → zone_low  = sweep wick low
+           → zone_high = swept pivot low
+           Acceptance: a subsequent 15M bar closes above sweep_candle_high.
+           Invalidation: any 15M bar closes below zone_low → skip.
+    SHORT: sweep candle wick > pivot_high AND  close < pivot_high
+           → zone_low  = swept pivot high
+           → zone_high = sweep wick high
+           Acceptance: a subsequent 15M bar closes below sweep_candle_low.
+           Invalidation: any 15M bar closes above zone_high → skip.
 
-SL: swept level − ATR buffer (LONG) / swept level + ATR buffer (SHORT)
-TP: 2R from entry (TP1 at 1R shown in message)
+  Tier 3 — 5M retest + confirmation:
+    LONG:  last completed 5M bar touches zone (low ≤ zone_high + 0.1%)
+           + bullish close (body ≥ 30%) + RSI > 50 + vol ≥ 1.3× MA + close > EMA50
+    SHORT: last completed 5M bar touches zone (high ≥ zone_low − 0.1%)
+           + bearish close (body ≥ 30%) + RSI < 50 + vol ≥ 1.3× MA + close < EMA50
+
+  SL: zone_low  − 0.5 × ATR  (LONG)
+      zone_high + 0.5 × ATR  (SHORT)
+  TP: 2R from entry
 """
 
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import NamedTuple
 
 import pandas as pd
 import pandas_ta as ta
 
 from mexc_client import get_klines
 from config import (
-    LEVERAGE, MTF_1H, MTF_15M, ENTRY_TF,
-    EMA_50, EMA_200,
-    RSI_PERIOD,
-    REWARD_RATIO, SL_ATR_BUFFER, MAX_RISK_PCT,
-    VOLUME_MA_BARS, VOLUME_MIN_MULT,
+    LEVERAGE, MTF_1H, SWEEP_TF, ENTRY_TF, EMA_50,
+    RSI_PERIOD, REWARD_RATIO, SL_ATR_BUFFER,
+    MAX_RISK_PCT, VOLUME_MA_BARS, VOLUME_MIN_MULT,
 )
 
 logger = logging.getLogger(__name__)
 
-KLINE_1H_COUNT:  int = 250   # EMA200 warm-up + buffer
-KLINE_15M_COUNT: int = 60    # swing zone + recent sweep window
-KLINE_5M_COUNT:  int = 50    # RSI + volume MA warm-up
+# ── Candle counts ─────────────────────────────────────────────────
+KLINE_1H_COUNT    = 120   # 1H bars  (~5 days for structure)
+KLINE_SWEEP_COUNT = 120   # 15M bars (~30 hours for sweep search)
+KLINE_ENTRY_COUNT = 70    # 5M bars  (~6 hours; EMA50 needs ≥50 bars)
 
-# Swing-level detection (15M)
-SWING_ZONE_START: int = -45  # oldest bar in swing-level window
-SWING_ZONE_END:   int = -8   # newest bar in swing-level window (keep gap from sweep zone)
-SWEEP_RECENT:     int = 8    # how many recent completed 15M bars to check for the sweep
-PIVOT_LOOKBACK:   int = 3    # bars on each side required for pivot low/high
+# ── Pivot detection ───────────────────────────────────────────────
+PIVOT_LOOKBACK = 3        # bars each side required to confirm a pivot
+
+# ── Structure window ─────────────────────────────────────────────
+STRUCTURE_1H_BARS = 80    # 1H bars scanned for consecutive HH/LL
+
+# ── Sweep search window ───────────────────────────────────────────
+SWEEP_SEARCH_BARS = 60    # 15M bars scanned for sweep candles (~15 h)
+
+# ── Zone touch tolerance ──────────────────────────────────────────
+ZONE_BUFFER = 0.001       # 0.1% tolerance for zone touch on 5M
+
+
+class SweepResult(NamedTuple):
+    zone_low:     float
+    zone_high:    float
+    sweep_bar_idx: int
 
 
 @dataclass
@@ -61,158 +89,312 @@ class Signal:
     score:             float = 0.0
 
 
-# ── swing-level helpers ───────────────────────────────────────────
+# ── Pivot helpers ────────────────────────────────────────────────
 
-def _pivot_low(df: pd.DataFrame, start: int, end: int) -> float | None:
-    """Return the most recent pivot low (lower than PIVOT_LOOKBACK bars each side)."""
-    sub = df["low"].iloc[start:end]
-    for i in range(PIVOT_LOOKBACK, len(sub) - PIVOT_LOOKBACK):
-        v = sub.iloc[i]
-        if all(sub.iloc[i - PIVOT_LOOKBACK:i] > v) and \
-           all(sub.iloc[i + 1:i + PIVOT_LOOKBACK + 1] > v):
-            return float(v)
-    return float(sub.min()) if len(sub) > 0 else None   # fallback: zone minimum
-
-
-def _pivot_high(df: pd.DataFrame, start: int, end: int) -> float | None:
-    """Return the most recent pivot high (higher than PIVOT_LOOKBACK bars each side)."""
-    sub = df["high"].iloc[start:end]
-    for i in range(PIVOT_LOOKBACK, len(sub) - PIVOT_LOOKBACK):
-        v = sub.iloc[i]
-        if all(sub.iloc[i - PIVOT_LOOKBACK:i] < v) and \
-           all(sub.iloc[i + 1:i + PIVOT_LOOKBACK + 1] < v):
-            return float(v)
-    return float(sub.max()) if len(sub) > 0 else None   # fallback: zone maximum
+def _pivot_highs(series: pd.Series) -> list[tuple[int, float]]:
+    """Return (relative_index, price) for each pivot high in series."""
+    n = len(series)
+    result = []
+    for i in range(PIVOT_LOOKBACK, n - PIVOT_LOOKBACK):
+        v = float(series.iloc[i])
+        if all(series.iloc[i - PIVOT_LOOKBACK:i] < v) and \
+           all(series.iloc[i + 1:i + PIVOT_LOOKBACK + 1] < v):
+            result.append((i, v))
+    return result
 
 
-def _detect_sweep(df_15m: pd.DataFrame, direction: str) -> float | None:
+def _pivot_lows(series: pd.Series) -> list[tuple[int, float]]:
+    """Return (relative_index, price) for each pivot low in series."""
+    n = len(series)
+    result = []
+    for i in range(PIVOT_LOOKBACK, n - PIVOT_LOOKBACK):
+        v = float(series.iloc[i])
+        if all(series.iloc[i - PIVOT_LOOKBACK:i] > v) and \
+           all(series.iloc[i + 1:i + PIVOT_LOOKBACK + 1] > v):
+            result.append((i, v))
+    return result
+
+
+# ── Tier 1: 1H market structure ──────────────────────────────────
+
+def _bullish_structure_idx(df_1h: pd.DataFrame) -> int | None:
     """
-    Find a recent liquidity sweep on 15M.
-    Returns the swept level (SL anchor) or None.
+    Find the most recent pair of consecutive HH in 1H.
+    Returns absolute index of the second (latest) HH, or None.
     """
-    if len(df_15m) < abs(SWING_ZONE_START) + 5:
+    n = len(df_1h)
+    ws = max(0, n - STRUCTURE_1H_BARS - PIVOT_LOOKBACK - 1)
+    ph = _pivot_highs(df_1h["high"].iloc[ws:-1])   # exclude forming bar
+    if len(ph) < 2:
         return None
+    ph_abs = [(ws + i, p) for i, p in ph]
+    for k in range(len(ph_abs) - 1, 0, -1):
+        idx2, h2 = ph_abs[k]
+        idx1, h1 = ph_abs[k - 1]
+        if h2 > h1:
+            logger.debug(f"  1H bullish HH: {h1:.6g}@{idx1} → {h2:.6g}@{idx2}")
+            return idx2
+    return None
 
-    # Completed bars only; iloc[-1] is the forming candle
-    recent = df_15m.iloc[-(SWEEP_RECENT + 1):-1]   # last SWEEP_RECENT completed bars
 
-    if direction == "LONG":
-        swing = _pivot_low(df_15m, SWING_ZONE_START, SWING_ZONE_END)
-        if swing is None:
-            return None
-        for i in range(len(recent)):
-            c = recent.iloc[i]
-            if float(c["low"]) < swing and float(c["close"]) > swing:
-                return swing
-    else:
-        swing = _pivot_high(df_15m, SWING_ZONE_START, SWING_ZONE_END)
-        if swing is None:
-            return None
-        for i in range(len(recent)):
-            c = recent.iloc[i]
-            if float(c["high"]) > swing and float(c["close"]) < swing:
-                return swing
+def _bearish_structure_idx(df_1h: pd.DataFrame) -> int | None:
+    """
+    Find the most recent pair of consecutive LL in 1H.
+    Returns absolute index of the second (latest) LL, or None.
+    """
+    n = len(df_1h)
+    ws = max(0, n - STRUCTURE_1H_BARS - PIVOT_LOOKBACK - 1)
+    pl = _pivot_lows(df_1h["low"].iloc[ws:-1])
+    if len(pl) < 2:
+        return None
+    pl_abs = [(ws + i, p) for i, p in pl]
+    for k in range(len(pl_abs) - 1, 0, -1):
+        idx2, l2 = pl_abs[k]
+        idx1, l1 = pl_abs[k - 1]
+        if l2 < l1:
+            logger.debug(f"  1H bearish LL: {l1:.6g}@{idx1} → {l2:.6g}@{idx2}")
+            return idx2
+    return None
+
+
+# ── Tier 2: 15M sweep + acceptance ───────────────────────────────
+
+def _find_long_sweep(df: pd.DataFrame) -> SweepResult | None:
+    """
+    Search SWEEP_SEARCH_BARS of 15M history for the most recent valid LONG setup:
+      - sweep candle wick < pivot_low AND close > pivot_low
+      - a subsequent bar closes above sweep_candle_high (acceptance)
+      - no subsequent bar closes below zone_low (no invalidation)
+    Returns SweepResult or None.
+    """
+    n = len(df)
+    ws = max(0, n - SWEEP_SEARCH_BARS - PIVOT_LOOKBACK - 1)
+    pl = _pivot_lows(df["low"].iloc[ws:-1])
+    if not pl:
+        return None
+    pl_abs = [(ws + i, p) for i, p in pl]
+
+    # Scan from newest completed bar backwards
+    for sweep_i in range(n - 2, max(ws, n - SWEEP_SEARCH_BARS) - 1, -1):
+        bl = float(df["low"].iloc[sweep_i])
+        bc = float(df["close"].iloc[sweep_i])
+        bh = float(df["high"].iloc[sweep_i])
+
+        # Find the most recent pivot low that was swept by this bar
+        swept_pivot = None
+        for pi_abs, pi_price in reversed(pl_abs):
+            if pi_abs >= sweep_i:
+                continue
+            if bl < pi_price < bc:   # wick below pivot, close recovers above
+                swept_pivot = pi_price
+                break
+
+        if swept_pivot is None:
+            continue
+
+        zone_low  = bl
+        zone_high = swept_pivot
+
+        post = df.iloc[sweep_i + 1:-1]   # completed bars after sweep
+        if post.empty:
+            continue
+
+        # Acceptance: a bar after sweep must close above sweep_candle_high
+        if float(post["close"].max()) <= bh:
+            logger.debug(f"  LONG zone [{zone_low:.5g},{zone_high:.5g}] pending acceptance")
+            continue
+
+        # Invalidation: no bar after sweep may close below zone_low
+        if float(post["close"].min()) < zone_low:
+            logger.debug(f"  LONG zone [{zone_low:.5g},{zone_high:.5g}] invalidated (close below wick)")
+            continue
+
+        logger.info(
+            f"  LONG sweep zone confirmed: [{zone_low:.6g}, {zone_high:.6g}] "
+            f"sweep@bar{sweep_i}"
+        )
+        return SweepResult(zone_low=zone_low, zone_high=zone_high, sweep_bar_idx=sweep_i)
 
     return None
 
 
-# ── main analysis ────────────────────────────────────────────────
+def _find_short_sweep(df: pd.DataFrame) -> SweepResult | None:
+    """
+    Search SWEEP_SEARCH_BARS of 15M history for the most recent valid SHORT setup:
+      - sweep candle wick > pivot_high AND close < pivot_high
+      - a subsequent bar closes below sweep_candle_low (acceptance)
+      - no subsequent bar closes above zone_high (no invalidation)
+    Returns SweepResult or None.
+    """
+    n = len(df)
+    ws = max(0, n - SWEEP_SEARCH_BARS - PIVOT_LOOKBACK - 1)
+    ph = _pivot_highs(df["high"].iloc[ws:-1])
+    if not ph:
+        return None
+    ph_abs = [(ws + i, p) for i, p in ph]
+
+    for sweep_i in range(n - 2, max(ws, n - SWEEP_SEARCH_BARS) - 1, -1):
+        bh = float(df["high"].iloc[sweep_i])
+        bc = float(df["close"].iloc[sweep_i])
+        bl = float(df["low"].iloc[sweep_i])
+
+        swept_pivot = None
+        for pi_abs, pi_price in reversed(ph_abs):
+            if pi_abs >= sweep_i:
+                continue
+            if bc < pi_price < bh:   # wick above pivot, close drops below
+                swept_pivot = pi_price
+                break
+
+        if swept_pivot is None:
+            continue
+
+        zone_low  = swept_pivot
+        zone_high = bh
+
+        post = df.iloc[sweep_i + 1:-1]
+        if post.empty:
+            continue
+
+        # Acceptance: a bar after sweep must close below sweep_candle_low
+        if float(post["close"].min()) >= bl:
+            logger.debug(f"  SHORT zone [{zone_low:.5g},{zone_high:.5g}] pending acceptance")
+            continue
+
+        # Invalidation: no bar after sweep may close above zone_high
+        if float(post["close"].max()) > zone_high:
+            logger.debug(f"  SHORT zone [{zone_low:.5g},{zone_high:.5g}] invalidated (close above wick)")
+            continue
+
+        logger.info(
+            f"  SHORT sweep zone confirmed: [{zone_low:.6g}, {zone_high:.6g}] "
+            f"sweep@bar{sweep_i}"
+        )
+        return SweepResult(zone_low=zone_low, zone_high=zone_high, sweep_bar_idx=sweep_i)
+
+    return None
+
+
+# ── Main analysis ────────────────────────────────────────────────
 
 def analyze_coin(symbol: str) -> "Signal | None":
     try:
-        # ── Tier 1: 1H trend ─────────────────────────────────────────
+        # ── Tier 1: 1H market structure ───────────────────────────
         df_1h = get_klines(symbol, MTF_1H, count=KLINE_1H_COUNT)
-        if df_1h.empty or len(df_1h) < EMA_200 + 10:
+        if df_1h.empty or len(df_1h) < PIVOT_LOOKBACK * 2 + 5:
             return None
 
-        ema50_1h  = ta.ema(df_1h["close"], length=EMA_50)
-        ema200_1h = ta.ema(df_1h["close"], length=EMA_200)
+        long_idx  = _bullish_structure_idx(df_1h)
+        short_idx = _bearish_structure_idx(df_1h)
 
-        if pd.isna(ema50_1h.iloc[-2]) or pd.isna(ema200_1h.iloc[-2]):
+        if long_idx is None and short_idx is None:
+            logger.debug(f"{symbol}: no 1H market structure")
             return None
 
-        close_1h = float(df_1h["close"].iloc[-2])
-        e50      = float(ema50_1h.iloc[-2])
-        e200     = float(ema200_1h.iloc[-2])
-
-        if   close_1h > e50 and e50 > e200:
+        # When both exist, pick the more recent structure
+        if long_idx is not None and short_idx is not None:
+            direction = "LONG" if long_idx >= short_idx else "SHORT"
+        elif long_idx is not None:
             direction = "LONG"
-        elif close_1h < e50 and e50 < e200:
-            direction = "SHORT"
         else:
-            logger.debug(f"{symbol}: no clear 1H trend")
+            direction = "SHORT"
+
+        logger.debug(f"{symbol}: 1H {direction} bias confirmed (2 HH/LL structure)")
+
+        # ── Tier 2: 15M sweep + acceptance ────────────────────────
+        df_15m = get_klines(symbol, SWEEP_TF, count=KLINE_SWEEP_COUNT)
+        if df_15m.empty or len(df_15m) < 30:
             return None
 
-        # ── Tier 2: 15M liquidity sweep ───────────────────────────────
-        df_15m = get_klines(symbol, MTF_15M, count=KLINE_15M_COUNT)
-        if df_15m.empty or len(df_15m) < abs(SWING_ZONE_START) + 5:
+        if direction == "LONG":
+            sweep_result = _find_long_sweep(df_15m)
+        else:
+            sweep_result = _find_short_sweep(df_15m)
+
+        if sweep_result is None:
+            logger.debug(f"{symbol}: no valid {direction} sweep zone on 15M")
             return None
 
-        swept_level = _detect_sweep(df_15m, direction)
-        if swept_level is None:
-            logger.debug(f"{symbol}: no 15M {direction} sweep found")
-            return None
+        zone_low, zone_high, sweep_idx = sweep_result
+        logger.info(
+            f"{symbol}: {direction} sweep zone [{zone_low:.6g}, {zone_high:.6g}] "
+            f"accepted — checking 5M retest"
+        )
 
-        # ── Tier 3: 5M confirmation ───────────────────────────────────
-        df_5m = get_klines(symbol, ENTRY_TF, count=KLINE_5M_COUNT)
+        # ── Tier 3: 5M retest + confirmation ──────────────────────
+        df_5m = get_klines(symbol, ENTRY_TF, count=KLINE_ENTRY_COUNT)
         if df_5m.empty or len(df_5m) < VOLUME_MA_BARS + 5:
             return None
 
-        rsi_5m = ta.rsi(df_5m["close"], length=RSI_PERIOD)
+        rsi   = ta.rsi(df_5m["close"], length=RSI_PERIOD)
         vol_ma = df_5m["volume"].rolling(VOLUME_MA_BARS).mean()
+        ema50 = ta.ema(df_5m["close"], length=EMA_50)
+        atr   = ta.atr(df_5m["high"], df_5m["low"], df_5m["close"], length=14)
 
-        c = df_5m.iloc[-2]   # last completed 5M candle
+        c  = df_5m.iloc[-2]   # last completed 5M candle
         co = float(c["open"])
         cc = float(c["close"])
         ch = float(c["high"])
         cl = float(c["low"])
 
-        candle_range = ch - cl
-        body         = abs(cc - co)
-        body_ratio   = body / candle_range if candle_range > 0 else 0.0
+        cr     = ch - cl
+        body   = abs(cc - co)
+        bratio = body / cr if cr > 0 else 0.0
 
-        rsi_val = float(rsi_5m.iloc[-2]) if not pd.isna(rsi_5m.iloc[-2]) else None
+        rsi_val = float(rsi.iloc[-2])    if not pd.isna(rsi.iloc[-2])    else 50.0
         vol_cur = float(df_5m["volume"].iloc[-2])
-        vol_avg = float(vol_ma.iloc[-2]) if not pd.isna(vol_ma.iloc[-2]) else None
+        vol_avg = float(vol_ma.iloc[-2]) if not pd.isna(vol_ma.iloc[-2]) else 0.0
+        ema_val = float(ema50.iloc[-2])  if not pd.isna(ema50.iloc[-2])  else 0.0
+        atr_val = float(atr.iloc[-2])    if not pd.isna(atr.iloc[-2])    else cc * 0.001
 
-        if rsi_val is None or vol_avg is None:
+        # Zone touch: last 5M bar must be touching / inside the sweep zone
+        if direction == "LONG":
+            touches_zone = cl <= zone_high * (1 + ZONE_BUFFER)
+        else:
+            touches_zone = ch >= zone_low * (1 - ZONE_BUFFER)
+
+        if not touches_zone:
+            logger.debug(f"{symbol}: {direction} 5M bar not yet touching zone")
             return None
 
+        logger.info(f"{symbol}: {direction} 5M retest confirmed — verifying confirmation filters")
+
+        # Confirmation filters
         if direction == "LONG":
-            body_ok    = cc > co and body_ratio >= 0.30
-            rsi_ok     = rsi_val > 50
+            body_ok = cc > co and bratio >= 0.30
+            rsi_ok  = rsi_val > 50
+            ema_ok  = ema_val > 0 and cc > ema_val
         else:
-            body_ok    = cc < co and body_ratio >= 0.30
-            rsi_ok     = rsi_val < 50
+            body_ok = cc < co and bratio >= 0.30
+            rsi_ok  = rsi_val < 50
+            ema_ok  = ema_val > 0 and cc < ema_val
 
-        volume_ok = vol_avg > 0 and vol_cur >= VOLUME_MIN_MULT * vol_avg
+        vol_ok = vol_avg > 0 and vol_cur >= VOLUME_MIN_MULT * vol_avg
 
-        if not (body_ok and rsi_ok and volume_ok):
+        if not (body_ok and rsi_ok and vol_ok and ema_ok):
             logger.debug(
-                f"{symbol}: 5M confirm fail "
-                f"(body={body_ratio:.2f} rsi={rsi_val:.1f} vol={vol_cur:.0f}/{vol_avg*VOLUME_MIN_MULT:.0f})"
+                f"{symbol}: {direction} confirm fail — "
+                f"body={bratio:.2f} rsi={rsi_val:.1f} "
+                f"vol={vol_cur:.0f}/{vol_avg * VOLUME_MIN_MULT:.0f} ema_ok={ema_ok}"
             )
             return None
 
-        # ── SL / TP ───────────────────────────────────────────────────
-        entry = float(df_5m["close"].iloc[-2])
-
-        atr_5m  = ta.atr(df_5m["high"], df_5m["low"], df_5m["close"], length=14)
-        atr_val = float(atr_5m.iloc[-2]) if not pd.isna(atr_5m.iloc[-2]) else entry * 0.001
+        # ── SL / TP ───────────────────────────────────────────────
+        entry = cc
 
         if direction == "LONG":
-            if swept_level >= entry:
+            sl_price = round(zone_low - SL_ATR_BUFFER * atr_val, 8)
+            if sl_price >= entry:
                 return None
-            sl_price = round(swept_level - SL_ATR_BUFFER * atr_val, 8)
-            risk     = entry - sl_price
-            tp1      = round(entry + risk, 8)
+            risk = entry - sl_price
+            tp1  = round(entry + risk, 8)
             tp_price = round(entry + REWARD_RATIO * risk, 8)
         else:
-            if swept_level <= entry:
+            sl_price = round(zone_high + SL_ATR_BUFFER * atr_val, 8)
+            if sl_price <= entry:
                 return None
-            sl_price = round(swept_level + SL_ATR_BUFFER * atr_val, 8)
-            risk     = sl_price - entry
-            tp1      = round(entry - risk, 8)
+            risk = sl_price - entry
+            tp1  = round(entry - risk, 8)
             tp_price = round(entry - REWARD_RATIO * risk, 8)
 
         risk_pct = risk / entry * 100
@@ -223,23 +405,21 @@ def analyze_coin(symbol: str) -> "Signal | None":
         tp_roi_pct = risk_pct * REWARD_RATIO * LEVERAGE
         sl_roi_pct = risk_pct * LEVERAGE
 
-        # ── Quality score (0–100) ─────────────────────────────────────
-        trend_score  = min(abs(e50 - e200) / e200 / 0.03, 1.0)          # EMA separation
-        rsi_score    = min(abs(rsi_val - 50) / 30.0, 1.0)               # RSI distance from 50
-        vol_score    = min((vol_cur / (VOLUME_MIN_MULT * vol_avg) - 1) / 1.5, 1.0)  # vol excess
+        # ── Quality score (0–100) ─────────────────────────────────
+        rsi_score  = min(abs(rsi_val - 50) / 30.0, 1.0)
+        vol_score  = min((vol_cur / (VOLUME_MIN_MULT * vol_avg) - 1) / 1.5, 1.0) if vol_avg > 0 else 0.0
+        zone_score = min((zone_high - zone_low) / zone_high / 0.005, 1.0)   # wider zone = cleaner sweep
 
         score = round(
-            (0.40 * trend_score +
-             0.35 * rsi_score  +
-             0.25 * vol_score) * 100,
-            1,
+            (0.40 * rsi_score + 0.35 * vol_score + 0.25 * zone_score) * 100, 1
         )
 
         logger.info(
             f"[SIGNAL] {direction} {symbol} @ {entry:.6g} | "
-            f"TP={tp_price:.6g} (+{tp_roi_pct:.1f}% ROI) "
-            f"SL={sl_price:.6g} (-{sl_roi_pct:.1f}% ROI) | "
-            f"sweep={swept_level:.6g} risk={risk_pct:.3f}% RSI={rsi_val:.1f} score={score}"
+            f"TP={tp_price:.6g} (+{tp_roi_pct:.1f}%) "
+            f"SL={sl_price:.6g} (-{sl_roi_pct:.1f}%) | "
+            f"zone=[{zone_low:.6g},{zone_high:.6g}] "
+            f"risk={risk_pct:.3f}% RSI={rsi_val:.1f} score={score}"
         )
 
         return Signal(
@@ -252,7 +432,9 @@ def analyze_coin(symbol: str) -> "Signal | None":
             tp_roi_pct        = tp_roi_pct,
             sl_roi_pct        = sl_roi_pct,
             timeframe_summary = (
-                f"1H EMA{EMA_50}/EMA{EMA_200} → 15M Sweep → 5M | "
+                f"Liquidity Sweep | "
+                f"1H Struct → 15M Sweep+Accept → 5M Retest | "
+                f"zone=[{zone_low:.5g},{zone_high:.5g}] | "
                 f"TP1=${tp1:,.6g} TP2=${tp_price:,.6g}"
             ),
             generated_at      = datetime.now(timezone.utc),

@@ -125,8 +125,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
     from config import (
-        ENTRY_TF, MTF_15M, MTF_1H, MAX_CONCURRENT_SIGNALS,
-        EMA_50, EMA_200, RSI_PERIOD,
+        MTF_1H, SWEEP_TF, ENTRY_TF, MAX_CONCURRENT_SIGNALS,
         LEVERAGE, REWARD_RATIO, MAX_RISK_PCT,
         SIGNAL_COOLDOWN_MINUTES, SIGNALS_PER_SCAN,
     )
@@ -138,7 +137,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `{MTF_1H} EMA{EMA_50}/EMA{EMA_200} → {MTF_15M} Sweep → {ENTRY_TF} Confirm`\n"
+        f"Strategy:   `Liquidity Sweep`\n"
+        f"Logic:      `{MTF_1H} Structure → {SWEEP_TF} Sweep+Accept → {ENTRY_TF} Retest`\n"
         f"Leverage:   `{LEVERAGE}x`\n"
         f"TP / SL:    `{REWARD_RATIO:.0f}R / 1R  (max SL {MAX_RISK_PCT:.0f}% move)`\n"
         f"Per scan:   `top {SIGNALS_PER_SCAN} signals`\n"
