@@ -166,13 +166,14 @@ async def cmd_zones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         emoji   = STATUS_EMOJI.get(z["status"], "•")
         coin    = z["symbol"].replace("_USDT", "")
         det     = datetime.fromisoformat(z["detected_at"]).strftime("%m/%d %H:%M")
+        status = z["status"].replace("_", "-")   # underscores break Markdown parser
         lines.append(
             f"{d} *{coin}* {z['direction']}  "
             f"`[{z['zone_low']:.5g}, {z['zone_high']:.5g}]`  "
-            f"{emoji} _{z['status']}_  _{det} UTC_"
+            f"{emoji} `{status}`  {det} UTC"
         )
     if len(zones) > 20:
-        lines.append(f"_…and {len(zones) - 20} more_")
+        lines.append(f"... and {len(zones) - 20} more")
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 
