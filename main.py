@@ -13,6 +13,7 @@ Scheduler jobs:
 import asyncio
 import logging
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -37,6 +38,7 @@ from config import (
     SIGNALS_PER_SCAN,
     OUTCOME_CHECK_MINUTES,
     CANDLE_MINUTES,
+    SCAN_WORKERS,
 )
 
 logging.basicConfig(
@@ -78,17 +80,32 @@ async def scan_and_signal(app: Application) -> None:
     now            = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
 
-    logger.info(f"[SCAN] Scanning {len(coins)} coins...")
+    # ── Phase 1: RSI pre-filter (parallel, ~3s for 100 coins) ─────
+    hot_coins = coin_scanner.rsi_prefilter(coins)
+    if not hot_coins:
+        logger.info("[SCAN] No coins at RSI extremes this cycle")
+        return
 
-    candidates = []
-    for symbol in coins:
-        if db.signal_exists_for_coin(symbol, cooldown_since):
-            logger.debug(f"[SCAN] {symbol}: cooldown active")
-            continue
+    # Remove coins still in cooldown before expensive Phase 2
+    to_scan = [s for s in hot_coins if not db.signal_exists_for_coin(s, cooldown_since)]
+    logger.info(f"[SCAN] Phase 2: {len(to_scan)} coins after cooldown filter")
 
-        sig = strategy.analyze_coin(symbol)
-        if sig is not None:
-            candidates.append(sig)
+    # ── Phase 2: full 3-tier analysis (parallel) ──────────────────
+    def _analyze(symbol: str):
+        try:
+            return strategy.analyze_coin(symbol)
+        except Exception as e:
+            logger.error(f"[SCAN] {symbol} analysis error: {e}")
+            return None
+
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as ex:
+        results = await loop.run_in_executor(
+            None,
+            lambda: list(ex.map(_analyze, to_scan)),
+        )
+
+    candidates = [s for s in results if s is not None]
 
     if not candidates:
         logger.info("[SCAN] Done — 0 signals found")
@@ -208,7 +225,7 @@ async def check_outcomes(app: Application) -> None:
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot — Liquidity Sweep (1H LH+LL+OTE → 15M Sweep/Accept → 5M Retest)...")
+    logger.info("Starting MEXC Signal Bot — Liquidity Sweep (RSI prefilter → 1H LH+LL+OTE → 15M Sweep → 5M Retest)...")
 
     db.init_db()
 

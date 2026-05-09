@@ -21,7 +21,7 @@ import sqlite3
 import logging
 from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
-from config import DB_PATH, ZONE_EXPIRE_HOURS
+from config import DB_PATH, ZONE_EXPIRE_HOURS, ZONE_EXPIRE_ACCEPTED_HOURS
 
 logger = logging.getLogger(__name__)
 
@@ -250,14 +250,24 @@ def get_all_zones(limit: int = 200) -> list[dict]:
 
 
 def expire_old_zones():
-    """Mark zones older than ZONE_EXPIRE_HOURS that are still open as expired."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=ZONE_EXPIRE_HOURS)).isoformat()
-    now    = datetime.now(timezone.utc).isoformat()
+    """
+    Tiered zone expiry:
+      accepted       → expire after ZONE_EXPIRE_ACCEPTED_HOURS (24h default)
+      waiting_retest → expire after ZONE_EXPIRE_HOURS (48h default)
+    """
+    now               = datetime.now(timezone.utc)
+    now_s             = now.isoformat()
+    cutoff_accepted   = (now - timedelta(hours=ZONE_EXPIRE_ACCEPTED_HOURS)).isoformat()
+    cutoff_retest     = (now - timedelta(hours=ZONE_EXPIRE_HOURS)).isoformat()
     with _conn() as con:
-        cur = con.execute("""
+        c1 = con.execute("""
             UPDATE sweep_zones SET status = 'expired', updated_at = ?
-            WHERE status IN ('accepted', 'waiting_retest')
-              AND detected_at < ?
-        """, (now, cutoff))
-    if cur.rowcount:
-        logger.info(f"[ZONE] Expired {cur.rowcount} old zone(s)")
+            WHERE status = 'accepted' AND detected_at < ?
+        """, (now_s, cutoff_accepted))
+        c2 = con.execute("""
+            UPDATE sweep_zones SET status = 'expired', updated_at = ?
+            WHERE status = 'waiting_retest' AND detected_at < ?
+        """, (now_s, cutoff_retest))
+    total = c1.rowcount + c2.rowcount
+    if total:
+        logger.info(f"[ZONE] Expired {total} zone(s) ({c1.rowcount} accepted, {c2.rowcount} waiting_retest)")

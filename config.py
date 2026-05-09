@@ -16,8 +16,16 @@ COINGLASS_API_KEY: str = os.getenv("COINGLASS_API_KEY", "")
 
 # ── Coin pool ────────────────────────────────────────────────────
 EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
-TOP_N_COINS:   int      = 40
-COIN_REFRESH_HOURS: int = 4
+TOP_N_COINS:              int   = 100
+COIN_POOL_MIN_VOLUME_USD: float = 5_000_000   # minimum $5M daily volume
+COIN_REFRESH_HOURS:       int   = 6
+
+# ── RSI pre-filter (Phase 1 of scan pipeline) ────────────────────
+RSI_PREFILTER_OVERSOLD:   float = 35    # RSI below → LONG candidate
+RSI_PREFILTER_OVERBOUGHT: float = 65    # RSI above → SHORT candidate
+RSI_PREFILTER_BARS:       int   = 30    # 15M bars needed for RSI calc
+PREFILTER_WORKERS:        int   = 10    # concurrent threads for pre-filter
+SCAN_WORKERS:             int   = 5     # concurrent threads for full analysis
 
 # ── Timeframes ───────────────────────────────────────────────────
 MTF_1H:   str = "1h"   # tier 1: higher-TF structure (2 HH / 2 LL)
@@ -48,7 +56,8 @@ MIN_SIGNAL_SCORE:   int   = 40    # discard signals scored below this threshold
 # ── Scheduler ────────────────────────────────────────────────────
 SIGNAL_COOLDOWN_MINUTES: int = 60
 SIGNAL_EXPIRE_HOURS:     int = 4
-ZONE_EXPIRE_HOURS:       int = 48   # drop unresolved sweep zones after 48h
+ZONE_EXPIRE_HOURS:          int = 48   # waiting_retest zones expire after 48h
+ZONE_EXPIRE_ACCEPTED_HOURS: int = 24   # accepted zones (no retest yet) expire after 24h
 MAX_CONCURRENT_SIGNALS:  int = 10
 
 SCAN_CRON_MINUTES:     str = "1,6,11,16,21,26,31,36,41,46,51,56"   # every 5 min

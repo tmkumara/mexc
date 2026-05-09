@@ -2,13 +2,25 @@
 Coin selection: top N coins by open interest from CoinGlass API.
 Falls back to MEXC 24h volume ranking when no API key is configured.
 Refreshed every COIN_REFRESH_HOURS hours.
+
+RSI pre-filter runs every scan cycle (every 5 min) to narrow the
+100-coin pool down to coins with RSI extremes before full analysis.
 """
 
 import logging
+import pandas_ta as ta
+import pandas as pd
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from mexc_client import get_all_contracts, get_tickers
-from config import EXCLUDE_COINS, TOP_N_COINS, COINGLASS_API_KEY
+from mexc_client import get_all_contracts, get_tickers, get_klines
+from config import (
+    EXCLUDE_COINS, TOP_N_COINS, COINGLASS_API_KEY,
+    COIN_POOL_MIN_VOLUME_USD,
+    RSI_PREFILTER_OVERSOLD, RSI_PREFILTER_OVERBOUGHT,
+    RSI_PREFILTER_BARS, PREFILTER_WORKERS,
+    SWEEP_TF, RSI_PERIOD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +85,7 @@ def _fetch_coinglass_coins() -> list[str]:
 # ── MEXC fallback ─────────────────────────────────────────────────
 
 def _fetch_mexc_coins() -> list[str]:
-    """Fallback: top USDT perps by 24h volume from MEXC."""
+    """Fallback: top USDT perps by 24h volume from MEXC, above min volume."""
     try:
         tickers = get_tickers()
         rows = []
@@ -81,7 +93,7 @@ def _fetch_mexc_coins() -> list[str]:
             if not sym.endswith("_USDT") or sym in EXCLUDE_COINS:
                 continue
             vol = 0.0
-            for key in ("volume24", "vol24", "amount24", "volume"):
+            for key in ("amount24", "volume24", "vol24", "volume"):
                 v = t.get(key)
                 if v is not None:
                     try:
@@ -89,11 +101,13 @@ def _fetch_mexc_coins() -> list[str]:
                         break
                     except (ValueError, TypeError):
                         pass
+            if vol < COIN_POOL_MIN_VOLUME_USD:
+                continue
             rows.append((sym, vol))
 
         rows.sort(key=lambda x: x[1], reverse=True)
         symbols = [sym for sym, _ in rows[:TOP_N_COINS]]
-        logger.info(f"MEXC volume fallback: {len(symbols)} coins")
+        logger.info(f"MEXC volume fallback: {len(symbols)} coins (min vol ${COIN_POOL_MIN_VOLUME_USD/1e6:.0f}M)")
         return symbols
 
     except Exception as e:
@@ -142,3 +156,43 @@ def get_cached_coins() -> list[str]:
     if not _cached_coins:
         return refresh_coin_list()
     return _cached_coins
+
+
+# ── RSI pre-filter ────────────────────────────────────────────────
+
+def rsi_prefilter(coins: list[str]) -> list[str]:
+    """
+    Fast Phase-1 filter: fetch 15M RSI for every coin in parallel.
+    Returns coins where RSI < RSI_PREFILTER_OVERSOLD (LONG candidates)
+    or RSI > RSI_PREFILTER_OVERBOUGHT (SHORT candidates).
+    Coins that error are excluded to avoid wasting Phase-2 time.
+    """
+    def _check(symbol: str) -> str | None:
+        try:
+            df = get_klines(symbol, SWEEP_TF, count=RSI_PREFILTER_BARS)
+            if df.empty or len(df) < RSI_PERIOD + 1:
+                return None
+            rsi = ta.rsi(df["close"], length=RSI_PERIOD)
+            val = rsi.iloc[-2]   # last completed bar
+            if pd.isna(val):
+                return None
+            val = float(val)
+            if val < RSI_PREFILTER_OVERSOLD or val > RSI_PREFILTER_OVERBOUGHT:
+                return symbol
+            return None
+        except Exception:
+            return None
+
+    hot: list[str] = []
+    with ThreadPoolExecutor(max_workers=PREFILTER_WORKERS) as ex:
+        futures = {ex.submit(_check, s): s for s in coins}
+        for fut in as_completed(futures):
+            result = fut.result()
+            if result is not None:
+                hot.append(result)
+
+    logger.info(
+        f"[RSI-FILTER] {len(coins)} → {len(hot)} coins "
+        f"(RSI <{RSI_PREFILTER_OVERSOLD} or >{RSI_PREFILTER_OVERBOUGHT})"
+    )
+    return hot

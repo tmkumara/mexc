@@ -129,6 +129,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         MTF_1H, SWEEP_TF, ENTRY_TF, MAX_CONCURRENT_SIGNALS,
         LEVERAGE, REWARD_RATIO, MAX_RISK_PCT,
         SIGNAL_COOLDOWN_MINUTES, SIGNALS_PER_SCAN,
+        RSI_PREFILTER_OVERSOLD, RSI_PREFILTER_OVERBOUGHT,
+        PREFILTER_WORKERS, SCAN_WORKERS,
     )
     state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
     coins  = coin_scanner.get_cached_coins()
@@ -139,7 +141,9 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
         f"Strategy:   `Liquidity Sweep`\n"
-        f"Logic:      `{MTF_1H} LH+LL+OTE → {SWEEP_TF} Sweep+Accept → {ENTRY_TF} Retest`\n"
+        f"Logic:      `{MTF_1H} LH+LL+OTE → {SWEEP_TF} Sweep → {ENTRY_TF} Retest`\n"
+        f"Pre-filter: `RSI <{RSI_PREFILTER_OVERSOLD} or >{RSI_PREFILTER_OVERBOUGHT} on {SWEEP_TF}`\n"
+        f"Workers:    `{PREFILTER_WORKERS} pre-filter / {SCAN_WORKERS} analysis`\n"
         f"Leverage:   `{LEVERAGE}x`\n"
         f"TP / SL:    `{REWARD_RATIO:.0f}R / 1R  (max SL {MAX_RISK_PCT:.0f}% move)`\n"
         f"Per scan:   `top {SIGNALS_PER_SCAN} signals`\n"
