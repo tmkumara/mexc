@@ -1,7 +1,11 @@
 import os
+from datetime import timezone, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ── Timezone ──────────────────────────────────────────────────────
+LKT = timezone(timedelta(hours=5, minutes=30))   # Sri Lanka Time (UTC+5:30)
 
 # ── Telegram ──────────────────────────────────────────────────────
 TELEGRAM_TOKEN      = os.getenv("TELEGRAM_TOKEN")

@@ -26,6 +26,7 @@ import bot as tg
 import coin_scanner
 from mexc_client import get_klines
 from config import (
+    LKT,
     SIGNAL_COOLDOWN_MINUTES,
     SIGNAL_EXPIRE_HOURS,
     COIN_REFRESH_HOURS,
@@ -46,6 +47,8 @@ logging.basicConfig(
         logging.FileHandler("mexc_bot.log"),
     ],
 )
+# Log timestamps in Sri Lanka Time (UTC+5:30)
+logging.Formatter.converter = lambda *args: datetime.now(LKT).timetuple()
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("apscheduler").setLevel(logging.WARNING)

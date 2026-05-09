@@ -11,7 +11,7 @@ from telegram.constants import ParseMode
 
 import database as db
 import reports
-from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID
+from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, LKT
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def format_signal(signal, signal_id: int) -> str:
         f"📊 {signal.timeframe_summary}",
         f"🏅 Quality:  `{signal.score}/100`  {stars}",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"⏰ `{signal.generated_at.strftime('%Y-%m-%d %H:%M UTC')}`",
+        f"⏰ `{signal.generated_at.astimezone(LKT).strftime('%Y-%m-%d %H:%M LKT')}`",
         f"🆔 Signal ID: `{signal_id}`",
         "_⚠️ Not financial advice. Use risk management._",
     ])
@@ -146,7 +146,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Cooldown:   `{SIGNAL_COOLDOWN_MINUTES} min per coin`\n"
         f"Active:     `{active}/{MAX_CONCURRENT_SIGNALS}`\n"
         f"Pool ({len(coins)}): `{pairs_str}`\n"
-        f"Time (UTC): `{datetime.now(timezone.utc).strftime('%H:%M')}`"
+        f"Time (LKT): `{datetime.now(LKT).strftime('%H:%M')}`"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
@@ -165,7 +165,7 @@ async def cmd_zones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         d       = "🟢" if z["direction"] == "LONG" else "🔴"
         emoji   = STATUS_EMOJI.get(z["status"], "•")
         coin    = z["symbol"].replace("_USDT", "")
-        det     = datetime.fromisoformat(z["detected_at"]).strftime("%m/%d %H:%M")
+        det     = datetime.fromisoformat(z["detected_at"]).astimezone(LKT).strftime("%m/%d %H:%M")
         status = z["status"].replace("_", "-")   # underscores break Markdown parser
         lines.append(
             f"{d} *{coin}* {z['direction']}  "
