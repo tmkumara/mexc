@@ -70,3 +70,18 @@ MEXC_BASE_URL = "https://contract.mexc.com/api/v1"
 
 # ── Database ──────────────────────────────────────────────────────
 DB_PATH = "signals.db"
+
+# ── Trend Scanner (4H/1D Fibonacci alert) ────────────────────────
+TREND_N_COINS:            int   = 150   # top N by 24h volume; MEXC throttle → fewer succeed
+TREND_SCAN_WORKERS:       int   = 8     # concurrent kline-fetch threads
+TREND_PIVOT_LOOKBACK:     int   = 5     # bars each side required to confirm a pivot
+TREND_MIN_IMPULSE_PCT:    float = 5.0   # min impulse size on 4H (%)
+TREND_MIN_IMPULSE_1D:     float = 8.0   # min impulse size on 1D (%)
+TREND_ADX_MIN:            int   = 25    # ADX threshold — directional, not ranging
+TREND_ADX_PERIOD:         int   = 14
+TREND_KLINE_COUNT_4H:     int   = 100   # 4H bars fetched (~16 days)
+TREND_KLINE_COUNT_1D:     int   = 100   # 1D bars fetched (~3 months)
+# Momentum quality filters — detect strong impulse moves (consecutive bullish/bearish candles)
+TREND_IMPULSE_WINDOW:     int   = 15    # candles before pivot to inspect for momentum
+TREND_MIN_MOMENTUM_RATIO: float = 0.60  # ≥60% of impulse candles must close in trend direction
+TREND_MIN_BODY_RATIO:     float = 0.40  # avg body/range ≥40% — filters doji/wick-heavy candles

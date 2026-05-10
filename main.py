@@ -25,6 +25,7 @@ import database as db
 import strategy
 import bot as tg
 import coin_scanner
+import trend_scanner
 from mexc_client import get_klines
 from config import (
     LKT,
@@ -229,9 +230,12 @@ async def main():
 
     db.init_db()
 
-    logger.info("Loading coin pool...")
+    logger.info("Loading coin pools...")
     coins = coin_scanner.refresh_coin_list()
-    logger.info(f"Tracking {len(coins)} coins")
+    logger.info(f"Signal pool: {len(coins)} coins")
+
+    trend_coins = trend_scanner.refresh_trend_coins()
+    logger.info(f"Trend pool:  {len(trend_coins)} coins")
 
     app = tg.build_app()
 
@@ -259,6 +263,26 @@ async def main():
         db.expire_old_zones,
         CronTrigger(minute=0),   # top of every hour
         id="zone_expiry",
+    )
+
+    # ── Trend scanner: 4H + 1D Fibonacci alerts ───────────────────
+    async def _trend_scan(app=app):
+        try:
+            count = await trend_scanner.scan_and_alert(app)
+            logger.info(f"[TREND] Scan done — {count} alert(s) sent")
+        except Exception as e:
+            logger.error(f"[TREND] Scan error: {e}", exc_info=True)
+
+    scheduler.add_job(
+        _trend_scan,
+        CronTrigger(hour="0,4,8,12,16,20", minute=1),   # every 4H candle close
+        id="trend_scanner",
+    )
+
+    scheduler.add_job(
+        trend_scanner.refresh_trend_coins,
+        CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
+        id="trend_coin_refresh",
     )
 
     async def _daily(app=app):
