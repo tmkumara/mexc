@@ -24,7 +24,7 @@ COIN_REFRESH_HOURS:       int   = 6
 NWE_H:           float = 8.0   # Lookback Window (bandwidth)
 NWE_ALPHA:       float = 8.0   # Relative Weighting
 NWE_SIZE:        int   = 25    # Start Regression at Bar (window size)
-NWE_TF:          str   = "15m" # Timeframe
+NWE_TF:          str   = "1h"  # Timeframe (1H closes, matching TradingView "60" setting)
 NWE_KLINE_COUNT: int   = 80    # bars to fetch (NWE_SIZE + warm-up buffer)
 
 # ── Trade params ─────────────────────────────────────────────────
@@ -41,7 +41,7 @@ MAX_CONCURRENT_SIGNALS:  int = 10
 SCAN_CRON_MINUTES:     str = "*/5" # every 5 minutes
 SIGNALS_PER_SCAN:      int = 3
 OUTCOME_CHECK_MINUTES: int = 5    # how often to poll for TP/SL hits
-CANDLE_MINUTES:        int = 15   # 15M candle size in minutes
+CANDLE_MINUTES:        int = 60   # 1H candle size in minutes
 SCAN_WORKERS:          int = 8    # concurrent threads for NWE analysis
 
 # ── MEXC Futures REST API ─────────────────────────────────────────

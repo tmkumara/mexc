@@ -212,7 +212,7 @@ async def check_outcomes(app: Application) -> None:
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot — NWE Rational Quadratic Kernel (15M slope flip, scan every 5m)...")
+    logger.info("Starting MEXC Signal Bot — NWE Rational Quadratic Kernel (1H closes, scan every 5m)...")
 
     db.init_db()
 
