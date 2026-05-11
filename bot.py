@@ -138,7 +138,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
         f"Strategy:   `NWE Rational Quadratic Kernel`\n"
-        f"Timeframe:  `{NWE_TF}` _(scans at :01 each hour)_\n"
+        f"Timeframe:  `{NWE_TF}` _(scans every 5 min)_\n"
         f"Params:     `h={NWE_H}  α={NWE_ALPHA}  size={NWE_SIZE}`\n"
         f"Signal:     `slope flip  red→green=LONG  green→red=SHORT`\n"
         f"Workers:    `{SCAN_WORKERS}`\n"

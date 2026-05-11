@@ -34,7 +34,7 @@ from config import (
     MAX_CONCURRENT_SIGNALS,
     LEVERAGE,
     NWE_TF,
-    SCAN_CRON_MINUTE,
+    SCAN_CRON_MINUTES,
     SIGNALS_PER_SCAN,
     OUTCOME_CHECK_MINUTES,
     CANDLE_MINUTES,
@@ -212,7 +212,7 @@ async def check_outcomes(app: Application) -> None:
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot — NWE Rational Quadratic Kernel (1H slope flip)...")
+    logger.info("Starting MEXC Signal Bot — NWE Rational Quadratic Kernel (15M slope flip, scan every 5m)...")
 
     db.init_db()
 
@@ -224,10 +224,10 @@ async def main():
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # Scan at minute=1 of every hour (1H candle has just closed)
+    # Scan every 5 minutes (catches each new 15M candle close promptly)
     scheduler.add_job(
         scan_and_signal,
-        CronTrigger(minute=SCAN_CRON_MINUTE),
+        CronTrigger(minute=SCAN_CRON_MINUTES),
         args=[app], id="scanner",
     )
 
@@ -257,7 +257,7 @@ async def main():
     scheduler.add_job(_monthly, CronTrigger(day=1, hour=7), id="monthly_report")
 
     scheduler.start()
-    logger.info(f"Scheduler started — scanning {len(coins)} coins on {NWE_TF} at :01 each hour")
+    logger.info(f"Scheduler started — scanning {len(coins)} coins on {NWE_TF} every 5 minutes")
 
     async with app:
         await app.initialize()
