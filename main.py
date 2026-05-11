@@ -1,13 +1,13 @@
 """
-Main entry point.
+Main entry point — NWE-RQK strategy.
 
 Scheduler jobs:
-  Every 15m (:01,:16,:31,:46) — scan top-OI coin pool for MTF signals
-  Every 5 min                 — check pending signal outcomes (TP/SL hit)
-  Every 4h                    — refresh coin pool (CoinGlass OI / MEXC volume)
-  23:55 daily                 — daily report
-  Mon 07:00                   — weekly report
-  1st 07:00                   — monthly report
+  Every 1H (:01) — scan top-40 coin pool for NWE slope-flip signals
+  Every 5 min    — check pending signal outcomes (TP/SL hit)
+  Every 6h       — refresh coin pool
+  23:55 daily    — daily report
+  Mon 07:00      — weekly report
+  1st 07:00      — monthly report
 """
 
 import asyncio
@@ -25,7 +25,6 @@ import database as db
 import strategy
 import bot as tg
 import coin_scanner
-import trend_scanner
 from mexc_client import get_klines
 from config import (
     LKT,
@@ -34,8 +33,8 @@ from config import (
     COIN_REFRESH_HOURS,
     MAX_CONCURRENT_SIGNALS,
     LEVERAGE,
-    ENTRY_TF,
-    SCAN_CRON_MINUTES,
+    NWE_TF,
+    SCAN_CRON_MINUTE,
     SIGNALS_PER_SCAN,
     OUTCOME_CHECK_MINUTES,
     CANDLE_MINUTES,
@@ -50,7 +49,6 @@ logging.basicConfig(
         logging.FileHandler("mexc_bot.log"),
     ],
 )
-# Log timestamps in Sri Lanka Time (UTC+5:30)
 logging.Formatter.converter = lambda *args: datetime.now(LKT).timetuple()
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -81,17 +79,9 @@ async def scan_and_signal(app: Application) -> None:
     now            = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
 
-    # ── Phase 1: RSI pre-filter (parallel, ~3s for 100 coins) ─────
-    hot_coins = coin_scanner.rsi_prefilter(coins)
-    if not hot_coins:
-        logger.info("[SCAN] No coins at RSI extremes this cycle")
-        return
+    to_scan = [s for s in coins if not db.signal_exists_for_coin(s, cooldown_since)]
+    logger.info(f"[SCAN] {len(to_scan)}/{len(coins)} coins after cooldown filter")
 
-    # Remove coins still in cooldown before expensive Phase 2
-    to_scan = [s for s in hot_coins if not db.signal_exists_for_coin(s, cooldown_since)]
-    logger.info(f"[SCAN] Phase 2: {len(to_scan)} coins after cooldown filter")
-
-    # ── Phase 2: full 3-tier analysis (parallel) ──────────────────
     def _analyze(symbol: str):
         try:
             return strategy.analyze_coin(symbol)
@@ -129,8 +119,6 @@ async def scan_and_signal(app: Application) -> None:
             leverage     = sig.leverage,
             generated_at = sig.generated_at,
         )
-        if sig.zone_id:
-            db.update_zone_status(sig.zone_id, 'signal_generated', signal_id)
         try:
             await tg.broadcast_signal(app, sig, signal_id)
             logger.info(f"[SCAN] Sent {sig.symbol} {sig.direction} score={sig.score}")
@@ -167,7 +155,7 @@ async def check_outcomes(app: Application) -> None:
         fetch_count = int(elapsed_min / CANDLE_MINUTES) + 3
 
         try:
-            df = get_klines(symbol, ENTRY_TF, count=fetch_count)
+            df = get_klines(symbol, NWE_TF, count=fetch_count)
             if df.empty or len(df) < 2:
                 continue
         except Exception as e:
@@ -210,10 +198,8 @@ async def check_outcomes(app: Application) -> None:
             continue
 
         pnl = (
-            abs(tp_price - entry_p) / entry_p * LEVERAGE * 100
-            if outcome == "win"
-            else -abs(sl_price - entry_p) / entry_p * LEVERAGE * 100
-        )
+            sig["tp_price"] - sig["entry_price"]
+        ) / sig["entry_price"] * LEVERAGE * 100 * (1 if outcome == "win" else -1)
 
         db.update_signal_outcome(sig["id"], outcome, pnl)
         logger.info(f"Signal {sig['id']} {outcome.upper()} ({symbol}) {pnl:+.1f}%")
@@ -226,24 +212,22 @@ async def check_outcomes(app: Application) -> None:
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot — Liquidity Sweep (RSI prefilter → 1H LH+LL+OTE → 15M Sweep → 5M Retest)...")
+    logger.info("Starting MEXC Signal Bot — NWE Rational Quadratic Kernel (1H slope flip)...")
 
     db.init_db()
 
-    logger.info("Loading coin pools...")
+    logger.info("Loading coin pool...")
     coins = coin_scanner.refresh_coin_list()
     logger.info(f"Signal pool: {len(coins)} coins")
-
-    trend_coins = trend_scanner.refresh_trend_coins()
-    logger.info(f"Trend pool:  {len(trend_coins)} coins")
 
     app = tg.build_app()
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
+    # Scan at minute=1 of every hour (1H candle has just closed)
     scheduler.add_job(
         scan_and_signal,
-        CronTrigger(minute=SCAN_CRON_MINUTES),
+        CronTrigger(minute=SCAN_CRON_MINUTE),
         args=[app], id="scanner",
     )
 
@@ -257,32 +241,6 @@ async def main():
         coin_scanner.refresh_coin_list,
         CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
         id="coin_refresh",
-    )
-
-    scheduler.add_job(
-        db.expire_old_zones,
-        CronTrigger(minute=0),   # top of every hour
-        id="zone_expiry",
-    )
-
-    # ── Trend scanner: 4H + 1D Fibonacci alerts ───────────────────
-    async def _trend_scan(app=app):
-        try:
-            count = await trend_scanner.scan_and_alert(app)
-            logger.info(f"[TREND] Scan done — {count} alert(s) sent")
-        except Exception as e:
-            logger.error(f"[TREND] Scan error: {e}", exc_info=True)
-
-    scheduler.add_job(
-        _trend_scan,
-        CronTrigger(hour="0,4,8,12,16,20", minute=1),   # every 4H candle close
-        id="trend_scanner",
-    )
-
-    scheduler.add_job(
-        trend_scanner.refresh_trend_coins,
-        CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
-        id="trend_coin_refresh",
     )
 
     async def _daily(app=app):
@@ -299,7 +257,7 @@ async def main():
     scheduler.add_job(_monthly, CronTrigger(day=1, hour=7), id="monthly_report")
 
     scheduler.start()
-    logger.info(f"Scheduler started — {len(coins)} coins on {ENTRY_TF} timeframe")
+    logger.info(f"Scheduler started — scanning {len(coins)} coins on {NWE_TF} at :01 each hour")
 
     async with app:
         await app.initialize()

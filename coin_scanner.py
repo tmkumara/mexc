@@ -2,24 +2,15 @@
 Coin selection: top N coins by open interest from CoinGlass API.
 Falls back to MEXC 24h volume ranking when no API key is configured.
 Refreshed every COIN_REFRESH_HOURS hours.
-
-RSI pre-filter runs every scan cycle (every 5 min) to narrow the
-100-coin pool down to coins with RSI extremes before full analysis.
 """
 
 import logging
-import pandas_ta as ta
-import pandas as pd
 import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from mexc_client import get_all_contracts, get_tickers, get_klines
+from mexc_client import get_all_contracts, get_tickers
 from config import (
     EXCLUDE_COINS, TOP_N_COINS, COINGLASS_API_KEY,
     COIN_POOL_MIN_VOLUME_USD,
-    RSI_PREFILTER_OVERSOLD, RSI_PREFILTER_OVERBOUGHT,
-    RSI_PREFILTER_BARS, PREFILTER_WORKERS,
-    SWEEP_TF, RSI_PERIOD,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,10 +20,7 @@ COINGLASS_BASE = "https://open-api.coinglass.com/public/v2"
 _cached_coins: list[str] = []
 
 
-# ── CoinGlass source ──────────────────────────────────────────────
-
 def _fetch_coinglass_coins() -> list[str]:
-    """Return top coins by aggregated open interest from CoinGlass."""
     try:
         r = requests.get(
             f"{COINGLASS_BASE}/open_interest",
@@ -82,10 +70,7 @@ def _fetch_coinglass_coins() -> list[str]:
         return []
 
 
-# ── MEXC fallback ─────────────────────────────────────────────────
-
 def _fetch_mexc_coins() -> list[str]:
-    """Fallback: top USDT perps by 24h volume from MEXC, above min volume."""
     try:
         tickers = get_tickers()
         rows = []
@@ -115,10 +100,7 @@ def _fetch_mexc_coins() -> list[str]:
         return []
 
 
-# ── Public API ────────────────────────────────────────────────────
-
 def refresh_coin_list() -> list[str]:
-    """Fetch a fresh coin list, validate against active MEXC contracts, cache it."""
     global _cached_coins
 
     raw = _fetch_coinglass_coins() if COINGLASS_API_KEY else []
@@ -126,7 +108,6 @@ def refresh_coin_list() -> list[str]:
         logger.info("No CoinGlass data — using MEXC volume ranking")
         raw = _fetch_mexc_coins()
 
-    # Validate against active MEXC contracts
     try:
         contracts = get_all_contracts()
         active = {c["symbol"] for c in contracts if c.get("state") in (0, None)}
@@ -152,47 +133,6 @@ def refresh_coin_list() -> list[str]:
 
 
 def get_cached_coins() -> list[str]:
-    """Return cached coin list, refreshing if empty."""
     if not _cached_coins:
         return refresh_coin_list()
     return _cached_coins
-
-
-# ── RSI pre-filter ────────────────────────────────────────────────
-
-def rsi_prefilter(coins: list[str]) -> list[str]:
-    """
-    Fast Phase-1 filter: fetch 15M RSI for every coin in parallel.
-    Returns coins where RSI < RSI_PREFILTER_OVERSOLD (LONG candidates)
-    or RSI > RSI_PREFILTER_OVERBOUGHT (SHORT candidates).
-    Coins that error are excluded to avoid wasting Phase-2 time.
-    """
-    def _check(symbol: str) -> str | None:
-        try:
-            df = get_klines(symbol, SWEEP_TF, count=RSI_PREFILTER_BARS)
-            if df.empty or len(df) < RSI_PERIOD + 1:
-                return None
-            rsi = ta.rsi(df["close"], length=RSI_PERIOD)
-            val = rsi.iloc[-2]   # last completed bar
-            if pd.isna(val):
-                return None
-            val = float(val)
-            if val < RSI_PREFILTER_OVERSOLD or val > RSI_PREFILTER_OVERBOUGHT:
-                return symbol
-            return None
-        except Exception:
-            return None
-
-    hot: list[str] = []
-    with ThreadPoolExecutor(max_workers=PREFILTER_WORKERS) as ex:
-        futures = {ex.submit(_check, s): s for s in coins}
-        for fut in as_completed(futures):
-            result = fut.result()
-            if result is not None:
-                hot.append(result)
-
-    logger.info(
-        f"[RSI-FILTER] {len(coins)} → {len(hot)} coins "
-        f"(RSI <{RSI_PREFILTER_OVERSOLD} or >{RSI_PREFILTER_OVERBOUGHT})"
-    )
-    return hot

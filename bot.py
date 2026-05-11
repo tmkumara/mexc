@@ -32,8 +32,7 @@ async def _send(app: Application, text: str, chat_id: str = None):
 def format_signal(signal, signal_id: int) -> str:
     arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
     coin  = signal.symbol.replace("_", "/")
-
-    stars = "⭐⭐⭐" if signal.score >= 80 else "⭐⭐" if signal.score >= 55 else "⭐"
+    stars = "⭐⭐⭐" if signal.score >= 80 else "⭐⭐" if signal.score >= 50 else "⭐"
 
     return "\n".join([
         f"{arrow} — *{coin}* Futures",
@@ -43,7 +42,7 @@ def format_signal(signal, signal_id: int) -> str:
         f"🛑 SL:       `${signal.sl_price:,.6g}`  _(-{signal.sl_roi_pct:.1f}% ROI)_",
         f"⚡ Leverage: `{signal.leverage}x`  _(Isolated)_",
         f"📊 {signal.timeframe_summary}",
-        f"🏅 Quality:  `{signal.score}/100`  {stars}",
+        f"🏅 Score:    `{signal.score}/100`  {stars}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"⏰ `{signal.generated_at.astimezone(LKT).strftime('%Y-%m-%d %H:%M LKT')}`",
         f"🆔 Signal ID: `{signal_id}`",
@@ -95,7 +94,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/stats — All-time stats\n\n"
         "*Scanner:*\n"
         "/status — Scanner state\n"
-        "/zones — Active sweep zones\n"
         "/pause — Pause signals\n"
         "/resume — Resume signals\n\n"
         "/help — This message"
@@ -126,11 +124,10 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
     from config import (
-        MTF_1H, SWEEP_TF, ENTRY_TF, MAX_CONCURRENT_SIGNALS,
-        LEVERAGE, REWARD_RATIO, MAX_RISK_PCT,
+        NWE_H, NWE_ALPHA, NWE_SIZE, NWE_TF,
+        LEVERAGE, TP_ROI_PCT, SL_ROI_PCT,
         SIGNAL_COOLDOWN_MINUTES, SIGNALS_PER_SCAN,
-        RSI_PREFILTER_OVERSOLD, RSI_PREFILTER_OVERBOUGHT,
-        PREFILTER_WORKERS, SCAN_WORKERS,
+        MAX_CONCURRENT_SIGNALS, SCAN_WORKERS,
     )
     state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
     coins  = coin_scanner.get_cached_coins()
@@ -140,12 +137,13 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `Liquidity Sweep`\n"
-        f"Logic:      `{MTF_1H} LH+LL+OTE → {SWEEP_TF} Sweep → {ENTRY_TF} Retest`\n"
-        f"Pre-filter: `RSI <{RSI_PREFILTER_OVERSOLD} or >{RSI_PREFILTER_OVERBOUGHT} on {SWEEP_TF}`\n"
-        f"Workers:    `{PREFILTER_WORKERS} pre-filter / {SCAN_WORKERS} analysis`\n"
+        f"Strategy:   `NWE Rational Quadratic Kernel`\n"
+        f"Timeframe:  `{NWE_TF}` _(scans at :01 each hour)_\n"
+        f"Params:     `h={NWE_H}  α={NWE_ALPHA}  size={NWE_SIZE}`\n"
+        f"Signal:     `slope flip  red→green=LONG  green→red=SHORT`\n"
+        f"Workers:    `{SCAN_WORKERS}`\n"
         f"Leverage:   `{LEVERAGE}x`\n"
-        f"TP / SL:    `{REWARD_RATIO:.0f}R / 1R  (max SL {MAX_RISK_PCT:.0f}% move)`\n"
+        f"TP / SL:    `+{TP_ROI_PCT:.0f}% ROI / -{SL_ROI_PCT:.0f}% ROI`\n"
         f"Per scan:   `top {SIGNALS_PER_SCAN} signals`\n"
         f"Cooldown:   `{SIGNAL_COOLDOWN_MINUTES} min per coin`\n"
         f"Active:     `{active}/{MAX_CONCURRENT_SIGNALS}`\n"
@@ -153,32 +151,6 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Time (LKT): `{datetime.now(LKT).strftime('%H:%M')}`"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
-
-
-async def cmd_zones(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    zones = db.get_active_zones()
-    if not zones:
-        await update.message.reply_text(
-            "📭 No active sweep zones.", parse_mode=ParseMode.MARKDOWN
-        )
-        return
-
-    STATUS_EMOJI = {"accepted": "🔍", "waiting_retest": "⏳"}
-    lines = [f"📊 *Active Sweep Zones* ({len(zones)})\n━━━━━━━━━━━━━━━━━━━━"]
-    for z in zones[:20]:
-        d       = "🟢" if z["direction"] == "LONG" else "🔴"
-        emoji   = STATUS_EMOJI.get(z["status"], "•")
-        coin    = z["symbol"].replace("_USDT", "")
-        det     = datetime.fromisoformat(z["detected_at"]).replace(tzinfo=timezone.utc).astimezone(LKT).strftime("%m/%d %H:%M")
-        status = z["status"].replace("_", "-")   # underscores break Markdown parser
-        lines.append(
-            f"{d} *{coin}* {z['direction']}  "
-            f"`[{z['zone_low']:.5g}, {z['zone_high']:.5g}]`  "
-            f"{emoji} `{status}`  {det} UTC"
-        )
-    if len(zones) > 20:
-        lines.append(f"... and {len(zones) - 20} more")
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 
 async def cmd_pause(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -218,7 +190,6 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("monthly", cmd_monthly))
     app.add_handler(CommandHandler("stats",   cmd_stats))
     app.add_handler(CommandHandler("status",  cmd_status))
-    app.add_handler(CommandHandler("zones",   cmd_zones))
     app.add_handler(CommandHandler("pause",   cmd_pause))
     app.add_handler(CommandHandler("resume",  cmd_resume))
     return app

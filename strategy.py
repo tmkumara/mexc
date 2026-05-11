@@ -1,84 +1,38 @@
 """
-Liquidity Sweep Retest Scalping Strategy.
+Nadaraya-Watson Rational Quadratic Kernel (NWE-RQK) Strategy.
 
-Inspired by the Daily Price Action liquidity sweep reversal model.
-Reference: https://dailypriceaction.com/blog/liquidity-sweep-reversals/
+Mirrors the "Nadaraya-Watson: Rational Quadratic Kernel (No-Repainting)"
+TradingView indicator by Loxx / LuxAlgo with these settings:
+  Source:               Close
+  Lookback Window (h):  8
+  Relative Weighting:   8
+  Start Regression at Bar (size): 25
+  Smooth Colors:        OFF
+  Timeframe:            1H
 
-Flow:
-  Tier 1 — 1H structure:
-    2 consecutive pivot HH  →  LONG bias
-    2 consecutive pivot LL  →  SHORT bias
-    If both or neither detected, skip (no clear market structure).
+Signal logic:
+  NWE slope flips positive (red → green) → LONG
+  NWE slope flips negative (green → red) → SHORT
 
-  Tier 2 — 15M sweep + acceptance:
-    LONG:  sweep candle wick < pivot_low  AND  close > pivot_low
-           → zone_low  = sweep wick low
-           → zone_high = swept pivot low
-           Acceptance: a subsequent 15M bar closes above sweep_candle_high.
-           Invalidation: any 15M bar closes below zone_low → skip.
-    SHORT: sweep candle wick > pivot_high AND  close < pivot_high
-           → zone_low  = swept pivot high
-           → zone_high = sweep wick high
-           Acceptance: a subsequent 15M bar closes below sweep_candle_low.
-           Invalidation: any 15M bar closes above zone_high → skip.
-
-  Tier 3 — 5M retest + confirmation:
-    LONG:  last completed 5M bar touches zone (low ≤ zone_high + 0.1%)
-           + bullish close (body ≥ 30%) + RSI > 50 + vol ≥ 1.3× MA + close > EMA50
-    SHORT: last completed 5M bar touches zone (high ≥ zone_low − 0.1%)
-           + bearish close (body ≥ 30%) + RSI < 50 + vol ≥ 1.3× MA + close < EMA50
-
-  SL: zone_low  − 0.5 × ATR  (LONG)
-      zone_high + 0.5 × ATR  (SHORT)
-  TP: 2R from entry
+SL / TP:
+  Fixed ROI targets at configured leverage:
+    TP = +TP_ROI_PCT ROI  →  entry ± TP_ROI_PCT / (LEVERAGE × 100) × entry
+    SL = -SL_ROI_PCT ROI  →  entry ∓ SL_ROI_PCT / (LEVERAGE × 100) × entry
 """
 
 import logging
+import numpy as np
+import pandas as pd
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import NamedTuple
 
-import pandas as pd
-import pandas_ta as ta
-
-import database as db
 from mexc_client import get_klines
 from config import (
-    LEVERAGE, MTF_1H, SWEEP_TF, ENTRY_TF, EMA_50,
-    RSI_PERIOD, REWARD_RATIO, SL_ATR_BUFFER,
-    MAX_RISK_PCT, VOLUME_MA_BARS, VOLUME_MIN_MULT,
-    MIN_ZONE_WIDTH_PCT, ENTRY_ZONE_BUFFER, MIN_SIGNAL_SCORE,
+    NWE_H, NWE_ALPHA, NWE_SIZE, NWE_TF, NWE_KLINE_COUNT,
+    LEVERAGE, TP_ROI_PCT, SL_ROI_PCT,
 )
 
 logger = logging.getLogger(__name__)
-
-# ── Candle counts ─────────────────────────────────────────────────
-KLINE_1H_COUNT    = 120   # 1H bars  (~5 days for structure)
-KLINE_SWEEP_COUNT = 120   # 15M bars (~30 hours for sweep search)
-KLINE_ENTRY_COUNT = 70    # 5M bars  (~6 hours; EMA50 needs ≥50 bars)
-
-# ── Pivot detection ───────────────────────────────────────────────
-PIVOT_LOOKBACK = 3        # bars each side required to confirm a pivot
-
-# ── Structure window ─────────────────────────────────────────────
-STRUCTURE_1H_BARS = 80    # 1H bars scanned for consecutive HH/LL
-
-# ── Sweep search window ───────────────────────────────────────────
-SWEEP_SEARCH_BARS = 60    # 15M bars scanned for sweep candles (~15 h)
-
-# ── Zone touch tolerance ──────────────────────────────────────────
-ZONE_BUFFER = 0.001       # 0.1% tolerance for zone touch on 5M
-
-# ── OTE (Optimal Trade Entry) Fibonacci levels ────────────────────
-OTE_FIB_LOW   = 0.62   # lower Fibonacci level (62% retracement)
-OTE_FIB_HIGH  = 0.79   # upper Fibonacci level (79% retracement)
-OTE_TOLERANCE = 0.15   # allow anchor 15% of OTE band width outside the zone
-
-
-class SweepResult(NamedTuple):
-    zone_low:     float
-    zone_high:    float
-    sweep_bar_idx: int
 
 
 @dataclass
@@ -94,503 +48,82 @@ class Signal:
     timeframe_summary: str
     generated_at:      datetime
     score:             float = 0.0
-    zone_id:           int   = 0
 
 
-# ── Pivot helpers ────────────────────────────────────────────────
-
-def _pivot_highs(series: pd.Series) -> list[tuple[int, float]]:
-    """Return (relative_index, price) for each pivot high in series."""
-    n = len(series)
-    result = []
-    for i in range(PIVOT_LOOKBACK, n - PIVOT_LOOKBACK):
-        v = float(series.iloc[i])
-        if all(series.iloc[i - PIVOT_LOOKBACK:i] < v) and \
-           all(series.iloc[i + 1:i + PIVOT_LOOKBACK + 1] < v):
-            result.append((i, v))
-    return result
-
-
-def _pivot_lows(series: pd.Series) -> list[tuple[int, float]]:
-    """Return (relative_index, price) for each pivot low in series."""
-    n = len(series)
-    result = []
-    for i in range(PIVOT_LOOKBACK, n - PIVOT_LOOKBACK):
-        v = float(series.iloc[i])
-        if all(series.iloc[i - PIVOT_LOOKBACK:i] > v) and \
-           all(series.iloc[i + 1:i + PIVOT_LOOKBACK + 1] > v):
-            result.append((i, v))
-    return result
-
-
-# ── Tier 1: 1H market structure ──────────────────────────────────
-
-def _bullish_structure_idx(df_1h: pd.DataFrame) -> int | None:
+def _rqk_endpoint(closes: np.ndarray, h: float, alpha: float, size: int) -> float:
     """
-    Find the most recent pair of consecutive HH in 1H AND confirm at least
-    one Higher Low (HL) exists in the same window.
-    Returns absolute index of the second (latest) HH, or None.
+    Rational Quadratic Kernel Nadaraya-Watson endpoint estimator.
+
+    Weight for bar i bars ago:
+        w(i) = (1 + i² / (2·α·h²))^(−α)
+
+    Endpoint value = Σ(close[i] · w[i]) / Σ(w[i])   for i in [0, size)
     """
-    n = len(df_1h)
-    ws = max(0, n - STRUCTURE_1H_BARS - PIVOT_LOOKBACK - 1)
-    ph = _pivot_highs(df_1h["high"].iloc[ws:-1])
-    if len(ph) < 2:
-        return None
-    ph_abs = [(ws + i, p) for i, p in ph]
+    bars = min(size, len(closes))
+    if bars < 2:
+        return float(closes[-1]) if len(closes) else 0.0
 
-    hh_idx = None
-    for k in range(len(ph_abs) - 1, 0, -1):
-        idx2, h2 = ph_abs[k]
-        idx1, h1 = ph_abs[k - 1]
-        if h2 > h1:
-            logger.debug(f"  1H bullish HH: {h1:.6g}@{idx1} → {h2:.6g}@{idx2}")
-            hh_idx = idx2
-            break
+    # index 0 = most-recent bar
+    src = closes[-bars:][::-1]
+    weights = np.array(
+        [(1.0 + i * i / (2.0 * alpha * h * h)) ** (-alpha) for i in range(bars)],
+        dtype=np.float64,
+    )
+    return float(np.dot(src, weights) / weights.sum())
 
-    if hh_idx is None:
-        return None
-
-    # Also require at least one Higher Low (HL) in the same window
-    pl = _pivot_lows(df_1h["low"].iloc[ws:-1])
-    if len(pl) < 2:
-        return None
-    pl_abs = [(ws + i, p) for i, p in pl]
-    has_hl = any(pl_abs[k][1] > pl_abs[k - 1][1] for k in range(1, len(pl_abs)))
-    if not has_hl:
-        logger.debug("  1H bullish HH found but no HL — structure incomplete")
-        return None
-
-    return hh_idx
-
-
-def _bearish_structure_idx(df_1h: pd.DataFrame) -> int | None:
-    """
-    Find the most recent pair of consecutive LL in 1H AND confirm at least
-    one Lower High (LH) exists in the same window.
-    Returns absolute index of the second (latest) LL, or None.
-    """
-    n = len(df_1h)
-    ws = max(0, n - STRUCTURE_1H_BARS - PIVOT_LOOKBACK - 1)
-    pl = _pivot_lows(df_1h["low"].iloc[ws:-1])
-    if len(pl) < 2:
-        return None
-    pl_abs = [(ws + i, p) for i, p in pl]
-
-    ll_idx = None
-    for k in range(len(pl_abs) - 1, 0, -1):
-        idx2, l2 = pl_abs[k]
-        idx1, l1 = pl_abs[k - 1]
-        if l2 < l1:
-            logger.debug(f"  1H bearish LL: {l1:.6g}@{idx1} → {l2:.6g}@{idx2}")
-            ll_idx = idx2
-            break
-
-    if ll_idx is None:
-        return None
-
-    # Also require at least one Lower High (LH) in the same window
-    ph = _pivot_highs(df_1h["high"].iloc[ws:-1])
-    if len(ph) < 2:
-        return None
-    ph_abs = [(ws + i, p) for i, p in ph]
-    has_lh = any(ph_abs[k][1] < ph_abs[k - 1][1] for k in range(1, len(ph_abs)))
-    if not has_lh:
-        logger.debug("  1H bearish LL found but no LH — structure incomplete")
-        return None
-
-    return ll_idx
-
-
-# ── OTE: Fibonacci 62–79% retracement of the last impulse leg ────
-
-def _compute_ote(df_1h: pd.DataFrame, direction: str, window_start: int) -> tuple[float, float] | None:
-    """
-    Compute the OTE (Optimal Trade Entry) zone = Fibonacci 62–79% retracement
-    of the most recent completed impulse leg on 1H.
-
-    SHORT: last 1H pivot high → lowest subsequent 1H pivot low (bearish leg).
-           OTE = 62–79% retrace back UP.  Entry short when price rallies into this zone.
-    LONG:  last 1H pivot low  → highest subsequent 1H pivot high (bullish leg).
-           OTE = 62–79% retrace back DOWN. Entry long when price pulls back into this zone.
-
-    Returns (ote_low, ote_high) in price, or None if no valid leg is found.
-    """
-    ws = window_start
-    ph_list = _pivot_highs(df_1h["high"].iloc[ws:-1])
-    pl_list  = _pivot_lows(df_1h["low"].iloc[ws:-1])
-
-    if not ph_list or not pl_list:
-        return None
-
-    ph_abs = [(ws + i, p) for i, p in ph_list]
-    pl_abs  = [(ws + i, p) for i, p in pl_list]
-
-    if direction == "SHORT":
-        # Walk from most-recent pivot high backwards; find a valid down leg
-        for k in range(len(ph_abs) - 1, -1, -1):
-            ph_idx, ph_price = ph_abs[k]
-            lows_after = [(i, l) for i, l in pl_abs if i > ph_idx]
-            if not lows_after:
-                continue
-            _, pl_price = min(lows_after, key=lambda x: x[1])
-            swing = ph_price - pl_price
-            if swing <= 0:
-                continue
-            ote_low  = pl_price + swing * OTE_FIB_LOW
-            ote_high = pl_price + swing * OTE_FIB_HIGH
-            logger.debug(
-                f"  OTE SHORT: leg {ph_price:.6g}→{pl_price:.6g} swing={swing:.6g} "
-                f"OTE=[{ote_low:.6g}, {ote_high:.6g}]"
-            )
-            return ote_low, ote_high
-
-    else:  # LONG
-        # Walk from most-recent pivot low backwards; find a valid up leg
-        for k in range(len(pl_abs) - 1, -1, -1):
-            pl_idx, pl_price = pl_abs[k]
-            highs_after = [(i, h) for i, h in ph_abs if i > pl_idx]
-            if not highs_after:
-                continue
-            _, ph_price = max(highs_after, key=lambda x: x[1])
-            swing = ph_price - pl_price
-            if swing <= 0:
-                continue
-            ote_low  = ph_price - swing * OTE_FIB_HIGH
-            ote_high = ph_price - swing * OTE_FIB_LOW
-            logger.debug(
-                f"  OTE LONG: leg {pl_price:.6g}→{ph_price:.6g} swing={swing:.6g} "
-                f"OTE=[{ote_low:.6g}, {ote_high:.6g}]"
-            )
-            return ote_low, ote_high
-
-    return None
-
-
-# ── Tier 2: 15M sweep + acceptance ───────────────────────────────
-
-def _find_long_sweep(df: pd.DataFrame) -> SweepResult | None:
-    """
-    Search SWEEP_SEARCH_BARS of 15M history for the most recent valid LONG setup:
-      - sweep candle wick < pivot_low AND close > pivot_low
-      - a subsequent bar closes above sweep_candle_high (acceptance)
-      - no subsequent bar closes below zone_low (no invalidation)
-    Returns SweepResult or None.
-    """
-    n = len(df)
-    ws = max(0, n - SWEEP_SEARCH_BARS - PIVOT_LOOKBACK - 1)
-    pl = _pivot_lows(df["low"].iloc[ws:-1])
-    if not pl:
-        return None
-    pl_abs = [(ws + i, p) for i, p in pl]
-
-    # Scan from newest completed bar backwards
-    for sweep_i in range(n - 2, max(ws, n - SWEEP_SEARCH_BARS) - 1, -1):
-        bl = float(df["low"].iloc[sweep_i])
-        bc = float(df["close"].iloc[sweep_i])
-        bh = float(df["high"].iloc[sweep_i])
-
-        # Find the most recent pivot low that was swept by this bar
-        swept_pivot = None
-        for pi_abs, pi_price in reversed(pl_abs):
-            if pi_abs >= sweep_i:
-                continue
-            if bl < pi_price < bc:   # wick below pivot, close recovers above
-                swept_pivot = pi_price
-                break
-
-        if swept_pivot is None:
-            continue
-
-        zone_low  = bl
-        zone_high = swept_pivot
-
-        post = df.iloc[sweep_i + 1:-1]   # completed bars after sweep
-        if post.empty:
-            continue
-
-        # Acceptance: a bar after sweep must close above sweep_candle_high
-        if float(post["close"].max()) <= bh:
-            logger.debug(f"  LONG zone [{zone_low:.5g},{zone_high:.5g}] pending acceptance")
-            continue
-
-        # Invalidation: no bar after sweep may close below zone_low
-        if float(post["close"].min()) < zone_low:
-            logger.debug(f"  LONG zone [{zone_low:.5g},{zone_high:.5g}] invalidated (close below wick)")
-            continue
-
-        # Zone must be wide enough to represent a real liquidity level
-        if (zone_high - zone_low) / zone_high < MIN_ZONE_WIDTH_PCT / 100:
-            logger.debug(
-                f"  LONG zone [{zone_low:.5g},{zone_high:.5g}] too narrow "
-                f"({(zone_high-zone_low)/zone_high*100:.3f}% < {MIN_ZONE_WIDTH_PCT}%), skip"
-            )
-            continue
-
-        logger.info(
-            f"  LONG sweep zone confirmed: [{zone_low:.6g}, {zone_high:.6g}] "
-            f"sweep@bar{sweep_i}"
-        )
-        return SweepResult(zone_low=zone_low, zone_high=zone_high, sweep_bar_idx=sweep_i)
-
-    return None
-
-
-def _find_short_sweep(df: pd.DataFrame) -> SweepResult | None:
-    """
-    Search SWEEP_SEARCH_BARS of 15M history for the most recent valid SHORT setup:
-      - sweep candle wick > pivot_high AND close < pivot_high
-      - a subsequent bar closes below sweep_candle_low (acceptance)
-      - no subsequent bar closes above zone_high (no invalidation)
-    Returns SweepResult or None.
-    """
-    n = len(df)
-    ws = max(0, n - SWEEP_SEARCH_BARS - PIVOT_LOOKBACK - 1)
-    ph = _pivot_highs(df["high"].iloc[ws:-1])
-    if not ph:
-        return None
-    ph_abs = [(ws + i, p) for i, p in ph]
-
-    for sweep_i in range(n - 2, max(ws, n - SWEEP_SEARCH_BARS) - 1, -1):
-        bh = float(df["high"].iloc[sweep_i])
-        bc = float(df["close"].iloc[sweep_i])
-        bl = float(df["low"].iloc[sweep_i])
-
-        swept_pivot = None
-        for pi_abs, pi_price in reversed(ph_abs):
-            if pi_abs >= sweep_i:
-                continue
-            if bc < pi_price < bh:   # wick above pivot, close drops below
-                swept_pivot = pi_price
-                break
-
-        if swept_pivot is None:
-            continue
-
-        zone_low  = swept_pivot
-        zone_high = bh
-
-        post = df.iloc[sweep_i + 1:-1]
-        if post.empty:
-            continue
-
-        # Acceptance: a bar after sweep must close below sweep_candle_low
-        if float(post["close"].min()) >= bl:
-            logger.debug(f"  SHORT zone [{zone_low:.5g},{zone_high:.5g}] pending acceptance")
-            continue
-
-        # Invalidation: no bar after sweep may close above zone_high
-        if float(post["close"].max()) > zone_high:
-            logger.debug(f"  SHORT zone [{zone_low:.5g},{zone_high:.5g}] invalidated (close above wick)")
-            continue
-
-        if (zone_high - zone_low) / zone_low < MIN_ZONE_WIDTH_PCT / 100:
-            logger.debug(
-                f"  SHORT zone [{zone_low:.5g},{zone_high:.5g}] too narrow "
-                f"({(zone_high-zone_low)/zone_low*100:.3f}% < {MIN_ZONE_WIDTH_PCT}%), skip"
-            )
-            continue
-
-        logger.info(
-            f"  SHORT sweep zone confirmed: [{zone_low:.6g}, {zone_high:.6g}] "
-            f"sweep@bar{sweep_i}"
-        )
-        return SweepResult(zone_low=zone_low, zone_high=zone_high, sweep_bar_idx=sweep_i)
-
-    return None
-
-
-# ── Main analysis ────────────────────────────────────────────────
 
 def analyze_coin(symbol: str) -> "Signal | None":
     try:
-        # ── Tier 1: 1H market structure ───────────────────────────
-        df_1h = get_klines(symbol, MTF_1H, count=KLINE_1H_COUNT)
-        if df_1h.empty or len(df_1h) < PIVOT_LOOKBACK * 2 + 5:
+        df = get_klines(symbol, NWE_TF, count=NWE_KLINE_COUNT)
+        if df is None or df.empty or len(df) < NWE_SIZE + 5:
             return None
 
-        long_idx  = _bullish_structure_idx(df_1h)
-        short_idx = _bearish_structure_idx(df_1h)
+        # iloc[-1] is the in-progress candle — use only completed bars
+        closes = df["close"].values[:-1].astype(np.float64)
 
-        if long_idx is None and short_idx is None:
-            logger.debug(f"{symbol}: no 1H market structure")
+        if len(closes) < NWE_SIZE + 3:
             return None
 
-        # When both exist, pick the more recent structure
-        if long_idx is not None and short_idx is not None:
-            direction = "LONG" if long_idx >= short_idx else "SHORT"
-        elif long_idx is not None:
+        # NWE at the last three completed bar endpoints
+        nwe_t0 = _rqk_endpoint(closes,      h=NWE_H, alpha=NWE_ALPHA, size=NWE_SIZE)
+        nwe_t1 = _rqk_endpoint(closes[:-1], h=NWE_H, alpha=NWE_ALPHA, size=NWE_SIZE)
+        nwe_t2 = _rqk_endpoint(closes[:-2], h=NWE_H, alpha=NWE_ALPHA, size=NWE_SIZE)
+
+        curr_green = nwe_t0 > nwe_t1   # current slope positive = green
+        prev_green = nwe_t1 > nwe_t2   # previous slope
+
+        if curr_green and not prev_green:
             direction = "LONG"
-        else:
+        elif not curr_green and prev_green:
             direction = "SHORT"
-
-        logger.debug(f"{symbol}: 1H {direction} bias confirmed (2 HH/LL structure)")
-
-        # ── Tier 2: 15M sweep + acceptance ────────────────────────
-        df_15m = get_klines(symbol, SWEEP_TF, count=KLINE_SWEEP_COUNT)
-        if df_15m.empty or len(df_15m) < 30:
+        else:
             return None
+
+        entry = float(closes[-1])
+
+        # Fixed ROI targets
+        tp_offset = entry * TP_ROI_PCT / (LEVERAGE * 100)
+        sl_offset = entry * SL_ROI_PCT / (LEVERAGE * 100)
 
         if direction == "LONG":
-            sweep_result = _find_long_sweep(df_15m)
+            tp_price = round(entry + tp_offset, 8)
+            sl_price = round(entry - sl_offset, 8)
         else:
-            sweep_result = _find_short_sweep(df_15m)
+            tp_price = round(entry - tp_offset, 8)
+            sl_price = round(entry + sl_offset, 8)
 
-        if sweep_result is None:
-            logger.debug(f"{symbol}: no valid {direction} sweep zone on 15M")
-            return None
-
-        zone_low, zone_high, sweep_idx = sweep_result
-
-        # Persist zone to DB (upsert: same anchor level → update timestamp, new → insert)
-        zone_id = db.upsert_zone(
-            symbol, direction, zone_low, zone_high, datetime.now(timezone.utc)
-        )
-
-        logger.info(
-            f"{symbol}: {direction} sweep zone #{zone_id} [{zone_low:.6g}, {zone_high:.6g}] "
-            f"accepted — checking OTE + 5M retest"
-        )
-
-        # ── OTE check (Fibonacci 62–79% of last 1H impulse leg) ───
-        ws_1h = max(0, len(df_1h) - STRUCTURE_1H_BARS - PIVOT_LOOKBACK - 1)
-        ote   = _compute_ote(df_1h, direction, ws_1h)
-        if ote is None:
-            logger.debug(f"{symbol}: {direction} OTE could not be computed, skip")
-            return None
-
-        ote_low, ote_high = ote
-        anchor    = zone_high if direction == "SHORT" else zone_low
-        tolerance = (ote_high - ote_low) * OTE_TOLERANCE
-
-        if not (ote_low - tolerance <= anchor <= ote_high + tolerance):
-            logger.debug(
-                f"{symbol}: {direction} anchor {anchor:.6g} outside OTE "
-                f"[{ote_low:.6g}, {ote_high:.6g}] (±{OTE_TOLERANCE*100:.0f}% tol), skip"
-            )
-            return None
-
-        logger.info(
-            f"{symbol}: OTE ✓ anchor={anchor:.6g} in [{ote_low:.6g}, {ote_high:.6g}]"
-        )
-
-        # ── Tier 3: 5M retest + confirmation ──────────────────────
-        df_5m = get_klines(symbol, ENTRY_TF, count=KLINE_ENTRY_COUNT)
-        if df_5m.empty or len(df_5m) < VOLUME_MA_BARS + 5:
-            return None
-
-        rsi   = ta.rsi(df_5m["close"], length=RSI_PERIOD)
-        vol_ma = df_5m["volume"].rolling(VOLUME_MA_BARS).mean()
-        ema50 = ta.ema(df_5m["close"], length=EMA_50)
-        atr   = ta.atr(df_5m["high"], df_5m["low"], df_5m["close"], length=14)
-
-        c  = df_5m.iloc[-2]   # last completed 5M candle
-        co = float(c["open"])
-        cc = float(c["close"])
-        ch = float(c["high"])
-        cl = float(c["low"])
-
-        cr     = ch - cl
-        body   = abs(cc - co)
-        bratio = body / cr if cr > 0 else 0.0
-
-        rsi_val = float(rsi.iloc[-2])    if not pd.isna(rsi.iloc[-2])    else 50.0
-        vol_cur = float(df_5m["volume"].iloc[-2])
-        vol_avg = float(vol_ma.iloc[-2]) if not pd.isna(vol_ma.iloc[-2]) else 0.0
-        ema_val = float(ema50.iloc[-2])  if not pd.isna(ema50.iloc[-2])  else 0.0
-        atr_val = float(atr.iloc[-2])    if not pd.isna(atr.iloc[-2])    else cc * 0.001
-
-        # Zone touch: last 5M bar's wick must reach the zone
-        if direction == "LONG":
-            touches_zone = cl <= zone_high * (1 + ZONE_BUFFER)
-        else:
-            touches_zone = ch >= zone_low * (1 - ZONE_BUFFER)
-
-        if not touches_zone:
-            logger.debug(f"{symbol}: {direction} 5M bar not yet touching zone")
-            return None
-
-        # Entry proximity: close must not be far above/below the zone
-        # Prevents entries where price just grazed the zone with a wick then flew away
-        if direction == "LONG":
-            entry_too_far = cc > zone_high * (1 + ENTRY_ZONE_BUFFER)
-        else:
-            entry_too_far = cc < zone_low * (1 - ENTRY_ZONE_BUFFER)
-
-        if entry_too_far:
-            logger.debug(
-                f"{symbol}: {direction} 5M close {cc:.6g} too far from zone "
-                f"[{zone_low:.6g},{zone_high:.6g}], skip"
-            )
-            return None
-
-        logger.info(f"{symbol}: {direction} 5M retest confirmed — verifying confirmation filters")
-        db.update_zone_status(zone_id, 'waiting_retest')
-
-        # Confirmation filters
-        if direction == "LONG":
-            body_ok = cc > co and bratio >= 0.30
-            rsi_ok  = rsi_val > 50
-            ema_ok  = ema_val > 0 and cc > ema_val
-        else:
-            body_ok = cc < co and bratio >= 0.30
-            rsi_ok  = rsi_val < 50
-            ema_ok  = ema_val > 0 and cc < ema_val
-
-        vol_ok = vol_avg > 0 and vol_cur >= VOLUME_MIN_MULT * vol_avg
-
-        if not (body_ok and rsi_ok and vol_ok and ema_ok):
-            logger.debug(
-                f"{symbol}: {direction} confirm fail — "
-                f"body={bratio:.2f} rsi={rsi_val:.1f} "
-                f"vol={vol_cur:.0f}/{vol_avg * VOLUME_MIN_MULT:.0f} ema_ok={ema_ok}"
-            )
-            return None
-
-        # ── SL / TP ───────────────────────────────────────────────
-        entry = cc
-
-        if direction == "LONG":
-            sl_price = round(zone_low - SL_ATR_BUFFER * atr_val, 8)
-            if sl_price >= entry:
-                return None
-            risk = entry - sl_price
-            tp1  = round(entry + risk, 8)
-            tp_price = round(entry + REWARD_RATIO * risk, 8)
-        else:
-            sl_price = round(zone_high + SL_ATR_BUFFER * atr_val, 8)
-            if sl_price <= entry:
-                return None
-            risk = sl_price - entry
-            tp1  = round(entry - risk, 8)
-            tp_price = round(entry - REWARD_RATIO * risk, 8)
-
-        risk_pct = risk / entry * 100
-        if risk_pct > MAX_RISK_PCT:
-            logger.debug(f"{symbol}: SL too wide ({risk_pct:.2f}% > {MAX_RISK_PCT}%)")
-            return None
-
-        tp_roi_pct = risk_pct * REWARD_RATIO * LEVERAGE
-        sl_roi_pct = risk_pct * LEVERAGE
-
-        # ── Quality score (0–100) ─────────────────────────────────
-        rsi_score  = min(abs(rsi_val - 50) / 30.0, 1.0)
-        vol_score  = min((vol_cur / (VOLUME_MIN_MULT * vol_avg) - 1) / 1.5, 1.0) if vol_avg > 0 else 0.0
-        zone_score = min((zone_high - zone_low) / zone_high / 0.005, 1.0)   # wider zone = cleaner sweep
-
-        score = round(
-            (0.40 * rsi_score + 0.35 * vol_score + 0.25 * zone_score) * 100, 1
-        )
-
-        if score < MIN_SIGNAL_SCORE:
-            logger.debug(f"{symbol}: score {score} below minimum {MIN_SIGNAL_SCORE}, skip")
-            return None
+        # Score: slope acceleration — how sharply the NWE turned
+        # Expressed as a 0-100 value; higher = more decisive flip
+        slope_now  = abs(nwe_t0 - nwe_t1)
+        slope_prev = abs(nwe_t1 - nwe_t2)
+        accel = slope_now / (slope_prev + 1e-12)
+        score = round(min(accel * 50.0, 100.0), 1)
 
         logger.info(
             f"[SIGNAL] {direction} {symbol} @ {entry:.6g} | "
-            f"TP={tp_price:.6g} (+{tp_roi_pct:.1f}%) "
-            f"SL={sl_price:.6g} (-{sl_roi_pct:.1f}%) | "
-            f"zone=[{zone_low:.6g},{zone_high:.6g}] "
-            f"risk={risk_pct:.3f}% RSI={rsi_val:.1f} score={score}"
+            f"TP={tp_price:.6g} (+{TP_ROI_PCT}% ROI) "
+            f"SL={sl_price:.6g} (-{SL_ROI_PCT}% ROI) | "
+            f"NWE: {nwe_t2:.6g}→{nwe_t1:.6g}→{nwe_t0:.6g} | score={score}"
         )
 
         return Signal(
@@ -600,17 +133,11 @@ def analyze_coin(symbol: str) -> "Signal | None":
             tp_price          = tp_price,
             sl_price          = sl_price,
             leverage          = LEVERAGE,
-            tp_roi_pct        = tp_roi_pct,
-            sl_roi_pct        = sl_roi_pct,
-            timeframe_summary = (
-                f"Liquidity Sweep | "
-                f"1H LH+LL+OTE({ote_low:.5g}-{ote_high:.5g}) → 15M Sweep → 5M Retest | "
-                f"zone=[{zone_low:.5g},{zone_high:.5g}] | "
-                f"TP1=${tp1:,.6g} TP2=${tp_price:,.6g}"
-            ),
+            tp_roi_pct        = TP_ROI_PCT,
+            sl_roi_pct        = SL_ROI_PCT,
+            timeframe_summary = f"NWE-RQK 1H | h={NWE_H} α={NWE_ALPHA} size={NWE_SIZE} | slope flip",
             generated_at      = datetime.now(timezone.utc),
             score             = score,
-            zone_id           = zone_id,
         )
 
     except Exception as e:
