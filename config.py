@@ -23,19 +23,19 @@ COIN_REFRESH_HOURS:       int   = 6
 # ── Nadaraya-Watson Rational Quadratic Kernel Strategy ────────────
 # TradingView settings:
 # Source:                  Close
-# Lookback Window:          17
-# Relative Weighting:       8
-# Start Regression at Bar:  30
+# Lookback Window:          32
+# Relative Weighting:       25
+# Start Regression at Bar:  233
 # Smooth Colors:            True
-# Lag:                      2
-# Timeframe:                15m
-NWE_H:           float = 17.0
-NWE_ALPHA:       float = 8.0
-NWE_SIZE:        int   = 30
-NWE_LAG:         int   = 2
+# Lag:                      7
+# Timeframe:                3m
+NWE_H:           float = 32.0
+NWE_ALPHA:       float = 25.0
+NWE_SIZE:        int   = 233
+NWE_LAG:         int   = 7
 NWE_SMOOTH:      bool  = True
-NWE_TF:          str   = "15m"
-NWE_KLINE_COUNT: int   = 120
+NWE_TF:          str   = "3m"
+NWE_KLINE_COUNT: int   = 300
 
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE:     int   = 20
