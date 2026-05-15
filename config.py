@@ -28,14 +28,23 @@ COIN_REFRESH_HOURS:       int   = 6
 # Start Regression at Bar:  233
 # Smooth Colors:            True
 # Lag:                      7
-# Timeframe:                3 minutes
+# Timeframe:                15 minutes
 NWE_H:           float = 32.0
 NWE_ALPHA:       float = 25.0
 NWE_SIZE:        int   = 233
 NWE_LAG:         int   = 7
 NWE_SMOOTH:      bool  = True
-NWE_TF:          str   = "3m"
+NWE_TF:          str   = "15m"
 NWE_KLINE_COUNT: int   = 300
+
+# ── Supertrend filter ─────────────────────────────────────────────
+# TradingView common settings:
+# ATR Length: 10
+# Factor:     3
+# Timeframe:  same as NWE_TF
+SUPERTREND_ENABLED:    bool  = True
+SUPERTREND_ATR_LENGTH: int   = 10
+SUPERTREND_FACTOR:     float = 3.0
 
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE:     int   = 20
@@ -48,14 +57,14 @@ SIGNAL_COOLDOWN_MINUTES: int = 120
 SIGNAL_EXPIRE_HOURS:     int = 8
 MAX_CONCURRENT_SIGNALS:  int = 10
 
-# For 3-minute candles:
-# - scan every 3 minutes
-# - check TP/SL every 3 minutes
-# - tell outcome checker that each candle is 3 minutes
-SCAN_CRON_MINUTES:     str = "*/3"
+# For 15-minute candles:
+# - scan every 5 minutes to catch newly closed 15m candles quickly
+# - outcome checker checks every 5 minutes
+# - candle size is 15 minutes
+SCAN_CRON_MINUTES:     str = "*/5"
 SIGNALS_PER_SCAN:      int = 3
-OUTCOME_CHECK_MINUTES: int = 3
-CANDLE_MINUTES:        int = 3
+OUTCOME_CHECK_MINUTES: int = 5
+CANDLE_MINUTES:        int = 15
 SCAN_WORKERS:          int = 8
 
 # ── MEXC Futures REST API ─────────────────────────────────────────

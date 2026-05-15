@@ -1,19 +1,28 @@
 """
-Nadaraya-Watson Rational Quadratic Kernel Strategy only.
+Nadaraya-Watson Rational Quadratic Kernel Strategy + Supertrend filter.
 
-TradingView settings:
+NWE TradingView settings:
     Source:                  Close
-    Lookback Window:          17
-    Relative Weighting:       8
-    Start Regression at Bar:  30
+    Lookback Window:          32
+    Relative Weighting:       25
+    Start Regression at Bar:  233
     Smooth Colors:            True
-    Lag:                      2
+    Lag:                      7
     Timeframe:                15m
 
+Supertrend settings:
+    ATR Length:               10
+    Factor:                   3
+    Timeframe:                same as NWE_TF
+
 Signal logic:
-    Smooth Colors ON:
-        yhat2 crosses above yhat1 = LONG
-        yhat2 crosses below yhat1 = SHORT
+    LONG:
+        NWE yhat2 crosses above yhat1
+        AND Supertrend is bullish
+
+    SHORT:
+        NWE yhat2 crosses below yhat1
+        AND Supertrend is bearish
 
 Important:
     Uses completed candles only.
@@ -25,6 +34,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import numpy as np
+import pandas as pd
 
 from mexc_client import get_klines
 from config import (
@@ -35,6 +45,9 @@ from config import (
     NWE_SMOOTH,
     NWE_TF,
     NWE_KLINE_COUNT,
+    SUPERTREND_ENABLED,
+    SUPERTREND_ATR_LENGTH,
+    SUPERTREND_FACTOR,
     LEVERAGE,
     TP_ROI_PCT,
     SL_ROI_PCT,
@@ -128,7 +141,6 @@ def _detect_signal_from_nwe(closes: np.ndarray) -> tuple[str | None, dict]:
     if len(closes) < NWE_SIZE + NWE_LAG + 5:
         return None, {}
 
-    # Normal NWE line: yhat1
     yhat1_t0 = _nwe_value(closes, h=NWE_H)
     yhat1_t1 = _nwe_value(closes[:-1], h=NWE_H)
     yhat1_t2 = _nwe_value(closes[:-2], h=NWE_H)
@@ -136,8 +148,6 @@ def _detect_signal_from_nwe(closes: np.ndarray) -> tuple[str | None, dict]:
     direction = None
 
     if NWE_SMOOTH:
-        # Smooth Colors ON uses:
-        # yhat2 = kernel_regression(src, size, h - lag)
         h2 = max(NWE_H - NWE_LAG, 1.0)
 
         yhat2_t0 = _nwe_value(closes, h=h2)
@@ -173,8 +183,7 @@ def _detect_signal_from_nwe(closes: np.ndarray) -> tuple[str | None, dict]:
 
         return direction, details
 
-    # Smooth Colors OFF fallback:
-    # slope-based color change
+    # Smooth Colors OFF fallback
     was_bearish = yhat1_t2 > yhat1_t1
     was_bullish = yhat1_t2 < yhat1_t1
 
@@ -199,6 +208,123 @@ def _detect_signal_from_nwe(closes: np.ndarray) -> tuple[str | None, dict]:
     return direction, details
 
 
+# ── Supertrend helpers ────────────────────────────────────────────
+
+def _rma(series: pd.Series, length: int) -> pd.Series:
+    """
+    Wilder's RMA, close to TradingView ta.rma behavior.
+    """
+    return series.ewm(alpha=1 / length, adjust=False).mean()
+
+
+def _calculate_supertrend(df: pd.DataFrame) -> tuple[str | None, float | None]:
+    """
+    Calculate Supertrend on completed candles only.
+
+    Returns:
+        ("LONG", supertrend_value)  when bullish
+        ("SHORT", supertrend_value) when bearish
+        (None, None)                when not enough data
+    """
+    completed = df.iloc[:-1].copy()
+
+    min_bars = SUPERTREND_ATR_LENGTH + 10
+    if completed.empty or len(completed) < min_bars:
+        return None, None
+
+    high = completed["high"].astype(float)
+    low = completed["low"].astype(float)
+    close = completed["close"].astype(float)
+
+    hl2 = (high + low) / 2.0
+
+    high_low = high - low
+    high_close = (high - close.shift(1)).abs()
+    low_close = (low - close.shift(1)).abs()
+
+    true_range = pd.concat(
+        [high_low, high_close, low_close],
+        axis=1,
+    ).max(axis=1)
+
+    atr = _rma(true_range, SUPERTREND_ATR_LENGTH)
+
+    basic_upper = hl2 + (SUPERTREND_FACTOR * atr)
+    basic_lower = hl2 - (SUPERTREND_FACTOR * atr)
+
+    final_upper = basic_upper.copy()
+    final_lower = basic_lower.copy()
+
+    trend = pd.Series(index=completed.index, dtype="int64")
+    supertrend = pd.Series(index=completed.index, dtype="float64")
+
+    for i in range(len(completed)):
+        if i == 0:
+            trend.iloc[i] = 1
+            final_upper.iloc[i] = basic_upper.iloc[i]
+            final_lower.iloc[i] = basic_lower.iloc[i]
+            supertrend.iloc[i] = final_lower.iloc[i]
+            continue
+
+        prev_i = i - 1
+
+        if (
+            basic_upper.iloc[i] < final_upper.iloc[prev_i]
+            or close.iloc[prev_i] > final_upper.iloc[prev_i]
+        ):
+            final_upper.iloc[i] = basic_upper.iloc[i]
+        else:
+            final_upper.iloc[i] = final_upper.iloc[prev_i]
+
+        if (
+            basic_lower.iloc[i] > final_lower.iloc[prev_i]
+            or close.iloc[prev_i] < final_lower.iloc[prev_i]
+        ):
+            final_lower.iloc[i] = basic_lower.iloc[i]
+        else:
+            final_lower.iloc[i] = final_lower.iloc[prev_i]
+
+        if trend.iloc[prev_i] == -1 and close.iloc[i] > final_upper.iloc[i]:
+            trend.iloc[i] = 1
+        elif trend.iloc[prev_i] == 1 and close.iloc[i] < final_lower.iloc[i]:
+            trend.iloc[i] = -1
+        else:
+            trend.iloc[i] = trend.iloc[prev_i]
+
+        supertrend.iloc[i] = final_lower.iloc[i] if trend.iloc[i] == 1 else final_upper.iloc[i]
+
+    last_trend = int(trend.iloc[-1])
+    last_value = float(supertrend.iloc[-1])
+
+    if last_trend == 1:
+        return "LONG", last_value
+
+    if last_trend == -1:
+        return "SHORT", last_value
+
+    return None, None
+
+
+def _passes_supertrend_filter(symbol: str, direction: str, df: pd.DataFrame) -> tuple[bool, str | None, float | None]:
+    if not SUPERTREND_ENABLED:
+        return True, None, None
+
+    st_direction, st_value = _calculate_supertrend(df)
+
+    if st_direction is None:
+        logger.info(f"[FILTER] {symbol} {direction} skipped: Supertrend unavailable")
+        return False, st_direction, st_value
+
+    if direction != st_direction:
+        logger.info(
+            f"[FILTER] {symbol} {direction} skipped: "
+            f"Supertrend={st_direction} value={st_value:.6g}"
+        )
+        return False, st_direction, st_value
+
+    return True, st_direction, st_value
+
+
 # ── Main analysis ─────────────────────────────────────────────────
 
 def analyze_coin(symbol: str) -> "Signal | None":
@@ -208,7 +334,7 @@ def analyze_coin(symbol: str) -> "Signal | None":
         if df is None or df.empty:
             return None
 
-        if len(df) < NWE_SIZE + NWE_LAG + 10:
+        if len(df) < NWE_SIZE + NWE_LAG + SUPERTREND_ATR_LENGTH + 10:
             return None
 
         # Latest candle is normally still forming.
@@ -221,6 +347,11 @@ def analyze_coin(symbol: str) -> "Signal | None":
         direction, details = _detect_signal_from_nwe(closes)
 
         if direction is None:
+            return None
+
+        passed_filter, st_direction, st_value = _passes_supertrend_filter(symbol, direction, df)
+
+        if not passed_filter:
             return None
 
         entry = float(closes[-1])
@@ -249,31 +380,26 @@ def analyze_coin(symbol: str) -> "Signal | None":
 
         if details.get("mode") == "smooth-cross":
             yhat2_t0 = details.get("yhat2_t0", 0.0)
-            yhat2_t1 = details.get("yhat2_t1", 0.0)
-
             cross_strength = abs(yhat2_t0 - yhat1_t0) / (entry + 1e-12) * 10000
             score = round(min(score + cross_strength, 100.0), 1)
 
-            logger.info(
-                f"[SIGNAL] {direction} {symbol} @ {entry:.6g} | "
-                f"TP={tp_price:.6g} (+{TP_ROI_PCT}% ROI) "
-                f"SL={sl_price:.6g} (-{SL_ROI_PCT}% ROI) | "
-                f"mode={details.get('mode')} | "
-                f"yhat1: {yhat1_t2:.6g} → {yhat1_t1:.6g} → {yhat1_t0:.6g} | "
-                f"yhat2: {yhat2_t1:.6g} → {yhat2_t0:.6g} | "
-                f"h={NWE_H} r={NWE_ALPHA} x0={NWE_SIZE} lag={NWE_LAG} "
-                f"smooth={NWE_SMOOTH} | score={score}"
-            )
-        else:
-            logger.info(
-                f"[SIGNAL] {direction} {symbol} @ {entry:.6g} | "
-                f"TP={tp_price:.6g} (+{TP_ROI_PCT}% ROI) "
-                f"SL={sl_price:.6g} (-{SL_ROI_PCT}% ROI) | "
-                f"mode={details.get('mode')} | "
-                f"NWE: {yhat1_t2:.6g} → {yhat1_t1:.6g} → {yhat1_t0:.6g} | "
-                f"h={NWE_H} r={NWE_ALPHA} x0={NWE_SIZE} lag={NWE_LAG} "
-                f"smooth={NWE_SMOOTH} | score={score}"
-            )
+        if SUPERTREND_ENABLED:
+            score = round(min(score + 10.0, 100.0), 1)
+
+        logger.info(
+            f"[SIGNAL] {direction} {symbol} @ {entry:.6g} | "
+            f"TP={tp_price:.6g} (+{TP_ROI_PCT}% ROI) "
+            f"SL={sl_price:.6g} (-{SL_ROI_PCT}% ROI) | "
+            f"mode={details.get('mode')} | "
+            f"NWE yhat1: {yhat1_t2:.6g} → {yhat1_t1:.6g} → {yhat1_t0:.6g} | "
+            f"Supertrend={st_direction} value={st_value if st_value is not None else 0:.6g} | "
+            f"h={NWE_H} r={NWE_ALPHA} x0={NWE_SIZE} lag={NWE_LAG} "
+            f"smooth={NWE_SMOOTH} | score={score}"
+        )
+
+        st_text = ""
+        if SUPERTREND_ENABLED and st_direction is not None and st_value is not None:
+            st_text = f" | ST={st_direction} {st_value:.6g}"
 
         return Signal(
             symbol=symbol,
@@ -285,9 +411,10 @@ def analyze_coin(symbol: str) -> "Signal | None":
             tp_roi_pct=TP_ROI_PCT,
             sl_roi_pct=SL_ROI_PCT,
             timeframe_summary=(
-                f"NWE-RQK {NWE_TF.upper()} | "
-                f"h={NWE_H:g} r={NWE_ALPHA:g} x0={NWE_SIZE} "
-                f"lag={NWE_LAG} smooth={NWE_SMOOTH}"
+                f"NWE-RQK {NWE_TF.upper()} + Supertrend | "
+                f"NWE h={NWE_H:g} r={NWE_ALPHA:g} x0={NWE_SIZE} lag={NWE_LAG} "
+                f"| ST {SUPERTREND_ATR_LENGTH}/{SUPERTREND_FACTOR:g}"
+                f"{st_text}"
             ),
             generated_at=datetime.now(timezone.utc),
             score=score,

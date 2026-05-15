@@ -1,5 +1,5 @@
 """
-Telegram bot: handles commands and broadcasts NWE-RQK signals to the channel.
+Telegram bot: handles commands and broadcasts NWE-RQK + Supertrend signals to the channel.
 """
 
 import logging
@@ -134,6 +134,9 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         NWE_LAG,
         NWE_SMOOTH,
         NWE_TF,
+        SUPERTREND_ENABLED,
+        SUPERTREND_ATR_LENGTH,
+        SUPERTREND_FACTOR,
         LEVERAGE,
         TP_ROI_PCT,
         SL_ROI_PCT,
@@ -153,11 +156,12 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `NWE-RQK only`\n"
+        f"Strategy:   `NWE-RQK + Supertrend`\n"
         f"Timeframe:  `{NWE_TF}`\n"
         f"NWE:        `close h={NWE_H:g} r={NWE_ALPHA:g} x0={NWE_SIZE} lag={NWE_LAG} smooth={NWE_SMOOTH}`\n"
-        f"LONG:       `yhat2 crosses above yhat1`\n"
-        f"SHORT:      `yhat2 crosses below yhat1`\n"
+        f"Supertrend: `enabled={SUPERTREND_ENABLED} ATR={SUPERTREND_ATR_LENGTH} factor={SUPERTREND_FACTOR:g}`\n"
+        f"LONG:       `NWE bullish cross + Supertrend bullish`\n"
+        f"SHORT:      `NWE bearish cross + Supertrend bearish`\n"
         f"Workers:    `{SCAN_WORKERS}`\n"
         f"Leverage:   `{LEVERAGE}x`\n"
         f"TP / SL:    `+{TP_ROI_PCT:.0f}% ROI / -{SL_ROI_PCT:.0f}% ROI`\n"
