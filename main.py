@@ -1,8 +1,8 @@
 """
-Main entry point — Nadaraya-Watson Rational Quadratic Kernel strategy only.
+Main entry point — NWE-RQK + DMI/ADX strategy only.
 
 Scheduler jobs:
-  Every configured scan interval — scan coin pool for NWE-RQK color-change signals
+  Every configured scan interval — scan coin pool for NWE-RQK + DMI signals
   Every 5 min                  — check pending signal outcomes (TP/SL hit)
   Every 6h                     — refresh coin pool
   23:55 daily                  — daily report
@@ -142,6 +142,33 @@ async def scan_and_signal(app: Application) -> None:
 
 # ── outcome checker ───────────────────────────────────────────────
 
+def _calculate_pnl_roi(direction: str, outcome: str, entry_price: float, tp_price: float, sl_price: float) -> float:
+    """
+    Calculates ROI based on the actual price move and leverage.
+
+    LONG win:
+        TP above entry = positive
+
+    SHORT win:
+        TP below entry = positive
+
+    Loss:
+        Always negative.
+    """
+    if outcome == "win":
+        if direction == "LONG":
+            price_move_pct = (tp_price - entry_price) / entry_price * 100
+        else:
+            price_move_pct = (entry_price - tp_price) / entry_price * 100
+    else:
+        if direction == "LONG":
+            price_move_pct = (sl_price - entry_price) / entry_price * 100
+        else:
+            price_move_pct = (entry_price - sl_price) / entry_price * 100
+
+    return price_move_pct * LEVERAGE
+
+
 async def check_outcomes(app: Application) -> None:
     pending = db.get_pending_signals()
     now = datetime.now(timezone.utc)
@@ -151,6 +178,8 @@ async def check_outcomes(app: Application) -> None:
         direction = sig["direction"]
         tp_price = sig["tp_price"]
         sl_price = sig["sl_price"]
+        entry_price = sig["entry_price"]
+
         generated = datetime.fromisoformat(sig["generated_at"])
 
         if generated.tzinfo is None:
@@ -231,12 +260,12 @@ async def check_outcomes(app: Application) -> None:
         if outcome is None:
             continue
 
-        pnl = (
-            (sig["tp_price"] - sig["entry_price"])
-            / sig["entry_price"]
-            * LEVERAGE
-            * 100
-            * (1 if outcome == "win" else -1)
+        pnl = _calculate_pnl_roi(
+            direction=direction,
+            outcome=outcome,
+            entry_price=entry_price,
+            tp_price=tp_price,
+            sl_price=sl_price,
         )
 
         db.update_signal_outcome(sig["id"], outcome, pnl)
@@ -261,7 +290,7 @@ async def check_outcomes(app: Application) -> None:
 async def main():
     logger.info(
         f"Starting MEXC Signal Bot — "
-        f"Nadaraya-Watson Rational Quadratic Kernel ({NWE_TF}, scan={SCAN_CRON_MINUTES})"
+        f"NWE-RQK + DMI/ADX ({NWE_TF}, scan={SCAN_CRON_MINUTES})"
     )
 
     db.init_db()

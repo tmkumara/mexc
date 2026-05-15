@@ -17,7 +17,7 @@ COINGLASS_API_KEY: str = os.getenv("COINGLASS_API_KEY", "")
 # ── Coin pool ────────────────────────────────────────────────────
 EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
 TOP_N_COINS:              int   = 40
-COIN_POOL_MIN_VOLUME_USD: float = 5_000_000   # minimum $5M daily volume
+COIN_POOL_MIN_VOLUME_USD: float = 5_000_000
 COIN_REFRESH_HOURS:       int   = 6
 
 # ── Nadaraya-Watson Rational Quadratic Kernel Strategy ────────────
@@ -28,7 +28,7 @@ COIN_REFRESH_HOURS:       int   = 6
 # Start Regression at Bar:  30
 # Smooth Colors:            False
 # Lag:                      2
-# Timeframe:                Chart / scanner timeframe
+# Timeframe:                15m
 NWE_H:           float = 17.0
 NWE_ALPHA:       float = 8.0
 NWE_SIZE:        int   = 30
@@ -37,22 +37,31 @@ NWE_SMOOTH:      bool  = False
 NWE_TF:          str   = "15m"
 NWE_KLINE_COUNT: int   = 120
 
+# ── DMI / ADX filter ─────────────────────────────────────────────
+# TradingView DMI/ADX/KEYLEVEL settings:
+# ADX Smoothing:    14
+# DI Length:        14
+# Key Level for ADX 23
+DMI_DI_LENGTH:      int   = 14
+DMI_ADX_SMOOTHING:  int   = 14
+DMI_ADX_MIN:        float = 23.0
+
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE:     int   = 20
-TP_ROI_PCT:   float = 5.0    # target ROI %  →  entry move = TP_ROI / leverage
-SL_ROI_PCT:   float = 4.0    # stop ROI %    →  entry move = SL_ROI / leverage
-REWARD_RATIO: float = TP_ROI_PCT / SL_ROI_PCT   # 1.25 : 1 R:R
+TP_ROI_PCT:   float = 5.0
+SL_ROI_PCT:   float = 5.0
+REWARD_RATIO: float = TP_ROI_PCT / SL_ROI_PCT
 
 # ── Scheduler ────────────────────────────────────────────────────
-SIGNAL_COOLDOWN_MINUTES: int = 120   # same coin blocked 2h after signal
-SIGNAL_EXPIRE_HOURS:     int = 8     # pending signals auto-expire after 8h
+SIGNAL_COOLDOWN_MINUTES: int = 120
+SIGNAL_EXPIRE_HOURS:     int = 8
 MAX_CONCURRENT_SIGNALS:  int = 10
 
-SCAN_CRON_MINUTES:     str = "*/5"  # every 5 minutes
+SCAN_CRON_MINUTES:     str = "*/5"
 SIGNALS_PER_SCAN:      int = 3
-OUTCOME_CHECK_MINUTES: int = 5      # how often to poll for TP/SL hits
-CANDLE_MINUTES:        int = 15     # 1H candle size in minutes
-SCAN_WORKERS:          int = 8      # concurrent threads for NWE analysis
+OUTCOME_CHECK_MINUTES: int = 5
+CANDLE_MINUTES:        int = 15
+SCAN_WORKERS:          int = 8
 
 # ── MEXC Futures REST API ─────────────────────────────────────────
 MEXC_BASE_URL = "https://contract.mexc.com/api/v1"
