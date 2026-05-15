@@ -1,30 +1,19 @@
 """
-Nadaraya-Watson Rational Quadratic Kernel Strategy + DMI/ADX filter.
+Nadaraya-Watson Rational Quadratic Kernel Strategy only.
 
-TradingView NWE settings:
+TradingView settings:
     Source:                  Close
     Lookback Window:          17
     Relative Weighting:       8
     Start Regression at Bar:  30
-    Smooth Colors:            False
+    Smooth Colors:            True
     Lag:                      2
     Timeframe:                15m
 
-TradingView DMI/ADX/KEYLEVEL settings:
-    ADX Smoothing:            14
-    DI Length:                14
-    Key Level for ADX:        23
-
 Signal logic:
-    LONG:
-        NWE turns bullish
-        AND ADX >= 23
-        AND +DI > -DI
-
-    SHORT:
-        NWE turns bearish
-        AND ADX >= 23
-        AND -DI > +DI
+    Smooth Colors ON:
+        yhat2 crosses above yhat1 = LONG
+        yhat2 crosses below yhat1 = SHORT
 
 Important:
     Uses completed candles only.
@@ -36,7 +25,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import numpy as np
-import pandas as pd
 
 from mexc_client import get_klines
 from config import (
@@ -47,9 +35,6 @@ from config import (
     NWE_SMOOTH,
     NWE_TF,
     NWE_KLINE_COUNT,
-    DMI_DI_LENGTH,
-    DMI_ADX_SMOOTHING,
-    DMI_ADX_MIN,
     LEVERAGE,
     TP_ROI_PCT,
     SL_ROI_PCT,
@@ -79,7 +64,7 @@ def _rqk_endpoint(closes: np.ndarray, h: float, alpha: float, size: int) -> floa
     """
     Rational Quadratic Kernel Nadaraya-Watson endpoint estimator.
 
-    Weight:
+    TradingView equivalent weight:
         w(i) = (1 + i² / (2 * alpha * h²)) ^ (-alpha)
 
     Index:
@@ -90,6 +75,7 @@ def _rqk_endpoint(closes: np.ndarray, h: float, alpha: float, size: int) -> floa
     if bars < 2:
         return float(closes[-1]) if len(closes) else 0.0
 
+    # Reverse because index 0 should be the most recent completed candle.
     src = closes[-bars:][::-1]
 
     weights = np.array(
@@ -113,45 +99,45 @@ def _nwe_value(closes: np.ndarray, h: float) -> float:
 
 
 def _crossover(prev_a: float, curr_a: float, prev_b: float, curr_b: float) -> bool:
+    """
+    Equivalent to TradingView ta.crossover(a, b):
+        previous a <= previous b and current a > current b
+    """
     return prev_a <= prev_b and curr_a > curr_b
 
 
 def _crossunder(prev_a: float, curr_a: float, prev_b: float, curr_b: float) -> bool:
+    """
+    Equivalent to TradingView ta.crossunder(a, b):
+        previous a >= previous b and current a < current b
+    """
     return prev_a >= prev_b and curr_a < curr_b
 
 
 def _detect_signal_from_nwe(closes: np.ndarray) -> tuple[str | None, dict]:
     """
-    Detect NWE color-change signal using completed candles only.
+    Detect NWE signal using completed candles only.
+
+    Smooth Colors ON:
+        yhat2 crossover yhat1 = LONG
+        yhat2 crossunder yhat1 = SHORT
 
     Smooth Colors OFF:
-        Bearish → Bullish = LONG
-        Bullish → Bearish = SHORT
+        slope color change = LONG / SHORT
     """
     if len(closes) < NWE_SIZE + NWE_LAG + 5:
         return None, {}
 
+    # Normal NWE line: yhat1
     yhat1_t0 = _nwe_value(closes, h=NWE_H)
     yhat1_t1 = _nwe_value(closes[:-1], h=NWE_H)
     yhat1_t2 = _nwe_value(closes[:-2], h=NWE_H)
 
-    was_bearish = yhat1_t2 > yhat1_t1
-    was_bullish = yhat1_t2 < yhat1_t1
-
-    is_bearish = yhat1_t1 > yhat1_t0
-    is_bullish = yhat1_t1 < yhat1_t0
-
-    is_bearish_change = is_bearish and was_bullish
-    is_bullish_change = is_bullish and was_bearish
-
     direction = None
 
-    if not NWE_SMOOTH:
-        if is_bullish_change:
-            direction = "LONG"
-        elif is_bearish_change:
-            direction = "SHORT"
-    else:
+    if NWE_SMOOTH:
+        # Smooth Colors ON uses:
+        # yhat2 = kernel_regression(src, size, h - lag)
         h2 = max(NWE_H - NWE_LAG, 1.0)
 
         yhat2_t0 = _nwe_value(closes, h=h2)
@@ -176,112 +162,41 @@ def _detect_signal_from_nwe(closes: np.ndarray) -> tuple[str | None, dict]:
         elif bearish_cross:
             direction = "SHORT"
 
+        details = {
+            "mode": "smooth-cross",
+            "yhat1_t2": yhat1_t2,
+            "yhat1_t1": yhat1_t1,
+            "yhat1_t0": yhat1_t0,
+            "yhat2_t1": yhat2_t1,
+            "yhat2_t0": yhat2_t0,
+        }
+
+        return direction, details
+
+    # Smooth Colors OFF fallback:
+    # slope-based color change
+    was_bearish = yhat1_t2 > yhat1_t1
+    was_bullish = yhat1_t2 < yhat1_t1
+
+    is_bearish = yhat1_t1 > yhat1_t0
+    is_bullish = yhat1_t1 < yhat1_t0
+
+    is_bearish_change = is_bearish and was_bullish
+    is_bullish_change = is_bullish and was_bearish
+
+    if is_bullish_change:
+        direction = "LONG"
+    elif is_bearish_change:
+        direction = "SHORT"
+
     details = {
+        "mode": "slope-change",
         "yhat1_t2": yhat1_t2,
         "yhat1_t1": yhat1_t1,
         "yhat1_t0": yhat1_t0,
-        "was_bearish": was_bearish,
-        "was_bullish": was_bullish,
-        "is_bearish": is_bearish,
-        "is_bullish": is_bullish,
-        "is_bearish_change": is_bearish_change,
-        "is_bullish_change": is_bullish_change,
     }
 
     return direction, details
-
-
-# ── DMI / ADX helpers ─────────────────────────────────────────────
-
-def _rma(series: pd.Series, length: int) -> pd.Series:
-    """
-    Wilder's RMA, close to TradingView ta.rma behavior.
-    Used for DMI/ADX calculation.
-    """
-    return series.ewm(alpha=1 / length, adjust=False).mean()
-
-
-def _get_dmi_filter(df: pd.DataFrame) -> tuple[float, float, float]:
-    """
-    Returns:
-        adx, plus_di, minus_di
-
-    Uses completed candles only.
-    """
-    completed = df.iloc[:-1].copy()
-
-    if len(completed) < DMI_DI_LENGTH + DMI_ADX_SMOOTHING + 5:
-        return 0.0, 0.0, 0.0
-
-    high = completed["high"].astype(float)
-    low = completed["low"].astype(float)
-    close = completed["close"].astype(float)
-
-    up_move = high.diff()
-    down_move = -low.diff()
-
-    plus_dm = pd.Series(
-        np.where((up_move > down_move) & (up_move > 0), up_move, 0.0),
-        index=completed.index,
-    )
-
-    minus_dm = pd.Series(
-        np.where((down_move > up_move) & (down_move > 0), down_move, 0.0),
-        index=completed.index,
-    )
-
-    high_low = high - low
-    high_close = (high - close.shift()).abs()
-    low_close = (low - close.shift()).abs()
-
-    true_range = pd.concat(
-        [high_low, high_close, low_close],
-        axis=1,
-    ).max(axis=1)
-
-    atr = _rma(true_range, DMI_DI_LENGTH)
-
-    plus_di = 100 * _rma(plus_dm, DMI_DI_LENGTH) / atr.replace(0, np.nan)
-    minus_di = 100 * _rma(minus_dm, DMI_DI_LENGTH) / atr.replace(0, np.nan)
-
-    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
-    adx = _rma(dx, DMI_ADX_SMOOTHING)
-
-    last_adx = adx.iloc[-1]
-    last_plus_di = plus_di.iloc[-1]
-    last_minus_di = minus_di.iloc[-1]
-
-    if pd.isna(last_adx) or pd.isna(last_plus_di) or pd.isna(last_minus_di):
-        return 0.0, 0.0, 0.0
-
-    return float(last_adx), float(last_plus_di), float(last_minus_di)
-
-
-def _passes_dmi_filter(symbol: str, direction: str, df: pd.DataFrame) -> tuple[bool, float, float, float]:
-    adx, plus_di, minus_di = _get_dmi_filter(df)
-
-    if adx < DMI_ADX_MIN:
-        logger.info(
-            f"[FILTER] {symbol} {direction} skipped: "
-            f"ADX {adx:.2f} < {DMI_ADX_MIN}"
-        )
-        return False, adx, plus_di, minus_di
-
-    if direction == "LONG" and plus_di <= minus_di:
-        logger.info(
-            f"[FILTER] {symbol} LONG skipped: "
-            f"+DI {plus_di:.2f} <= -DI {minus_di:.2f}"
-        )
-        return False, adx, plus_di, minus_di
-
-    if direction == "SHORT" and minus_di <= plus_di:
-        logger.info(
-            f"[FILTER] {symbol} SHORT skipped: "
-            f"-DI {minus_di:.2f} <= +DI {plus_di:.2f}"
-        )
-        return False, adx, plus_di, minus_di
-
-    return True, adx, plus_di, minus_di
 
 
 # ── Main analysis ─────────────────────────────────────────────────
@@ -293,11 +208,11 @@ def analyze_coin(symbol: str) -> "Signal | None":
         if df is None or df.empty:
             return None
 
-        if len(df) < NWE_SIZE + NWE_LAG + DMI_DI_LENGTH + DMI_ADX_SMOOTHING + 10:
+        if len(df) < NWE_SIZE + NWE_LAG + 10:
             return None
 
         # Latest candle is normally still forming.
-        # Use only completed candles to keep signal non-repainting.
+        # Use only completed candles to keep the strategy non-repainting.
         closes = df["close"].values[:-1].astype(np.float64)
 
         if len(closes) < NWE_SIZE + NWE_LAG + 5:
@@ -308,13 +223,10 @@ def analyze_coin(symbol: str) -> "Signal | None":
         if direction is None:
             return None
 
-        passed_filter, adx, plus_di, minus_di = _passes_dmi_filter(symbol, direction, df)
-
-        if not passed_filter:
-            return None
-
         entry = float(closes[-1])
 
+        # Fixed ROI targets.
+        # 20x leverage + 5% ROI = 0.25% price movement.
         tp_offset = entry * TP_ROI_PCT / (LEVERAGE * 100)
         sl_offset = entry * SL_ROI_PCT / (LEVERAGE * 100)
 
@@ -335,20 +247,33 @@ def analyze_coin(symbol: str) -> "Signal | None":
         accel = slope_now / (slope_prev + 1e-12)
         score = round(min(accel * 50.0, 100.0), 1)
 
-        # Give stronger score when ADX is strong.
-        if adx >= 30:
-            score = min(score + 10, 100)
-        elif adx >= 25:
-            score = min(score + 5, 100)
+        if details.get("mode") == "smooth-cross":
+            yhat2_t0 = details.get("yhat2_t0", 0.0)
+            yhat2_t1 = details.get("yhat2_t1", 0.0)
 
-        logger.info(
-            f"[SIGNAL] {direction} {symbol} @ {entry:.6g} | "
-            f"TP={tp_price:.6g} (+{TP_ROI_PCT}% ROI) "
-            f"SL={sl_price:.6g} (-{SL_ROI_PCT}% ROI) | "
-            f"NWE: {yhat1_t2:.6g} → {yhat1_t1:.6g} → {yhat1_t0:.6g} | "
-            f"DMI: ADX={adx:.2f}, +DI={plus_di:.2f}, -DI={minus_di:.2f} | "
-            f"score={score}"
-        )
+            cross_strength = abs(yhat2_t0 - yhat1_t0) / (entry + 1e-12) * 10000
+            score = round(min(score + cross_strength, 100.0), 1)
+
+            logger.info(
+                f"[SIGNAL] {direction} {symbol} @ {entry:.6g} | "
+                f"TP={tp_price:.6g} (+{TP_ROI_PCT}% ROI) "
+                f"SL={sl_price:.6g} (-{SL_ROI_PCT}% ROI) | "
+                f"mode={details.get('mode')} | "
+                f"yhat1: {yhat1_t2:.6g} → {yhat1_t1:.6g} → {yhat1_t0:.6g} | "
+                f"yhat2: {yhat2_t1:.6g} → {yhat2_t0:.6g} | "
+                f"h={NWE_H} r={NWE_ALPHA} x0={NWE_SIZE} lag={NWE_LAG} "
+                f"smooth={NWE_SMOOTH} | score={score}"
+            )
+        else:
+            logger.info(
+                f"[SIGNAL] {direction} {symbol} @ {entry:.6g} | "
+                f"TP={tp_price:.6g} (+{TP_ROI_PCT}% ROI) "
+                f"SL={sl_price:.6g} (-{SL_ROI_PCT}% ROI) | "
+                f"mode={details.get('mode')} | "
+                f"NWE: {yhat1_t2:.6g} → {yhat1_t1:.6g} → {yhat1_t0:.6g} | "
+                f"h={NWE_H} r={NWE_ALPHA} x0={NWE_SIZE} lag={NWE_LAG} "
+                f"smooth={NWE_SMOOTH} | score={score}"
+            )
 
         return Signal(
             symbol=symbol,
@@ -360,9 +285,9 @@ def analyze_coin(symbol: str) -> "Signal | None":
             tp_roi_pct=TP_ROI_PCT,
             sl_roi_pct=SL_ROI_PCT,
             timeframe_summary=(
-                f"NWE-RQK {NWE_TF.upper()} + DMI | "
+                f"NWE-RQK {NWE_TF.upper()} | "
                 f"h={NWE_H:g} r={NWE_ALPHA:g} x0={NWE_SIZE} "
-                f"ADX={adx:.1f} +DI={plus_di:.1f} -DI={minus_di:.1f}"
+                f"lag={NWE_LAG} smooth={NWE_SMOOTH}"
             ),
             generated_at=datetime.now(timezone.utc),
             score=score,

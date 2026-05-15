@@ -1,8 +1,8 @@
 """
-Main entry point — NWE-RQK + DMI/ADX strategy only.
+Main entry point — NWE-RQK strategy only.
 
 Scheduler jobs:
-  Every configured scan interval — scan coin pool for NWE-RQK + DMI signals
+  Every configured scan interval — scan coin pool for NWE-RQK signals
   Every 5 min                  — check pending signal outcomes (TP/SL hit)
   Every 6h                     — refresh coin pool
   23:55 daily                  — daily report
@@ -142,9 +142,15 @@ async def scan_and_signal(app: Application) -> None:
 
 # ── outcome checker ───────────────────────────────────────────────
 
-def _calculate_pnl_roi(direction: str, outcome: str, entry_price: float, tp_price: float, sl_price: float) -> float:
+def _calculate_pnl_roi(
+    direction: str,
+    outcome: str,
+    entry_price: float,
+    tp_price: float,
+    sl_price: float,
+) -> float:
     """
-    Calculates ROI based on the actual price move and leverage.
+    Calculates ROI based on actual price move and leverage.
 
     LONG win:
         TP above entry = positive
@@ -290,7 +296,7 @@ async def check_outcomes(app: Application) -> None:
 async def main():
     logger.info(
         f"Starting MEXC Signal Bot — "
-        f"NWE-RQK + DMI/ADX ({NWE_TF}, scan={SCAN_CRON_MINUTES})"
+        f"NWE-RQK only ({NWE_TF}, scan={SCAN_CRON_MINUTES})"
     )
 
     db.init_db()

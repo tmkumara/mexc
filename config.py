@@ -11,7 +11,7 @@ LKT = timezone(timedelta(hours=5, minutes=30))   # Sri Lanka Time (UTC+5:30)
 TELEGRAM_TOKEN      = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 
-# ── CoinGlass (optional) ─────────────────────────────────────────
+# ── CoinGlass optional API ────────────────────────────────────────
 COINGLASS_API_KEY: str = os.getenv("COINGLASS_API_KEY", "")
 
 # ── Coin pool ────────────────────────────────────────────────────
@@ -26,25 +26,16 @@ COIN_REFRESH_HOURS:       int   = 6
 # Lookback Window:          17
 # Relative Weighting:       8
 # Start Regression at Bar:  30
-# Smooth Colors:            False
+# Smooth Colors:            True
 # Lag:                      2
 # Timeframe:                15m
 NWE_H:           float = 17.0
 NWE_ALPHA:       float = 8.0
 NWE_SIZE:        int   = 30
 NWE_LAG:         int   = 2
-NWE_SMOOTH:      bool  = False
+NWE_SMOOTH:      bool  = True
 NWE_TF:          str   = "15m"
 NWE_KLINE_COUNT: int   = 120
-
-# ── DMI / ADX filter ─────────────────────────────────────────────
-# TradingView DMI/ADX/KEYLEVEL settings:
-# ADX Smoothing:    14
-# DI Length:        14
-# Key Level for ADX 23
-DMI_DI_LENGTH:      int   = 14
-DMI_ADX_SMOOTHING:  int   = 14
-DMI_ADX_MIN:        float = 23.0
 
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE:     int   = 20
