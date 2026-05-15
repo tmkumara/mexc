@@ -28,7 +28,7 @@ COIN_REFRESH_HOURS:       int   = 6
 # Start Regression at Bar:  233
 # Smooth Colors:            True
 # Lag:                      7
-# Timeframe:                3m
+# Timeframe:                3 minutes
 NWE_H:           float = 32.0
 NWE_ALPHA:       float = 25.0
 NWE_SIZE:        int   = 233
@@ -48,10 +48,14 @@ SIGNAL_COOLDOWN_MINUTES: int = 120
 SIGNAL_EXPIRE_HOURS:     int = 8
 MAX_CONCURRENT_SIGNALS:  int = 10
 
-SCAN_CRON_MINUTES:     str = "*/15"
+# For 3-minute candles:
+# - scan every 3 minutes
+# - check TP/SL every 3 minutes
+# - tell outcome checker that each candle is 3 minutes
+SCAN_CRON_MINUTES:     str = "*/3"
 SIGNALS_PER_SCAN:      int = 3
-OUTCOME_CHECK_MINUTES: int = 5
-CANDLE_MINUTES:        int = 15
+OUTCOME_CHECK_MINUTES: int = 3
+CANDLE_MINUTES:        int = 3
 SCAN_WORKERS:          int = 8
 
 # ── MEXC Futures REST API ─────────────────────────────────────────

@@ -1,5 +1,5 @@
 """
-Telegram bot: handles commands and broadcasts NWE-RQK + DMI signals to the channel.
+Telegram bot: handles commands and broadcasts NWE-RQK signals to the channel.
 """
 
 import logging
@@ -134,9 +134,6 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         NWE_LAG,
         NWE_SMOOTH,
         NWE_TF,
-        DMI_DI_LENGTH,
-        DMI_ADX_SMOOTHING,
-        DMI_ADX_MIN,
         LEVERAGE,
         TP_ROI_PCT,
         SL_ROI_PCT,
@@ -156,12 +153,11 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `NWE-RQK + DMI/ADX`\n"
+        f"Strategy:   `NWE-RQK only`\n"
         f"Timeframe:  `{NWE_TF}`\n"
         f"NWE:        `close h={NWE_H:g} r={NWE_ALPHA:g} x0={NWE_SIZE} lag={NWE_LAG} smooth={NWE_SMOOTH}`\n"
-        f"DMI:        `DI={DMI_DI_LENGTH} ADX smoothing={DMI_ADX_SMOOTHING} ADX≥{DMI_ADX_MIN:g}`\n"
-        f"LONG:       `NWE bullish + ADX≥{DMI_ADX_MIN:g} + +DI>-DI`\n"
-        f"SHORT:      `NWE bearish + ADX≥{DMI_ADX_MIN:g} + -DI>+DI`\n"
+        f"LONG:       `yhat2 crosses above yhat1`\n"
+        f"SHORT:      `yhat2 crosses below yhat1`\n"
         f"Workers:    `{SCAN_WORKERS}`\n"
         f"Leverage:   `{LEVERAGE}x`\n"
         f"TP / SL:    `+{TP_ROI_PCT:.0f}% ROI / -{SL_ROI_PCT:.0f}% ROI`\n"
