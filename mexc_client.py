@@ -6,9 +6,10 @@ from config import MEXC_BASE_URL
 SESSION = requests.Session()
 SESSION.headers.update({"Content-Type": "application/json"})
 
+# MEXC Futures does not support Min3 directly.
+# For "3m", we fetch 1m candles and resample to 3m in Python.
 INTERVAL_MAP = {
     "1m":  "Min1",
-    "3m":  "Min3",
     "5m":  "Min5",
     "15m": "Min15",
     "30m": "Min30",
@@ -62,37 +63,7 @@ def get_tickers() -> dict[str, dict]:
     return result
 
 
-def get_klines(symbol: str, interval: str, count: int = 100) -> pd.DataFrame:
-    """
-    Fetch OHLCV klines for a futures symbol.
-
-    Supported app intervals:
-        1m, 3m, 5m, 15m, 30m, 1h, 4h, 1d
-
-    MEXC interval examples:
-        Min1, Min3, Min5, Min15, Min30, Min60, Hour4, Day1
-
-    Returns DataFrame with:
-        open, high, low, close, volume
-    """
-    mexc_interval = INTERVAL_MAP.get(interval)
-
-    if not mexc_interval:
-        raise ValueError(
-            f"Unsupported interval: {interval}. "
-            f"Supported intervals: {', '.join(INTERVAL_MAP.keys())}"
-        )
-
-    data = _get(
-        f"/contract/kline/{symbol}",
-        params={
-            "interval": mexc_interval,
-            "count": count,
-        },
-    )
-
-    raw = data.get("data", {})
-
+def _parse_kline_response(raw: dict) -> pd.DataFrame:
     if not raw or "time" not in raw:
         return pd.DataFrame()
 
@@ -125,6 +96,89 @@ def get_klines(symbol: str, interval: str, count: int = 100) -> pd.DataFrame:
     df.sort_index(inplace=True)
 
     return df
+
+
+def _resample_to_3m(df_1m: pd.DataFrame, count: int) -> pd.DataFrame:
+    """
+    Convert 1m candles to 3m candles.
+
+    OHLCV aggregation:
+        open   = first open
+        high   = max high
+        low    = min low
+        close  = last close
+        volume = sum volume
+    """
+    if df_1m.empty:
+        return pd.DataFrame()
+
+    df_3m = df_1m.resample(
+        "3min",
+        label="right",
+        closed="right",
+    ).agg({
+        "open": "first",
+        "high": "max",
+        "low": "min",
+        "close": "last",
+        "volume": "sum",
+    })
+
+    df_3m.dropna(inplace=True)
+    df_3m.sort_index(inplace=True)
+
+    return df_3m.tail(count)
+
+
+def get_klines(symbol: str, interval: str, count: int = 100) -> pd.DataFrame:
+    """
+    Fetch OHLCV klines for a futures symbol.
+
+    Supported app intervals:
+        1m, 3m, 5m, 15m, 30m, 1h, 4h, 1d
+
+    Notes:
+        3m is not supported directly by MEXC Futures API.
+        For 3m, this function fetches 1m candles and resamples them to 3m.
+    """
+
+    if interval == "3m":
+        # Need more 1m candles to build enough 3m candles.
+        # Example: 300 x 3m candles need around 900 x 1m candles.
+        fetch_count = count * 3 + 10
+
+        data = _get(
+            f"/contract/kline/{symbol}",
+            params={
+                "interval": "Min1",
+                "count": fetch_count,
+            },
+        )
+
+        raw = data.get("data", {})
+        df_1m = _parse_kline_response(raw)
+
+        return _resample_to_3m(df_1m, count)
+
+    mexc_interval = INTERVAL_MAP.get(interval)
+
+    if not mexc_interval:
+        raise ValueError(
+            f"Unsupported interval: {interval}. "
+            f"Supported intervals: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 1d"
+        )
+
+    data = _get(
+        f"/contract/kline/{symbol}",
+        params={
+            "interval": mexc_interval,
+            "count": count,
+        },
+    )
+
+    raw = data.get("data", {})
+
+    return _parse_kline_response(raw)
 
 
 def get_current_price(symbol: str) -> float | None:
