@@ -1,9 +1,9 @@
 """
-Telegram bot: handles commands and broadcasts signals to the channel.
+Telegram bot: handles commands and broadcasts NWE-RQK signals to the channel.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -21,9 +21,9 @@ paused: bool = False
 async def _send(app: Application, text: str, chat_id: str = None):
     target = chat_id or TELEGRAM_CHANNEL_ID
     await app.bot.send_message(
-        chat_id    = target,
-        text       = text,
-        parse_mode = ParseMode.MARKDOWN,
+        chat_id=target,
+        text=text,
+        parse_mode=ParseMode.MARKDOWN,
     )
 
 
@@ -31,7 +31,7 @@ async def _send(app: Application, text: str, chat_id: str = None):
 
 def format_signal(signal, signal_id: int) -> str:
     arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
-    coin  = signal.symbol.replace("_", "/")
+    coin = signal.symbol.replace("_", "/")
     stars = "⭐⭐⭐" if signal.score >= 80 else "⭐⭐" if signal.score >= 50 else "⭐"
 
     return "\n".join([
@@ -57,9 +57,9 @@ async def broadcast_signal(app: Application, signal, signal_id: int) -> None:
 
 async def notify_outcome(app: Application, signal_db: dict) -> None:
     direction = signal_db["direction"]
-    symbol    = signal_db["symbol"].replace("_", "/")
-    status    = signal_db["status"]
-    roi       = signal_db.get("pnl_roi") or 0.0
+    symbol = signal_db["symbol"].replace("_", "/")
+    status = signal_db["status"]
+    roi = signal_db.get("pnl_roi") or 0.0
 
     if status == "win":
         emoji = "✅"
@@ -72,6 +72,7 @@ async def notify_outcome(app: Application, signal_db: dict) -> None:
         label = "EXPIRED"
 
     arrow = "🟢" if direction == "LONG" else "🔴"
+
     msg = (
         f"{emoji} *Signal Closed*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -79,6 +80,7 @@ async def notify_outcome(app: Application, signal_db: dict) -> None:
         f"Result: `{label}`\n"
         f"🆔 ID: `{signal_db['id']}`"
     )
+
     await _send(app, msg)
 
 
@@ -98,6 +100,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/resume — Resume signals\n\n"
         "/help — This message"
     )
+
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
 
@@ -123,24 +126,38 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
+
     from config import (
-        NWE_H, NWE_ALPHA, NWE_SIZE, NWE_TF,
-        LEVERAGE, TP_ROI_PCT, SL_ROI_PCT,
-        SIGNAL_COOLDOWN_MINUTES, SIGNALS_PER_SCAN,
-        MAX_CONCURRENT_SIGNALS, SCAN_WORKERS,
+        NWE_H,
+        NWE_ALPHA,
+        NWE_SIZE,
+        NWE_LAG,
+        NWE_SMOOTH,
+        NWE_TF,
+        LEVERAGE,
+        TP_ROI_PCT,
+        SL_ROI_PCT,
+        SIGNAL_COOLDOWN_MINUTES,
+        SIGNALS_PER_SCAN,
+        MAX_CONCURRENT_SIGNALS,
+        SCAN_WORKERS,
     )
-    state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
-    coins  = coin_scanner.get_cached_coins()
+
+    state = "⏸ PAUSED" if paused else "▶️ RUNNING"
+    coins = coin_scanner.get_cached_coins()
     active = db.count_active_signals()
+
     pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
+
     msg = (
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `NWE Rational Quadratic Kernel`\n"
-        f"Timeframe:  `{NWE_TF}` _(NWE on 1H closes, scans every 5 min)_\n"
-        f"Params:     `h={NWE_H}  α={NWE_ALPHA}  size={NWE_SIZE}`\n"
-        f"Signal:     `slope flip  red→green=LONG  green→red=SHORT`\n"
+        f"Strategy:   `Nadaraya-Watson RQK`\n"
+        f"Timeframe:  `{NWE_TF}`\n"
+        f"Params:     `h={NWE_H}  r={NWE_ALPHA}  x0={NWE_SIZE}  lag={NWE_LAG}  smooth={NWE_SMOOTH}`\n"
+        f"Source:     `close`\n"
+        f"Signal:     `color change  bearish→bullish=LONG  bullish→bearish=SHORT`\n"
         f"Workers:    `{SCAN_WORKERS}`\n"
         f"Leverage:   `{LEVERAGE}x`\n"
         f"TP / SL:    `+{TP_ROI_PCT:.0f}% ROI / -{SL_ROI_PCT:.0f}% ROI`\n"
@@ -150,6 +167,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Pool ({len(coins)}): `{pairs_str}`\n"
         f"Time (LKT): `{datetime.now(LKT).strftime('%H:%M')}`"
     )
+
     await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 
@@ -183,13 +201,15 @@ async def auto_monthly_report(context: ContextTypes.DEFAULT_TYPE):
 
 def build_app() -> Application:
     app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start",   cmd_start))
-    app.add_handler(CommandHandler("help",    cmd_help))
-    app.add_handler(CommandHandler("daily",   cmd_daily))
-    app.add_handler(CommandHandler("weekly",  cmd_weekly))
+
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("daily", cmd_daily))
+    app.add_handler(CommandHandler("weekly", cmd_weekly))
     app.add_handler(CommandHandler("monthly", cmd_monthly))
-    app.add_handler(CommandHandler("stats",   cmd_stats))
-    app.add_handler(CommandHandler("status",  cmd_status))
-    app.add_handler(CommandHandler("pause",   cmd_pause))
-    app.add_handler(CommandHandler("resume",  cmd_resume))
+    app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("pause", cmd_pause))
+    app.add_handler(CommandHandler("resume", cmd_resume))
+
     return app

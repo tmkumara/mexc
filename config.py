@@ -20,12 +20,22 @@ TOP_N_COINS:              int   = 40
 COIN_POOL_MIN_VOLUME_USD: float = 5_000_000   # minimum $5M daily volume
 COIN_REFRESH_HOURS:       int   = 6
 
-# ── NWE-RQK strategy ─────────────────────────────────────────────
-NWE_H:           float = 8.0   # Lookback Window (bandwidth)
-NWE_ALPHA:       float = 8.0   # Relative Weighting
-NWE_SIZE:        int   = 25    # Start Regression at Bar (window size)
-NWE_TF:          str   = "1h"  # Timeframe (1H closes, matching TradingView "60" setting)
-NWE_KLINE_COUNT: int   = 80    # bars to fetch (NWE_SIZE + warm-up buffer)
+# ── Nadaraya-Watson Rational Quadratic Kernel Strategy ────────────
+# TradingView settings:
+# Source:                  Close
+# Lookback Window:          17
+# Relative Weighting:       8
+# Start Regression at Bar:  30
+# Smooth Colors:            False
+# Lag:                      2
+# Timeframe:                Chart / scanner timeframe
+NWE_H:           float = 17.0
+NWE_ALPHA:       float = 8.0
+NWE_SIZE:        int   = 30
+NWE_LAG:         int   = 2
+NWE_SMOOTH:      bool  = False
+NWE_TF:          str   = "15m"
+NWE_KLINE_COUNT: int   = 120
 
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE:     int   = 20
@@ -38,11 +48,11 @@ SIGNAL_COOLDOWN_MINUTES: int = 120   # same coin blocked 2h after signal
 SIGNAL_EXPIRE_HOURS:     int = 8     # pending signals auto-expire after 8h
 MAX_CONCURRENT_SIGNALS:  int = 10
 
-SCAN_CRON_MINUTES:     str = "*/5" # every 5 minutes
+SCAN_CRON_MINUTES:     str = "*/5"  # every 5 minutes
 SIGNALS_PER_SCAN:      int = 3
-OUTCOME_CHECK_MINUTES: int = 5    # how often to poll for TP/SL hits
-CANDLE_MINUTES:        int = 60   # 1H candle size in minutes
-SCAN_WORKERS:          int = 8    # concurrent threads for NWE analysis
+OUTCOME_CHECK_MINUTES: int = 5      # how often to poll for TP/SL hits
+CANDLE_MINUTES:        int = 15     # 1H candle size in minutes
+SCAN_WORKERS:          int = 8      # concurrent threads for NWE analysis
 
 # ── MEXC Futures REST API ─────────────────────────────────────────
 MEXC_BASE_URL = "https://contract.mexc.com/api/v1"
