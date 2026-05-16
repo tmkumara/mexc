@@ -1,13 +1,14 @@
 """
-Main entry point — SMC Liquidity Sweep + Order Block Retest strategy.
+Main entry point — Stateful SMC Liquidity Sweep + Order Block Retest strategy.
 
 Scheduler jobs:
-  Every configured scan interval — scan coin pool for SMC signals
-  Every configured interval      — check pending signal outcomes (TP/SL hit)
-  Every 6h                       — refresh coin pool
-  23:55 daily                    — daily report
-  Mon 07:00                      — weekly report
-  1st 07:00                      — monthly report
+  Every 5 min     — full setup detection scan
+  Every 1 min     — monitor pending setups for OB retest entries
+  Every 1 min     — check pending signal outcomes
+  Every 6h        — refresh coin pool
+  23:55 daily     — daily report
+  Mon 07:00       — weekly report
+  1st 07:00       — monthly report
 """
 
 import asyncio
@@ -35,7 +36,8 @@ from config import (
     MAX_CONCURRENT_SIGNALS,
     LEVERAGE,
     ENTRY_TF,
-    SCAN_CRON_MINUTES,
+    SETUP_SCAN_CRON_MINUTES,
+    SETUP_MONITOR_MINUTES,
     SIGNALS_PER_SCAN,
     OUTCOME_CHECK_MINUTES,
     CANDLE_MINUTES,
@@ -61,24 +63,17 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-# ── scanner job ───────────────────────────────────────────────────
+# ── setup detection scan ──────────────────────────────────────────
 
-async def scan_and_signal(app: Application) -> None:
+async def scan_for_setups(app: Application) -> None:
     if tg.paused:
-        logger.info("[SCAN] Paused, skipping")
-        return
-
-    active = db.count_active_signals()
-    slots = MAX_CONCURRENT_SIGNALS - active
-
-    if slots <= 0:
-        logger.info(f"[SCAN] {active}/{MAX_CONCURRENT_SIGNALS} active signals, skipping")
+        logger.info("[SETUP-SCAN] Paused, skipping")
         return
 
     coins = coin_scanner.get_cached_coins()
 
     if not coins:
-        logger.warning("[SCAN] Empty coin pool, skipping")
+        logger.warning("[SETUP-SCAN] Empty coin pool, skipping")
         return
 
     now = datetime.now(timezone.utc)
@@ -88,15 +83,16 @@ async def scan_and_signal(app: Application) -> None:
         symbol
         for symbol in coins
         if not db.signal_exists_for_coin(symbol, cooldown_since)
+        and not db.pending_setup_exists(symbol)
     ]
 
-    logger.info(f"[SCAN] {len(to_scan)}/{len(coins)} coins after cooldown filter")
+    logger.info(f"[SETUP-SCAN] {len(to_scan)}/{len(coins)} coins after filters")
 
-    def _analyze(symbol: str):
+    def _detect(symbol: str):
         try:
-            return strategy.analyze_coin(symbol)
+            return strategy.detect_setup(symbol)
         except Exception as e:
-            logger.error(f"[SCAN] {symbol} analysis error: {e}", exc_info=True)
+            logger.error(f"[SETUP-SCAN] {symbol} setup error: {e}", exc_info=True)
             return None
 
     loop = asyncio.get_event_loop()
@@ -104,25 +100,84 @@ async def scan_and_signal(app: Application) -> None:
     with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as executor:
         results = await loop.run_in_executor(
             None,
-            lambda: list(executor.map(_analyze, to_scan)),
+            lambda: list(executor.map(_detect, to_scan)),
         )
 
-    candidates = [signal for signal in results if signal is not None]
+    setups = [setup for setup in results if setup is not None]
 
-    if not candidates:
-        logger.info("[SCAN] Done — 0 signals found")
+    if not setups:
+        logger.info("[SETUP-SCAN] Done — 0 new setups found")
         return
 
-    candidates.sort(key=lambda signal: signal.score, reverse=True)
+    saved = 0
 
-    to_send = candidates[:min(SIGNALS_PER_SCAN, slots)]
+    for setup in setups:
+        setup_id = db.save_pending_setup(setup)
+
+        if setup_id:
+            saved += 1
+            logger.info(
+                f"[SETUP-SCAN] Saved setup #{setup_id} "
+                f"{setup['symbol']} {setup['direction']} "
+                f"OB={setup['ob_low']:.6g}-{setup['ob_high']:.6g}"
+            )
+
+    logger.info(f"[SETUP-SCAN] Done — {saved}/{len(setups)} setups saved")
+
+
+# ── pending setup monitor ─────────────────────────────────────────
+
+async def monitor_setups(app: Application) -> None:
+    if tg.paused:
+        logger.info("[SETUP-MONITOR] Paused, skipping")
+        return
+
+    active = db.count_active_signals()
+    slots = MAX_CONCURRENT_SIGNALS - active
+
+    if slots <= 0:
+        logger.info(f"[SETUP-MONITOR] {active}/{MAX_CONCURRENT_SIGNALS} active signals, skipping")
+        return
+
+    now = datetime.now(timezone.utc)
+    db.expire_old_waiting_setups(now)
+
+    setups = db.get_waiting_setups(limit=100)
+
+    if not setups:
+        logger.info("[SETUP-MONITOR] No waiting setups")
+        return
+
+    logger.info(f"[SETUP-MONITOR] Checking {len(setups)} waiting setups")
+
+    fired_signals = []
+
+    for setup in setups:
+        status, sig = strategy.evaluate_pending_setup(setup)
+
+        if status == "EXPIRED":
+            db.mark_setup_expired(setup["id"])
+            logger.info(f"[SETUP-MONITOR] Expired setup #{setup['id']} {setup['symbol']}")
+
+        elif status == "INVALIDATED":
+            db.mark_setup_invalidated(setup["id"])
+            logger.info(f"[SETUP-MONITOR] Invalidated setup #{setup['id']} {setup['symbol']}")
+
+        elif status == "FIRE" and sig is not None:
+            fired_signals.append((setup, sig))
+
+    if not fired_signals:
+        logger.info("[SETUP-MONITOR] Done — 0 entries fired")
+        return
+
+    fired_signals.sort(key=lambda item: item[1].score, reverse=True)
+    to_send = fired_signals[:min(SIGNALS_PER_SCAN, slots)]
 
     logger.info(
-        f"[SCAN] {len(candidates)} signal(s) found, sending {len(to_send)} — "
-        + ", ".join(f"{signal.symbol}({signal.score})" for signal in candidates)
+        f"[SETUP-MONITOR] {len(fired_signals)} entry signal(s), sending {len(to_send)}"
     )
 
-    for sig in to_send:
+    for setup, sig in to_send:
         signal_id = db.save_signal(
             symbol=sig.symbol,
             direction=sig.direction,
@@ -133,9 +188,14 @@ async def scan_and_signal(app: Application) -> None:
             generated_at=sig.generated_at,
         )
 
+        db.mark_setup_fired(setup["id"], signal_id)
+
         try:
             await tg.broadcast_signal(app, sig, signal_id)
-            logger.info(f"[SCAN] Sent {sig.symbol} {sig.direction} score={sig.score}")
+            logger.info(
+                f"[SETUP-MONITOR] Sent signal #{signal_id} "
+                f"from setup #{setup['id']} {sig.symbol} {sig.direction} score={sig.score}"
+            )
         except Exception as e:
             logger.error(f"Failed to broadcast {sig.symbol}: {e}", exc_info=True)
 
@@ -149,9 +209,6 @@ def _calculate_pnl_roi(
     tp_price: float,
     sl_price: float,
 ) -> float:
-    """
-    Calculates ROI based on actual price move and leverage.
-    """
     if outcome == "win":
         if direction == "LONG":
             price_move_pct = (tp_price - entry_price) / entry_price * 100
@@ -287,7 +344,7 @@ async def check_outcomes(app: Application) -> None:
 async def main():
     logger.info(
         f"Starting MEXC Signal Bot — "
-        f"SMC Liquidity Sweep + OB Retest ({ENTRY_TF}, scan={SCAN_CRON_MINUTES})"
+        f"Stateful SMC Sweep + OB Retest ({ENTRY_TF})"
     )
 
     db.init_db()
@@ -301,10 +358,17 @@ async def main():
     scheduler = AsyncIOScheduler(timezone="UTC")
 
     scheduler.add_job(
-        scan_and_signal,
-        CronTrigger(minute=SCAN_CRON_MINUTES),
+        scan_for_setups,
+        CronTrigger(minute=SETUP_SCAN_CRON_MINUTES),
         args=[app],
-        id="scanner",
+        id="setup_scanner",
+    )
+
+    scheduler.add_job(
+        monitor_setups,
+        IntervalTrigger(minutes=SETUP_MONITOR_MINUTES),
+        args=[app],
+        id="setup_monitor",
     )
 
     scheduler.add_job(
@@ -336,8 +400,8 @@ async def main():
     scheduler.start()
 
     logger.info(
-        f"Scheduler started — scanning {len(coins)} coins on {ENTRY_TF} "
-        f"with cron minute='{SCAN_CRON_MINUTES}'"
+        f"Scheduler started — setup scan='{SETUP_SCAN_CRON_MINUTES}', "
+        f"monitor={SETUP_MONITOR_MINUTES}m, entry_tf={ENTRY_TF}"
     )
 
     async with app:

@@ -1,5 +1,5 @@
 """
-Telegram bot: handles commands and broadcasts SMC market-structure signals.
+Telegram bot: handles commands and broadcasts Stateful SMC market-structure signals.
 """
 
 import logging
@@ -26,8 +26,6 @@ async def _send(app: Application, text: str, chat_id: str = None):
         parse_mode=ParseMode.MARKDOWN,
     )
 
-
-# ── signal formatting ─────────────────────────────────────────────
 
 def format_signal(signal, signal_id: int) -> str:
     arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
@@ -84,8 +82,6 @@ async def notify_outcome(app: Application, signal_db: dict) -> None:
     await _send(app, msg)
 
 
-# ── commands ──────────────────────────────────────────────────────
-
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "👋 *MEXC Futures Signal Bot*\n\n"
@@ -135,7 +131,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SWEEP_LOOKBACK,
         DISPLACEMENT_BODY_MULTIPLIER,
         ORDER_BLOCK_LOOKBACK,
-        RETEST_LOOKBACK_AFTER_DISPLACEMENT,
+        PENDING_SETUP_EXPIRE_CANDLES,
         MIN_STRUCTURE_RR,
         MAX_STRUCTURE_RR,
         MIN_SL_PCT,
@@ -145,11 +141,14 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SIGNALS_PER_SCAN,
         MAX_CONCURRENT_SIGNALS,
         SCAN_WORKERS,
+        SETUP_SCAN_CRON_MINUTES,
+        SETUP_MONITOR_MINUTES,
     )
 
     state = "⏸ PAUSED" if paused else "▶️ RUNNING"
     coins = coin_scanner.get_cached_coins()
     active = db.count_active_signals()
+    waiting = db.count_waiting_setups()
 
     pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
 
@@ -157,20 +156,24 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `SMC Liquidity Sweep + OB Retest`\n"
+        f"Strategy:   `Stateful SMC Sweep + OB Retest`\n"
         f"Trend TF:   `{TREND_TF}` market-structure bias\n"
-        f"Entry TF:   `{ENTRY_TF}` sweep/displacement/retest\n"
+        f"Entry TF:   `{ENTRY_TF}` sweep/displacement/OB retest\n"
+        f"Setup scan: `{SETUP_SCAN_CRON_MINUTES}`\n"
+        f"Monitor:    `every {SETUP_MONITOR_MINUTES} min`\n"
         f"Swings:     `left={SWING_LEFT} right={SWING_RIGHT}`\n"
         f"Sweep:      `lookback={SWEEP_LOOKBACK}`\n"
         f"Displace:   `body × {DISPLACEMENT_BODY_MULTIPLIER:g}`\n"
-        f"OB:         `lookback={ORDER_BLOCK_LOOKBACK} retest≤{RETEST_LOOKBACK_AFTER_DISPLACEMENT} candles`\n"
+        f"OB:         `lookback={ORDER_BLOCK_LOOKBACK}`\n"
+        f"Expire:     `{PENDING_SETUP_EXPIRE_CANDLES} candles`\n"
         f"RR:         `{MIN_STRUCTURE_RR:g}–{MAX_STRUCTURE_RR:g}`\n"
         f"SL limit:   `{MIN_SL_PCT:g}%–{MAX_SL_PCT:g}%`\n"
         f"Workers:    `{SCAN_WORKERS}`\n"
         f"Leverage:   `{LEVERAGE}x`\n"
-        f"Per scan:   `top {SIGNALS_PER_SCAN} signals`\n"
+        f"Per scan:   `top {SIGNALS_PER_SCAN} entries`\n"
         f"Cooldown:   `{SIGNAL_COOLDOWN_MINUTES} min per coin`\n"
-        f"Active:     `{active}/{MAX_CONCURRENT_SIGNALS}`\n"
+        f"Waiting:    `{waiting}` setups`\n"
+        f"Active:     `{active}/{MAX_CONCURRENT_SIGNALS}` signals\n"
         f"Pool ({len(coins)}): `{pairs_str}`\n"
         f"Time (LKT): `{datetime.now(LKT).strftime('%H:%M')}`"
     )
@@ -190,8 +193,6 @@ async def cmd_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("▶️ Signal sending *resumed*.", parse_mode=ParseMode.MARKDOWN)
 
 
-# ── scheduled report helpers ──────────────────────────────────────
-
 async def auto_daily_report(context: ContextTypes.DEFAULT_TYPE):
     await _send(context.application, reports.daily_report())
 
@@ -203,8 +204,6 @@ async def auto_weekly_report(context: ContextTypes.DEFAULT_TYPE):
 async def auto_monthly_report(context: ContextTypes.DEFAULT_TYPE):
     await _send(context.application, reports.monthly_report())
 
-
-# ── app builder ───────────────────────────────────────────────────
 
 def build_app() -> Application:
     app = Application.builder().token(TELEGRAM_TOKEN).build()
