@@ -1,8 +1,8 @@
 """
-Main entry point — EMA/VWAP Pullback Scalper.
+Main entry point — SMC Liquidity Sweep + Order Block Retest strategy.
 
 Scheduler jobs:
-  Every configured scan interval — scan coin pool for EMA/VWAP pullback signals
+  Every configured scan interval — scan coin pool for SMC signals
   Every configured interval      — check pending signal outcomes (TP/SL hit)
   Every 6h                       — refresh coin pool
   23:55 daily                    — daily report
@@ -287,7 +287,7 @@ async def check_outcomes(app: Application) -> None:
 async def main():
     logger.info(
         f"Starting MEXC Signal Bot — "
-        f"EMA/VWAP Pullback Scalper ({ENTRY_TF}, scan={SCAN_CRON_MINUTES})"
+        f"SMC Liquidity Sweep + OB Retest ({ENTRY_TF}, scan={SCAN_CRON_MINUTES})"
     )
 
     db.init_db()

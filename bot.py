@@ -1,5 +1,5 @@
 """
-Telegram bot: handles commands and broadcasts EMA/VWAP Pullback signals to the channel.
+Telegram bot: handles commands and broadcasts SMC market-structure signals.
 """
 
 import logging
@@ -130,20 +130,16 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from config import (
         TREND_TF,
         ENTRY_TF,
-        TREND_EMA_PERIOD,
-        EMA_FAST_PERIOD,
-        EMA_SLOW_PERIOD,
-        VOLUME_SMA_PERIOD,
-        MIN_VOLUME_RATIO,
-        MAX_ENTRY_DISTANCE_FROM_EMA_PCT,
-        MAX_SIGNAL_CANDLE_BODY_PCT,
-        ATR_PERIOD,
-        SL_ATR_MULTIPLIER,
+        SWING_LEFT,
+        SWING_RIGHT,
+        SWEEP_LOOKBACK,
+        DISPLACEMENT_BODY_MULTIPLIER,
+        ORDER_BLOCK_LOOKBACK,
+        RETEST_LOOKBACK_AFTER_DISPLACEMENT,
+        MIN_STRUCTURE_RR,
+        MAX_STRUCTURE_RR,
         MIN_SL_PCT,
         MAX_SL_PCT,
-        RR_WEAK,
-        RR_GOOD,
-        RR_STRONG,
         LEVERAGE,
         SIGNAL_COOLDOWN_MINUTES,
         SIGNALS_PER_SCAN,
@@ -161,13 +157,15 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `EMA/VWAP Pullback Scalper`\n"
-        f"Trend TF:   `{TREND_TF}`  `EMA{TREND_EMA_PERIOD}`\n"
-        f"Entry TF:   `{ENTRY_TF}`  `EMA{EMA_FAST_PERIOD}/{EMA_SLOW_PERIOD} + VWAP`\n"
-        f"Volume:     `SMA{VOLUME_SMA_PERIOD} ratio ≥ {MIN_VOLUME_RATIO:g}`\n"
-        f"Entry filt: `EMA distance ≤ {MAX_ENTRY_DISTANCE_FROM_EMA_PCT:g}% | body ≤ {MAX_SIGNAL_CANDLE_BODY_PCT:g}%`\n"
-        f"Risk:       `ATR{ATR_PERIOD} × {SL_ATR_MULTIPLIER:g} | SL {MIN_SL_PCT:g}%–{MAX_SL_PCT:g}%`\n"
-        f"RR:         `weak {RR_WEAK:g} | good {RR_GOOD:g} | strong {RR_STRONG:g}`\n"
+        f"Strategy:   `SMC Liquidity Sweep + OB Retest`\n"
+        f"Trend TF:   `{TREND_TF}` market-structure bias\n"
+        f"Entry TF:   `{ENTRY_TF}` sweep/displacement/retest\n"
+        f"Swings:     `left={SWING_LEFT} right={SWING_RIGHT}`\n"
+        f"Sweep:      `lookback={SWEEP_LOOKBACK}`\n"
+        f"Displace:   `body × {DISPLACEMENT_BODY_MULTIPLIER:g}`\n"
+        f"OB:         `lookback={ORDER_BLOCK_LOOKBACK} retest≤{RETEST_LOOKBACK_AFTER_DISPLACEMENT} candles`\n"
+        f"RR:         `{MIN_STRUCTURE_RR:g}–{MAX_STRUCTURE_RR:g}`\n"
+        f"SL limit:   `{MIN_SL_PCT:g}%–{MAX_SL_PCT:g}%`\n"
         f"Workers:    `{SCAN_WORKERS}`\n"
         f"Leverage:   `{LEVERAGE}x`\n"
         f"Per scan:   `top {SIGNALS_PER_SCAN} signals`\n"

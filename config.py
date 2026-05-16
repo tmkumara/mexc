@@ -20,53 +20,59 @@ TOP_N_COINS:              int   = 80
 COIN_POOL_MIN_VOLUME_USD: float = 5_000_000
 COIN_REFRESH_HOURS:       int   = 6
 
-# ── EMA + VWAP Pullback Scalping Strategy ─────────────────────────
-# Trend timeframe confirms market direction.
-# Entry timeframe gives the actual scalping entry.
+# ── SMC / Market Structure Strategy ───────────────────────────────
+# Trend timeframe = market structure bias
+# Entry timeframe = liquidity sweep + displacement + order block retest
 TREND_TF: str = "15m"
 ENTRY_TF: str = "5m"
 
-TREND_KLINE_COUNT: int = 200
-ENTRY_KLINE_COUNT: int = 300
+TREND_KLINE_COUNT: int = 220
+ENTRY_KLINE_COUNT: int = 260
 
-# 15m trend filter
-TREND_EMA_PERIOD: int = 50
+# Swing detection
+# For 5m scalping, 3/2 is faster than 5/5.
+SWING_LEFT:  int = 3
+SWING_RIGHT: int = 2
 
-# 5m entry structure
-EMA_FAST_PERIOD: int = 9
-EMA_SLOW_PERIOD: int = 21
+# How far back to search for valid SMC setup
+STRUCTURE_LOOKBACK: int = 160
+ENTRY_LOOKBACK:     int = 180
 
-# 5m volume confirmation
-VOLUME_SMA_PERIOD: int = 20
-MIN_VOLUME_RATIO: float = 1.10
+# Liquidity sweep settings
+SWEEP_LOOKBACK: int = 18
 
-# Entry quality filters
-MAX_ENTRY_DISTANCE_FROM_EMA_PCT: float = 0.20
-MAX_SIGNAL_CANDLE_BODY_PCT: float = 0.45
+# Displacement settings
+AVG_BODY_PERIOD:               int   = 20
+DISPLACEMENT_BODY_MULTIPLIER:  float = 1.4
+DISPLACEMENT_CLOSE_POSITION:   float = 0.65
+# LONG displacement: close should be in top 65% of candle range
+# SHORT displacement: close should be in bottom 35% of candle range
 
-# ── Dynamic ATR SL / TP ───────────────────────────────────────────
-DYNAMIC_RISK_ENABLED: bool = True
+# Order block settings
+ORDER_BLOCK_LOOKBACK: int = 12
 
-ATR_PERIOD: int = 14
-SL_ATR_MULTIPLIER: float = 1.2
+# Retest / mitigation settings
+# Retest candle must touch OB zone and close away from it.
+RETEST_LOOKBACK_AFTER_DISPLACEMENT: int = 30
 
-# Safety limits for SL distance as percentage of entry price
-MIN_SL_PCT: float = 0.25
-MAX_SL_PCT: float = 1.50
+# Entry filters
+MAX_SIGNAL_CANDLE_BODY_PCT: float = 1.20
+MIN_STRUCTURE_RR:           float = 1.50
+MAX_STRUCTURE_RR:           float = 5.00
 
-# Dynamic RR by signal quality
-RR_WEAK: float = 1.2
-RR_GOOD: float = 1.5
-RR_STRONG: float = 2.0
+# Stop/target buffers
+SL_BUFFER_PCT: float = 0.05
+TP_BUFFER_PCT: float = 0.02
 
-SCORE_GOOD_MIN: float = 65.0
-SCORE_STRONG_MIN: float = 80.0
+# SL safety limits as % of entry
+MIN_SL_PCT: float = 0.20
+MAX_SL_PCT: float = 2.00
 
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE: int = 20
 
-# These are kept for compatibility with existing reports/bot display.
-# Actual TP/SL is now dynamically calculated in strategy.py.
+# These are kept for compatibility with reports/bot display.
+# Actual TP/SL is dynamically calculated from market structure.
 TP_ROI_PCT: float = 0.0
 SL_ROI_PCT: float = 0.0
 REWARD_RATIO: float = 0.0
@@ -77,7 +83,7 @@ SIGNAL_EXPIRE_HOURS:     int = 6
 MAX_CONCURRENT_SIGNALS:  int = 10
 
 # 5m entry timeframe:
-# - scan every 1 minute to catch new 5m candle closes quickly
+# - scan every 1 minute to catch newly closed 5m candles
 # - outcome checker runs every 1 minute
 # - candle size is 5 minutes
 SCAN_CRON_MINUTES:     str = "*/1"
@@ -85,8 +91,8 @@ SIGNALS_PER_SCAN:      int = 3
 OUTCOME_CHECK_MINUTES: int = 1
 CANDLE_MINUTES:        int = 5
 
-# Keep workers modest to avoid MEXC rate limits when scanning 80 coins
-SCAN_WORKERS:          int = 4
+# Keep modest to avoid MEXC rate limits when scanning many coins
+SCAN_WORKERS: int = 4
 
 # ── MEXC Futures REST API ─────────────────────────────────────────
 MEXC_BASE_URL = "https://contract.mexc.com/api/v1"

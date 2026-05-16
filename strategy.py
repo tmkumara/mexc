@@ -1,48 +1,51 @@
 """
-EMA + VWAP Pullback Scalping Strategy with Dynamic ATR SL/TP.
+SMC / Market Structure Scalping Strategy.
 
-This strategy replaces Nadaraya-Watson and Supertrend.
+This strategy does NOT use classic indicators like:
+    Nadaraya
+    Supertrend
+    EMA
+    VWAP
+    RSI
+    ADX
 
 Structure:
-    15m = trend confirmation
-    5m  = entry trigger
+    15m = market structure bias
+    5m  = liquidity sweep + displacement + order block retest
 
-Indicators:
-    15m EMA 50
-    5m EMA 9
-    5m EMA 21
-    5m VWAP
-    5m Volume SMA 20
-    5m ATR 14
+LONG setup:
+    1. 15m market structure bias is bullish
+    2. 5m sell-side liquidity sweep happens
+       - price takes previous swing low
+       - candle closes back above that swing low
+    3. Bullish displacement candle appears
+    4. Bullish order block is detected
+       - last bearish candle before displacement
+    5. Price retests/mitigates order block
+    6. Retest candle closes bullish away from zone
+    7. SL below sweep low / OB low
+    8. TP at next buy-side liquidity / swing high
+    9. RR must be >= MIN_STRUCTURE_RR
 
-LONG:
-    15m close > 15m EMA 50
-    5m close > VWAP
-    5m EMA 9 > EMA 21
-    Price pulled back near EMA 9 or EMA 21
-    Last completed 5m candle closes bullish
-    Volume >= MIN_VOLUME_RATIO × Volume SMA 20
-    Candle body is not too large
-
-SHORT:
-    15m close < 15m EMA 50
-    5m close < VWAP
-    5m EMA 9 < EMA 21
-    Price pulled back near EMA 9 or EMA 21
-    Last completed 5m candle closes bearish
-    Volume >= MIN_VOLUME_RATIO × Volume SMA 20
-    Candle body is not too large
-
-Risk:
-    SL = ATR-based dynamic stop
-    TP = SL distance × dynamic RR
+SHORT setup:
+    1. 15m market structure bias is bearish
+    2. 5m buy-side liquidity sweep happens
+       - price takes previous swing high
+       - candle closes back below that swing high
+    3. Bearish displacement candle appears
+    4. Bearish order block is detected
+       - last bullish candle before displacement
+    5. Price retests/mitigates order block
+    6. Retest candle closes bearish away from zone
+    7. SL above sweep high / OB high
+    8. TP at next sell-side liquidity / swing low
+    9. RR must be >= MIN_STRUCTURE_RR
 """
 
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-import numpy as np
 import pandas as pd
 
 from mexc_client import get_klines
@@ -51,23 +54,23 @@ from config import (
     ENTRY_TF,
     TREND_KLINE_COUNT,
     ENTRY_KLINE_COUNT,
-    TREND_EMA_PERIOD,
-    EMA_FAST_PERIOD,
-    EMA_SLOW_PERIOD,
-    VOLUME_SMA_PERIOD,
-    MIN_VOLUME_RATIO,
-    MAX_ENTRY_DISTANCE_FROM_EMA_PCT,
+    SWING_LEFT,
+    SWING_RIGHT,
+    STRUCTURE_LOOKBACK,
+    ENTRY_LOOKBACK,
+    SWEEP_LOOKBACK,
+    AVG_BODY_PERIOD,
+    DISPLACEMENT_BODY_MULTIPLIER,
+    DISPLACEMENT_CLOSE_POSITION,
+    ORDER_BLOCK_LOOKBACK,
+    RETEST_LOOKBACK_AFTER_DISPLACEMENT,
     MAX_SIGNAL_CANDLE_BODY_PCT,
-    DYNAMIC_RISK_ENABLED,
-    ATR_PERIOD,
-    SL_ATR_MULTIPLIER,
+    MIN_STRUCTURE_RR,
+    MAX_STRUCTURE_RR,
+    SL_BUFFER_PCT,
+    TP_BUFFER_PCT,
     MIN_SL_PCT,
     MAX_SL_PCT,
-    RR_WEAK,
-    RR_GOOD,
-    RR_STRONG,
-    SCORE_GOOD_MIN,
-    SCORE_STRONG_MIN,
     LEVERAGE,
 )
 
@@ -89,354 +92,747 @@ class Signal:
     score:             float = 0.0
 
 
-# ── Indicator helpers ─────────────────────────────────────────────
+# ── General helpers ───────────────────────────────────────────────
 
-def _ema(series: pd.Series, period: int) -> pd.Series:
-    return series.ewm(span=period, adjust=False).mean()
+def _pct(a: float, b: float) -> float:
+    if b == 0:
+        return 0.0
+    return abs(a - b) / abs(b) * 100.0
 
 
-def _rma(series: pd.Series, length: int) -> pd.Series:
+def _body_size(row: pd.Series) -> float:
+    return abs(float(row["close"]) - float(row["open"]))
+
+
+def _range_size(row: pd.Series) -> float:
+    return max(float(row["high"]) - float(row["low"]), 0.0)
+
+
+def _is_bullish(row: pd.Series) -> bool:
+    return float(row["close"]) > float(row["open"])
+
+
+def _is_bearish(row: pd.Series) -> bool:
+    return float(row["close"]) < float(row["open"])
+
+
+def _close_position(row: pd.Series) -> float:
     """
-    Wilder's RMA, commonly used for ATR.
+    Return close position inside candle range:
+        0.0 = close near low
+        1.0 = close near high
     """
-    return series.ewm(alpha=1 / length, adjust=False).mean()
+    high = float(row["high"])
+    low = float(row["low"])
+    close = float(row["close"])
+    rng = high - low
+
+    if rng <= 0:
+        return 0.5
+
+    return (close - low) / rng
 
 
-def _atr(df: pd.DataFrame, period: int) -> pd.Series:
-    high = df["high"].astype(float)
-    low = df["low"].astype(float)
-    close = df["close"].astype(float)
+def _avg_body(df: pd.DataFrame, pos: int, period: int) -> float:
+    start = max(0, pos - period)
+    subset = df.iloc[start:pos]
 
-    high_low = high - low
-    high_close = (high - close.shift(1)).abs()
-    low_close = (low - close.shift(1)).abs()
+    if subset.empty:
+        return 0.0
 
-    true_range = pd.concat(
-        [high_low, high_close, low_close],
-        axis=1,
-    ).max(axis=1)
-
-    return _rma(true_range, period)
+    bodies = (subset["close"].astype(float) - subset["open"].astype(float)).abs()
+    return float(bodies.mean())
 
 
-def _vwap(df: pd.DataFrame) -> pd.Series:
+def _body_pct(row: pd.Series) -> float:
+    close = float(row["close"])
+    if close <= 0:
+        return 0.0
+    return _body_size(row) / close * 100.0
+
+
+# ── Swing detection ───────────────────────────────────────────────
+
+def _find_swings(df: pd.DataFrame, left: int, right: int) -> list[dict]:
     """
-    Session VWAP calculated per UTC day.
+    Confirmed swing detection.
 
-    Formula:
-        cumulative(typical_price * volume) / cumulative(volume)
+    Swing high:
+        candle high is greater than highs on left and right side
+
+    Swing low:
+        candle low is lower than lows on left and right side
     """
-    typical_price = (
-        df["high"].astype(float)
-        + df["low"].astype(float)
-        + df["close"].astype(float)
-    ) / 3.0
+    swings: list[dict] = []
 
-    volume = df["volume"].astype(float).replace(0, np.nan)
+    if len(df) < left + right + 5:
+        return swings
 
-    date_key = df.index.date
+    highs = df["high"].astype(float)
+    lows = df["low"].astype(float)
 
-    pv = typical_price * volume
-    cumulative_pv = pv.groupby(date_key).cumsum()
-    cumulative_volume = volume.groupby(date_key).cumsum()
+    for i in range(left, len(df) - right):
+        high = float(highs.iloc[i])
+        low = float(lows.iloc[i])
 
-    vwap = cumulative_pv / cumulative_volume
-    return vwap.ffill()
+        left_high = float(highs.iloc[i - left:i].max())
+        right_high = float(highs.iloc[i + 1:i + right + 1].max())
+
+        left_low = float(lows.iloc[i - left:i].min())
+        right_low = float(lows.iloc[i + 1:i + right + 1].min())
+
+        if high > left_high and high > right_high:
+            swings.append({
+                "type": "HIGH",
+                "pos": i,
+                "time": df.index[i],
+                "price": high,
+            })
+
+        if low < left_low and low < right_low:
+            swings.append({
+                "type": "LOW",
+                "pos": i,
+                "time": df.index[i],
+                "price": low,
+            })
+
+    swings.sort(key=lambda x: x["pos"])
+    return swings
 
 
-def _distance_pct(price: float, level: float) -> float:
-    if price <= 0 or level <= 0:
-        return 999.0
-    return abs(price - level) / price * 100.0
+def _last_swing_before(swings: list[dict], swing_type: str, pos: int) -> dict | None:
+    candidates = [
+        swing for swing in swings
+        if swing["type"] == swing_type and swing["pos"] < pos
+    ]
+
+    if not candidates:
+        return None
+
+    return candidates[-1]
 
 
-# ── Trend confirmation ────────────────────────────────────────────
+def _next_swing_after(swings: list[dict], swing_type: str, pos: int, entry: float, direction: str) -> dict | None:
+    candidates = [
+        swing for swing in swings
+        if swing["type"] == swing_type and swing["pos"] > pos
+    ]
 
-def _get_trend_direction(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
+    if direction == "LONG":
+        candidates = [s for s in candidates if s["price"] > entry]
+    else:
+        candidates = [s for s in candidates if s["price"] < entry]
+
+    if not candidates:
+        return None
+
+    return candidates[0]
+
+
+# ── 15m market structure bias ─────────────────────────────────────
+
+def _get_market_structure_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
     """
-    15m trend filter:
-        LONG  if close > EMA50
-        SHORT if close < EMA50
+    Determine market structure bias using recent BOS.
+
+    Bullish BOS:
+        close breaks above previous confirmed swing high
+
+    Bearish BOS:
+        close breaks below previous confirmed swing low
     """
     completed = trend_df.iloc[:-1].copy()
 
-    if len(completed) < TREND_EMA_PERIOD + 5:
+    if len(completed) < STRUCTURE_LOOKBACK // 2:
         return None, {}
 
-    close = completed["close"].astype(float)
-    ema_trend = _ema(close, TREND_EMA_PERIOD)
+    recent = completed.tail(STRUCTURE_LOOKBACK).copy()
+    swings = _find_swings(recent, SWING_LEFT, SWING_RIGHT)
 
-    last_close = float(close.iloc[-1])
-    last_ema = float(ema_trend.iloc[-1])
-
-    if pd.isna(last_ema):
+    if len(swings) < 4:
         return None, {}
 
-    if last_close > last_ema:
-        direction = "LONG"
-    elif last_close < last_ema:
-        direction = "SHORT"
-    else:
-        direction = None
+    last_bias = None
+    last_break_price = None
+    last_break_time = None
+
+    for i in range(SWING_LEFT + SWING_RIGHT + 2, len(recent)):
+        close = float(recent["close"].iloc[i])
+
+        previous_high = _last_swing_before(swings, "HIGH", i)
+        previous_low = _last_swing_before(swings, "LOW", i)
+
+        if previous_high and close > previous_high["price"]:
+            last_bias = "LONG"
+            last_break_price = previous_high["price"]
+            last_break_time = recent.index[i]
+
+        if previous_low and close < previous_low["price"]:
+            last_bias = "SHORT"
+            last_break_price = previous_low["price"]
+            last_break_time = recent.index[i]
+
+    if last_bias is None:
+        return None, {}
 
     details = {
-        "trend_close": last_close,
-        "trend_ema": last_ema,
+        "bias": last_bias,
+        "break_price": last_break_price,
+        "break_time": last_break_time,
+        "swing_count": len(swings),
     }
 
-    return direction, details
+    return last_bias, details
 
 
-# ── Entry analysis ────────────────────────────────────────────────
+# ── Sweep detection ───────────────────────────────────────────────
 
-def _analyze_entry(entry_df: pd.DataFrame, trend_direction: str) -> tuple[str | None, dict]:
+def _detect_sell_side_sweep(df: pd.DataFrame, swings: list[dict], pos: int) -> dict | None:
     """
-    5m EMA + VWAP pullback entry trigger.
+    Sell-side liquidity sweep for LONG:
+        low takes previous swing low
+        close reclaims above that swing low
     """
-    completed = entry_df.iloc[:-1].copy()
+    row = df.iloc[pos]
+    prev_low = _last_swing_before(swings, "LOW", pos)
 
-    min_bars = max(
-        EMA_SLOW_PERIOD,
-        VOLUME_SMA_PERIOD,
-        ATR_PERIOD,
-    ) + 10
+    if not prev_low:
+        return None
 
-    if len(completed) < min_bars:
-        return None, {}
+    low = float(row["low"])
+    close = float(row["close"])
 
-    open_ = completed["open"].astype(float)
-    high = completed["high"].astype(float)
-    low = completed["low"].astype(float)
-    close = completed["close"].astype(float)
-    volume = completed["volume"].astype(float)
+    if low < prev_low["price"] and close > prev_low["price"]:
+        return {
+            "type": "SELL_SIDE_SWEEP",
+            "swing": prev_low,
+            "sweep_pos": pos,
+            "sweep_time": df.index[pos],
+            "sweep_level": prev_low["price"],
+            "sweep_extreme": low,
+        }
 
-    ema_fast = _ema(close, EMA_FAST_PERIOD)
-    ema_slow = _ema(close, EMA_SLOW_PERIOD)
-    vwap = _vwap(completed)
-    vol_sma = volume.rolling(VOLUME_SMA_PERIOD).mean()
-    atr = _atr(completed, ATR_PERIOD)
+    return None
 
-    last_open = float(open_.iloc[-1])
-    last_high = float(high.iloc[-1])
-    last_low = float(low.iloc[-1])
-    last_close = float(close.iloc[-1])
-    last_volume = float(volume.iloc[-1])
 
-    last_ema_fast = float(ema_fast.iloc[-1])
-    last_ema_slow = float(ema_slow.iloc[-1])
-    last_vwap = float(vwap.iloc[-1])
-    last_vol_sma = float(vol_sma.iloc[-1])
-    last_atr = float(atr.iloc[-1])
+def _detect_buy_side_sweep(df: pd.DataFrame, swings: list[dict], pos: int) -> dict | None:
+    """
+    Buy-side liquidity sweep for SHORT:
+        high takes previous swing high
+        close rejects below that swing high
+    """
+    row = df.iloc[pos]
+    prev_high = _last_swing_before(swings, "HIGH", pos)
 
-    if any(pd.isna(x) for x in [
-        last_ema_fast,
-        last_ema_slow,
-        last_vwap,
-        last_vol_sma,
-        last_atr,
-    ]):
-        return None, {}
+    if not prev_high:
+        return None
 
-    if last_close <= 0:
-        return None, {}
+    high = float(row["high"])
+    close = float(row["close"])
 
-    candle_body_pct = abs(last_close - last_open) / last_close * 100.0
-    volume_ratio = last_volume / last_vol_sma if last_vol_sma > 0 else 0.0
+    if high > prev_high["price"] and close < prev_high["price"]:
+        return {
+            "type": "BUY_SIDE_SWEEP",
+            "swing": prev_high,
+            "sweep_pos": pos,
+            "sweep_time": df.index[pos],
+            "sweep_level": prev_high["price"],
+            "sweep_extreme": high,
+        }
 
-    distance_to_fast = _distance_pct(last_close, last_ema_fast)
-    distance_to_slow = _distance_pct(last_close, last_ema_slow)
-    min_ema_distance = min(distance_to_fast, distance_to_slow)
+    return None
 
-    pulled_back_to_ema_long = (
-        last_low <= last_ema_fast
-        or last_low <= last_ema_slow
-        or min_ema_distance <= MAX_ENTRY_DISTANCE_FROM_EMA_PCT
+
+# ── Displacement / Order Block ────────────────────────────────────
+
+def _is_bullish_displacement(df: pd.DataFrame, pos: int) -> bool:
+    row = df.iloc[pos]
+    avg_body = _avg_body(df, pos, AVG_BODY_PERIOD)
+    body = _body_size(row)
+
+    if avg_body <= 0:
+        return False
+
+    return (
+        _is_bullish(row)
+        and body >= avg_body * DISPLACEMENT_BODY_MULTIPLIER
+        and _close_position(row) >= DISPLACEMENT_CLOSE_POSITION
     )
 
-    pulled_back_to_ema_short = (
-        last_high >= last_ema_fast
-        or last_high >= last_ema_slow
-        or min_ema_distance <= MAX_ENTRY_DISTANCE_FROM_EMA_PCT
+
+def _is_bearish_displacement(df: pd.DataFrame, pos: int) -> bool:
+    row = df.iloc[pos]
+    avg_body = _avg_body(df, pos, AVG_BODY_PERIOD)
+    body = _body_size(row)
+
+    if avg_body <= 0:
+        return False
+
+    return (
+        _is_bearish(row)
+        and body >= avg_body * DISPLACEMENT_BODY_MULTIPLIER
+        and _close_position(row) <= (1.0 - DISPLACEMENT_CLOSE_POSITION)
     )
 
-    bullish_candle = last_close > last_open
-    bearish_candle = last_close < last_open
 
-    volume_ok = volume_ratio >= MIN_VOLUME_RATIO
-    body_ok = candle_body_pct <= MAX_SIGNAL_CANDLE_BODY_PCT
-    distance_ok = min_ema_distance <= MAX_ENTRY_DISTANCE_FROM_EMA_PCT
+def _find_bullish_order_block(df: pd.DataFrame, displacement_pos: int) -> dict | None:
+    """
+    Bullish OB:
+        last bearish candle before bullish displacement
 
-    direction = None
+    Zone:
+        low to open of the bearish candle
+    """
+    start = max(0, displacement_pos - ORDER_BLOCK_LOOKBACK)
 
-    if (
-        trend_direction == "LONG"
-        and last_close > last_vwap
-        and last_ema_fast > last_ema_slow
-        and pulled_back_to_ema_long
-        and bullish_candle
-        and volume_ok
-        and body_ok
-        and distance_ok
-    ):
-        direction = "LONG"
+    for i in range(displacement_pos - 1, start - 1, -1):
+        row = df.iloc[i]
 
-    elif (
-        trend_direction == "SHORT"
-        and last_close < last_vwap
-        and last_ema_fast < last_ema_slow
-        and pulled_back_to_ema_short
-        and bearish_candle
-        and volume_ok
-        and body_ok
-        and distance_ok
-    ):
-        direction = "SHORT"
+        if _is_bearish(row):
+            zone_low = float(row["low"])
+            zone_high = float(row["open"])
 
-    details = {
-        "entry": last_close,
-        "open": last_open,
-        "high": last_high,
-        "low": last_low,
-        "ema_fast": last_ema_fast,
-        "ema_slow": last_ema_slow,
-        "vwap": last_vwap,
-        "volume": last_volume,
-        "volume_sma": last_vol_sma,
-        "volume_ratio": volume_ratio,
-        "atr": last_atr,
-        "candle_body_pct": candle_body_pct,
-        "distance_to_fast_pct": distance_to_fast,
-        "distance_to_slow_pct": distance_to_slow,
-        "min_ema_distance_pct": min_ema_distance,
-        "volume_ok": volume_ok,
-        "body_ok": body_ok,
-        "distance_ok": distance_ok,
-        "bullish_candle": bullish_candle,
-        "bearish_candle": bearish_candle,
-    }
+            if zone_high <= zone_low:
+                zone_high = max(float(row["open"]), float(row["close"]))
 
-    return direction, details
+            return {
+                "type": "BULLISH_OB",
+                "pos": i,
+                "time": df.index[i],
+                "zone_low": zone_low,
+                "zone_high": zone_high,
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+            }
+
+    return None
 
 
-# ── Scoring and risk ──────────────────────────────────────────────
+def _find_bearish_order_block(df: pd.DataFrame, displacement_pos: int) -> dict | None:
+    """
+    Bearish OB:
+        last bullish candle before bearish displacement
 
-def _calculate_score(direction: str, trend_details: dict, entry_details: dict) -> float:
-    score = 0.0
+    Zone:
+        open to high of the bullish candle
+    """
+    start = max(0, displacement_pos - ORDER_BLOCK_LOOKBACK)
 
-    # Trend alignment
-    score += 25.0
+    for i in range(displacement_pos - 1, start - 1, -1):
+        row = df.iloc[i]
 
-    # VWAP confirmation
-    entry = entry_details["entry"]
-    vwap = entry_details["vwap"]
+        if _is_bullish(row):
+            zone_low = float(row["open"])
+            zone_high = float(row["high"])
 
-    if direction == "LONG" and entry > vwap:
-        score += 15.0
-    elif direction == "SHORT" and entry < vwap:
-        score += 15.0
+            if zone_high <= zone_low:
+                zone_low = min(float(row["open"]), float(row["close"]))
 
-    # EMA structure
-    ema_fast = entry_details["ema_fast"]
-    ema_slow = entry_details["ema_slow"]
+            return {
+                "type": "BEARISH_OB",
+                "pos": i,
+                "time": df.index[i],
+                "zone_low": zone_low,
+                "zone_high": zone_high,
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+            }
 
-    ema_spread_pct = abs(ema_fast - ema_slow) / entry * 100.0
-
-    if ema_spread_pct >= 0.10:
-        score += 15.0
-    elif ema_spread_pct >= 0.05:
-        score += 10.0
-    else:
-        score += 5.0
-
-    # Entry distance quality
-    dist = entry_details["min_ema_distance_pct"]
-
-    if dist <= 0.08:
-        score += 20.0
-    elif dist <= 0.15:
-        score += 15.0
-    elif dist <= MAX_ENTRY_DISTANCE_FROM_EMA_PCT:
-        score += 10.0
-
-    # Volume strength
-    vol_ratio = entry_details["volume_ratio"]
-
-    if vol_ratio >= 1.50:
-        score += 15.0
-    elif vol_ratio >= 1.25:
-        score += 10.0
-    elif vol_ratio >= MIN_VOLUME_RATIO:
-        score += 5.0
-
-    # Candle body quality
-    body_pct = entry_details["candle_body_pct"]
-
-    if body_pct <= 0.20:
-        score += 10.0
-    elif body_pct <= MAX_SIGNAL_CANDLE_BODY_PCT:
-        score += 5.0
-
-    return round(min(score, 100.0), 1)
+    return None
 
 
-def _select_rr(score: float) -> float:
-    if score >= SCORE_STRONG_MIN:
-        return RR_STRONG
+# ── Retest / Entry validation ─────────────────────────────────────
 
-    if score >= SCORE_GOOD_MIN:
-        return RR_GOOD
+def _touches_zone(row: pd.Series, zone_low: float, zone_high: float) -> bool:
+    high = float(row["high"])
+    low = float(row["low"])
 
-    return RR_WEAK
+    return low <= zone_high and high >= zone_low
 
 
-def _calculate_dynamic_prices(
+def _find_bullish_retest(df: pd.DataFrame, ob: dict, displacement_pos: int) -> dict | None:
+    """
+    Bullish retest:
+        candle touches bullish OB zone
+        candle closes bullish
+        candle closes above OB midpoint
+    """
+    start = displacement_pos + 1
+    end = min(len(df), displacement_pos + RETEST_LOOKBACK_AFTER_DISPLACEMENT + 1)
+
+    zone_low = ob["zone_low"]
+    zone_high = ob["zone_high"]
+    midpoint = (zone_low + zone_high) / 2.0
+
+    for i in range(start, end):
+        row = df.iloc[i]
+
+        if not _touches_zone(row, zone_low, zone_high):
+            continue
+
+        if _body_pct(row) > MAX_SIGNAL_CANDLE_BODY_PCT:
+            continue
+
+        if _is_bullish(row) and float(row["close"]) > midpoint:
+            return {
+                "pos": i,
+                "time": df.index[i],
+                "entry": float(row["close"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "body_pct": _body_pct(row),
+            }
+
+    return None
+
+
+def _find_bearish_retest(df: pd.DataFrame, ob: dict, displacement_pos: int) -> dict | None:
+    """
+    Bearish retest:
+        candle touches bearish OB zone
+        candle closes bearish
+        candle closes below OB midpoint
+    """
+    start = displacement_pos + 1
+    end = min(len(df), displacement_pos + RETEST_LOOKBACK_AFTER_DISPLACEMENT + 1)
+
+    zone_low = ob["zone_low"]
+    zone_high = ob["zone_high"]
+    midpoint = (zone_low + zone_high) / 2.0
+
+    for i in range(start, end):
+        row = df.iloc[i]
+
+        if not _touches_zone(row, zone_low, zone_high):
+            continue
+
+        if _body_pct(row) > MAX_SIGNAL_CANDLE_BODY_PCT:
+            continue
+
+        if _is_bearish(row) and float(row["close"]) < midpoint:
+            return {
+                "pos": i,
+                "time": df.index[i],
+                "entry": float(row["close"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "body_pct": _body_pct(row),
+            }
+
+    return None
+
+
+# ── Structure SL / TP ─────────────────────────────────────────────
+
+def _calculate_structure_prices(
     direction: str,
     entry: float,
-    atr_value: float,
-    score: float,
-) -> tuple[float, float, float, float]:
+    sweep: dict,
+    ob: dict,
+    retest: dict,
+    swings: list[dict],
+) -> tuple[float, float, float, float, float] | None:
     """
     Returns:
-        tp_price, sl_price, tp_roi_pct, sl_roi_pct
+        tp_price, sl_price, tp_roi_pct, sl_roi_pct, rr
     """
     if entry <= 0:
-        return entry, entry, 0.0, 0.0
-
-    rr = _select_rr(score)
-
-    raw_risk_distance = atr_value * SL_ATR_MULTIPLIER
-
-    min_risk_distance = entry * MIN_SL_PCT / 100.0
-    max_risk_distance = entry * MAX_SL_PCT / 100.0
-
-    risk_distance = max(raw_risk_distance, min_risk_distance)
-    risk_distance = min(risk_distance, max_risk_distance)
-
-    reward_distance = risk_distance * rr
+        return None
 
     if direction == "LONG":
-        sl_price = entry - risk_distance
-        tp_price = entry + reward_distance
+        raw_sl = min(sweep["sweep_extreme"], ob["zone_low"])
+        sl_price = raw_sl * (1.0 - SL_BUFFER_PCT / 100.0)
+
+        target_swing = _next_swing_after(
+            swings=swings,
+            swing_type="HIGH",
+            pos=retest["pos"],
+            entry=entry,
+            direction=direction,
+        )
+
+        if target_swing:
+            tp_price = target_swing["price"] * (1.0 - TP_BUFFER_PCT / 100.0)
+        else:
+            tp_price = entry + (entry - sl_price) * MIN_STRUCTURE_RR
+
+        risk = entry - sl_price
+        reward = tp_price - entry
+
     else:
-        sl_price = entry + risk_distance
-        tp_price = entry - reward_distance
+        raw_sl = max(sweep["sweep_extreme"], ob["zone_high"])
+        sl_price = raw_sl * (1.0 + SL_BUFFER_PCT / 100.0)
+
+        target_swing = _next_swing_after(
+            swings=swings,
+            swing_type="LOW",
+            pos=retest["pos"],
+            entry=entry,
+            direction=direction,
+        )
+
+        if target_swing:
+            tp_price = target_swing["price"] * (1.0 + TP_BUFFER_PCT / 100.0)
+        else:
+            tp_price = entry - (sl_price - entry) * MIN_STRUCTURE_RR
+
+        risk = sl_price - entry
+        reward = entry - tp_price
+
+    if risk <= 0 or reward <= 0:
+        return None
+
+    sl_pct = risk / entry * 100.0
+
+    if sl_pct < MIN_SL_PCT or sl_pct > MAX_SL_PCT:
+        return None
+
+    rr = reward / risk
+
+    if rr < MIN_STRUCTURE_RR:
+        return None
+
+    if rr > MAX_STRUCTURE_RR:
+        if direction == "LONG":
+            tp_price = entry + risk * MAX_STRUCTURE_RR
+        else:
+            tp_price = entry - risk * MAX_STRUCTURE_RR
+
+        reward = abs(tp_price - entry)
+        rr = reward / risk
 
     if direction == "LONG":
-        tp_price_move_pct = (tp_price - entry) / entry * 100.0
-        sl_price_move_pct = (entry - sl_price) / entry * 100.0
+        tp_move_pct = (tp_price - entry) / entry * 100.0
+        sl_move_pct = (entry - sl_price) / entry * 100.0
     else:
-        tp_price_move_pct = (entry - tp_price) / entry * 100.0
-        sl_price_move_pct = (sl_price - entry) / entry * 100.0
+        tp_move_pct = (entry - tp_price) / entry * 100.0
+        sl_move_pct = (sl_price - entry) / entry * 100.0
 
-    tp_roi_pct = tp_price_move_pct * LEVERAGE
-    sl_roi_pct = sl_price_move_pct * LEVERAGE
+    tp_roi_pct = tp_move_pct * LEVERAGE
+    sl_roi_pct = sl_move_pct * LEVERAGE
 
     return (
         round(tp_price, 8),
         round(sl_price, 8),
         round(tp_roi_pct, 1),
         round(sl_roi_pct, 1),
+        round(rr, 2),
     )
+
+
+# ── Signal scoring ────────────────────────────────────────────────
+
+def _calculate_score(direction: str, sweep: dict, ob: dict, retest: dict, rr: float) -> float:
+    score = 50.0
+
+    # RR quality
+    if rr >= 3.0:
+        score += 20.0
+    elif rr >= 2.0:
+        score += 15.0
+    elif rr >= MIN_STRUCTURE_RR:
+        score += 10.0
+
+    # Retest candle quality
+    if retest["body_pct"] <= 0.35:
+        score += 10.0
+    elif retest["body_pct"] <= 0.70:
+        score += 5.0
+
+    # OB freshness
+    candles_from_ob_to_retest = retest["pos"] - ob["pos"]
+
+    if candles_from_ob_to_retest <= 12:
+        score += 10.0
+    elif candles_from_ob_to_retest <= 24:
+        score += 5.0
+
+    # Sweep-to-retest compactness
+    candles_from_sweep_to_retest = retest["pos"] - sweep["sweep_pos"]
+
+    if candles_from_sweep_to_retest <= 20:
+        score += 10.0
+    elif candles_from_sweep_to_retest <= 35:
+        score += 5.0
+
+    return round(min(score, 100.0), 1)
+
+
+# ── SMC setup search ──────────────────────────────────────────────
+
+def _find_long_setup(entry_df: pd.DataFrame) -> tuple[dict | None, dict]:
+    completed = entry_df.iloc[:-1].copy().tail(ENTRY_LOOKBACK)
+
+    if len(completed) < 80:
+        return None, {}
+
+    swings = _find_swings(completed, SWING_LEFT, SWING_RIGHT)
+
+    if len(swings) < 4:
+        return None, {}
+
+    start = max(AVG_BODY_PERIOD + SWEEP_LOOKBACK + ORDER_BLOCK_LOOKBACK, 30)
+    last_possible = len(completed) - 2
+
+    best_setup = None
+    best_score = -1.0
+
+    for displacement_pos in range(start, last_possible + 1):
+        if not _is_bullish_displacement(completed, displacement_pos):
+            continue
+
+        sweep = None
+        sweep_start = max(0, displacement_pos - SWEEP_LOOKBACK)
+
+        for sweep_pos in range(displacement_pos - 1, sweep_start - 1, -1):
+            sweep = _detect_sell_side_sweep(completed, swings, sweep_pos)
+            if sweep:
+                break
+
+        if not sweep:
+            continue
+
+        ob = _find_bullish_order_block(completed, displacement_pos)
+
+        if not ob:
+            continue
+
+        retest = _find_bullish_retest(completed, ob, displacement_pos)
+
+        if not retest:
+            continue
+
+        # Only accept if retest is very recent.
+        if retest["pos"] < len(completed) - 3:
+            continue
+
+        entry = retest["entry"]
+
+        prices = _calculate_structure_prices(
+            direction="LONG",
+            entry=entry,
+            sweep=sweep,
+            ob=ob,
+            retest=retest,
+            swings=swings,
+        )
+
+        if not prices:
+            continue
+
+        tp_price, sl_price, tp_roi_pct, sl_roi_pct, rr = prices
+        score = _calculate_score("LONG", sweep, ob, retest, rr)
+
+        if score > best_score:
+            best_score = score
+            best_setup = {
+                "direction": "LONG",
+                "entry": entry,
+                "tp_price": tp_price,
+                "sl_price": sl_price,
+                "tp_roi_pct": tp_roi_pct,
+                "sl_roi_pct": sl_roi_pct,
+                "rr": rr,
+                "score": score,
+                "sweep": sweep,
+                "ob": ob,
+                "retest": retest,
+                "displacement_pos": displacement_pos,
+                "displacement_time": completed.index[displacement_pos],
+            }
+
+    return best_setup, {"swing_count": len(swings)}
+
+
+def _find_short_setup(entry_df: pd.DataFrame) -> tuple[dict | None, dict]:
+    completed = entry_df.iloc[:-1].copy().tail(ENTRY_LOOKBACK)
+
+    if len(completed) < 80:
+        return None, {}
+
+    swings = _find_swings(completed, SWING_LEFT, SWING_RIGHT)
+
+    if len(swings) < 4:
+        return None, {}
+
+    start = max(AVG_BODY_PERIOD + SWEEP_LOOKBACK + ORDER_BLOCK_LOOKBACK, 30)
+    last_possible = len(completed) - 2
+
+    best_setup = None
+    best_score = -1.0
+
+    for displacement_pos in range(start, last_possible + 1):
+        if not _is_bearish_displacement(completed, displacement_pos):
+            continue
+
+        sweep = None
+        sweep_start = max(0, displacement_pos - SWEEP_LOOKBACK)
+
+        for sweep_pos in range(displacement_pos - 1, sweep_start - 1, -1):
+            sweep = _detect_buy_side_sweep(completed, swings, sweep_pos)
+            if sweep:
+                break
+
+        if not sweep:
+            continue
+
+        ob = _find_bearish_order_block(completed, displacement_pos)
+
+        if not ob:
+            continue
+
+        retest = _find_bearish_retest(completed, ob, displacement_pos)
+
+        if not retest:
+            continue
+
+        # Only accept if retest is very recent.
+        if retest["pos"] < len(completed) - 3:
+            continue
+
+        entry = retest["entry"]
+
+        prices = _calculate_structure_prices(
+            direction="SHORT",
+            entry=entry,
+            sweep=sweep,
+            ob=ob,
+            retest=retest,
+            swings=swings,
+        )
+
+        if not prices:
+            continue
+
+        tp_price, sl_price, tp_roi_pct, sl_roi_pct, rr = prices
+        score = _calculate_score("SHORT", sweep, ob, retest, rr)
+
+        if score > best_score:
+            best_score = score
+            best_setup = {
+                "direction": "SHORT",
+                "entry": entry,
+                "tp_price": tp_price,
+                "sl_price": sl_price,
+                "tp_roi_pct": tp_roi_pct,
+                "sl_roi_pct": sl_roi_pct,
+                "rr": rr,
+                "score": score,
+                "sweep": sweep,
+                "ob": ob,
+                "retest": retest,
+                "displacement_pos": displacement_pos,
+                "displacement_time": completed.index[displacement_pos],
+            }
+
+    return best_setup, {"swing_count": len(swings)}
 
 
 # ── Main analysis ─────────────────────────────────────────────────
@@ -452,44 +848,43 @@ def analyze_coin(symbol: str) -> "Signal | None":
         if entry_df is None or entry_df.empty:
             return None
 
-        trend_direction, trend_details = _get_trend_direction(trend_df)
+        bias, bias_details = _get_market_structure_bias(trend_df)
 
-        if trend_direction is None:
+        if bias is None:
             return None
 
-        direction, entry_details = _analyze_entry(entry_df, trend_direction)
+        if bias == "LONG":
+            setup, setup_details = _find_long_setup(entry_df)
+        else:
+            setup, setup_details = _find_short_setup(entry_df)
 
-        if direction is None:
+        if not setup:
             return None
 
-        entry = float(entry_details["entry"])
-        atr_value = float(entry_details["atr"])
+        direction = setup["direction"]
+        entry = setup["entry"]
+        tp_price = setup["tp_price"]
+        sl_price = setup["sl_price"]
+        tp_roi_pct = setup["tp_roi_pct"]
+        sl_roi_pct = setup["sl_roi_pct"]
+        rr = setup["rr"]
+        score = setup["score"]
 
-        score = _calculate_score(direction, trend_details, entry_details)
-
-        tp_price, sl_price, tp_roi_pct, sl_roi_pct = _calculate_dynamic_prices(
-            direction=direction,
-            entry=entry,
-            atr_value=atr_value,
-            score=score,
-        )
-
-        rr = _select_rr(score)
+        sweep = setup["sweep"]
+        ob = setup["ob"]
+        retest = setup["retest"]
 
         logger.info(
             f"[SIGNAL] {direction} {symbol} @ {entry:.6g} | "
             f"TP={tp_price:.6g} (+{tp_roi_pct:.1f}% ROI) "
             f"SL={sl_price:.6g} (-{sl_roi_pct:.1f}% ROI) | "
             f"RR={rr:.2f} | "
-            f"trend={TREND_TF} close={trend_details.get('trend_close', 0):.6g} "
-            f"ema{TREND_EMA_PERIOD}={trend_details.get('trend_ema', 0):.6g} | "
-            f"entry={ENTRY_TF} ema{EMA_FAST_PERIOD}={entry_details['ema_fast']:.6g} "
-            f"ema{EMA_SLOW_PERIOD}={entry_details['ema_slow']:.6g} "
-            f"vwap={entry_details['vwap']:.6g} "
-            f"volRatio={entry_details['volume_ratio']:.2f} "
-            f"body={entry_details['candle_body_pct']:.3f}% "
-            f"dist={entry_details['min_ema_distance_pct']:.3f}% "
-            f"atr={atr_value:.6g} | score={score}"
+            f"bias={bias} {TREND_TF} break={bias_details.get('break_price')} | "
+            f"sweep={sweep['type']} level={sweep['sweep_level']:.6g} "
+            f"extreme={sweep['sweep_extreme']:.6g} | "
+            f"OB={ob['type']} zone={ob['zone_low']:.6g}-{ob['zone_high']:.6g} | "
+            f"retest_body={retest['body_pct']:.3f}% | "
+            f"score={score}"
         )
 
         return Signal(
@@ -502,9 +897,8 @@ def analyze_coin(symbol: str) -> "Signal | None":
             tp_roi_pct=tp_roi_pct,
             sl_roi_pct=sl_roi_pct,
             timeframe_summary=(
-                f"EMA/VWAP Pullback | Trend {TREND_TF} EMA{TREND_EMA_PERIOD} | "
-                f"Entry {ENTRY_TF} EMA{EMA_FAST_PERIOD}/{EMA_SLOW_PERIOD} + VWAP | "
-                f"ATR{ATR_PERIOD} SLx{SL_ATR_MULTIPLIER:g} RR {rr:g}"
+                f"SMC {ENTRY_TF} | {TREND_TF} bias {bias} | "
+                f"{sweep['type']} + OB retest | RR {rr:g}"
             ),
             generated_at=datetime.now(timezone.utc),
             score=score,
