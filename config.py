@@ -81,7 +81,7 @@ OUTCOME_CHECK_MINUTES: int = 5
 CANDLE_MINUTES:        int = 15
 
 # Increased slightly because coin count is now 80
-SCAN_WORKERS:          int = 12
+SCAN_WORKERS:          int = 4
 
 # ── MEXC Futures REST API ─────────────────────────────────────────
 MEXC_BASE_URL = "https://contract.mexc.com/api/v1"

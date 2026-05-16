@@ -1,10 +1,17 @@
 import time
+import random
 import requests
 import pandas as pd
+from requests.adapters import HTTPAdapter
 from config import MEXC_BASE_URL
 
 SESSION = requests.Session()
 SESSION.headers.update({"Content-Type": "application/json"})
+
+# Increase HTTP connection pool size to avoid urllib3 pool warnings.
+adapter = HTTPAdapter(pool_connections=50, pool_maxsize=50, max_retries=0)
+SESSION.mount("https://", adapter)
+SESSION.mount("http://", adapter)
 
 # MEXC Futures does not support Min3 directly.
 # For "3m", we fetch 1m candles and resample to 3m in Python.
@@ -19,12 +26,22 @@ INTERVAL_MAP = {
 }
 
 
-def _get(path: str, params: dict = None, retries: int = 3) -> dict:
+def _is_rate_limit_error(error: Exception) -> bool:
+    msg = str(error).lower()
+    return (
+        "too frequent" in msg
+        or "rate limit" in msg
+        or "429" in msg
+        or "try again later" in msg
+    )
+
+
+def _get(path: str, params: dict = None, retries: int = 5) -> dict:
     url = f"{MEXC_BASE_URL}{path}"
 
     for attempt in range(retries):
         try:
-            response = SESSION.get(url, params=params, timeout=10)
+            response = SESSION.get(url, params=params, timeout=15)
             response.raise_for_status()
 
             data = response.json()
@@ -34,11 +51,16 @@ def _get(path: str, params: dict = None, retries: int = 3) -> dict:
 
             return data
 
-        except Exception:
+        except Exception as e:
             if attempt == retries - 1:
                 raise
 
-            time.sleep(2 ** attempt)
+            if _is_rate_limit_error(e):
+                sleep_seconds = min(3 + attempt * 2 + random.uniform(0.3, 1.5), 12)
+            else:
+                sleep_seconds = min(1 + attempt + random.uniform(0.2, 0.8), 6)
+
+            time.sleep(sleep_seconds)
 
     return {}
 
@@ -136,15 +158,9 @@ def get_klines(symbol: str, interval: str, count: int = 100) -> pd.DataFrame:
 
     Supported app intervals:
         1m, 3m, 5m, 15m, 30m, 1h, 4h, 1d
-
-    Notes:
-        3m is not supported directly by MEXC Futures API.
-        For 3m, this function fetches 1m candles and resamples them to 3m.
     """
 
     if interval == "3m":
-        # Need more 1m candles to build enough 3m candles.
-        # Example: 300 x 3m candles need around 900 x 1m candles.
         fetch_count = count * 3 + 10
 
         data = _get(
