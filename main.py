@@ -1,13 +1,13 @@
 """
-Main entry point — NWE-RQK strategy only.
+Main entry point — EMA/VWAP Pullback Scalper.
 
 Scheduler jobs:
-  Every configured scan interval — scan coin pool for NWE-RQK signals
-  Every 5 min                  — check pending signal outcomes (TP/SL hit)
-  Every 6h                     — refresh coin pool
-  23:55 daily                  — daily report
-  Mon 07:00                    — weekly report
-  1st 07:00                    — monthly report
+  Every configured scan interval — scan coin pool for EMA/VWAP pullback signals
+  Every configured interval      — check pending signal outcomes (TP/SL hit)
+  Every 6h                       — refresh coin pool
+  23:55 daily                    — daily report
+  Mon 07:00                      — weekly report
+  1st 07:00                      — monthly report
 """
 
 import asyncio
@@ -34,7 +34,7 @@ from config import (
     COIN_REFRESH_HOURS,
     MAX_CONCURRENT_SIGNALS,
     LEVERAGE,
-    NWE_TF,
+    ENTRY_TF,
     SCAN_CRON_MINUTES,
     SIGNALS_PER_SCAN,
     OUTCOME_CHECK_MINUTES,
@@ -151,15 +151,6 @@ def _calculate_pnl_roi(
 ) -> float:
     """
     Calculates ROI based on actual price move and leverage.
-
-    LONG win:
-        TP above entry = positive
-
-    SHORT win:
-        TP below entry = positive
-
-    Loss:
-        Always negative.
     """
     if outcome == "win":
         if direction == "LONG":
@@ -217,7 +208,7 @@ async def check_outcomes(app: Application) -> None:
         fetch_count = int(elapsed_min / CANDLE_MINUTES) + 3
 
         try:
-            df = get_klines(symbol, NWE_TF, count=fetch_count)
+            df = get_klines(symbol, ENTRY_TF, count=fetch_count)
 
             if df.empty or len(df) < 2:
                 continue
@@ -296,7 +287,7 @@ async def check_outcomes(app: Application) -> None:
 async def main():
     logger.info(
         f"Starting MEXC Signal Bot — "
-        f"NWE-RQK only ({NWE_TF}, scan={SCAN_CRON_MINUTES})"
+        f"EMA/VWAP Pullback Scalper ({ENTRY_TF}, scan={SCAN_CRON_MINUTES})"
     )
 
     db.init_db()
@@ -345,7 +336,7 @@ async def main():
     scheduler.start()
 
     logger.info(
-        f"Scheduler started — scanning {len(coins)} coins on {NWE_TF} "
+        f"Scheduler started — scanning {len(coins)} coins on {ENTRY_TF} "
         f"with cron minute='{SCAN_CRON_MINUTES}'"
     )
 
