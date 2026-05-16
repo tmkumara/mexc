@@ -1,35 +1,41 @@
 """
-Nadaraya-Watson Rational Quadratic Kernel Strategy + Supertrend filter
-+ Entry Distance Filter.
+EMA + VWAP Pullback Scalping Strategy with Dynamic ATR SL/TP.
 
-NWE TradingView settings:
-    Source:                  Close
-    Lookback Window:          32
-    Relative Weighting:       25
-    Start Regression at Bar:  233
-    Smooth Colors:            True
-    Lag:                      7
-    Timeframe:                15m
+This strategy replaces Nadaraya-Watson and Supertrend.
 
-Supertrend settings:
-    ATR Length:               10
-    Factor:                   3
-    Timeframe:                same as NWE_TF
+Structure:
+    15m = trend confirmation
+    5m  = entry trigger
 
-Signal logic:
-    LONG:
-        NWE yhat2 crosses above yhat1
-        AND Supertrend is bullish
-        AND entry is not too far above NWE
+Indicators:
+    15m EMA 50
+    5m EMA 9
+    5m EMA 21
+    5m VWAP
+    5m Volume SMA 20
+    5m ATR 14
 
-    SHORT:
-        NWE yhat2 crosses below yhat1
-        AND Supertrend is bearish
-        AND entry is not too far below NWE
+LONG:
+    15m close > 15m EMA 50
+    5m close > VWAP
+    5m EMA 9 > EMA 21
+    Price pulled back near EMA 9 or EMA 21
+    Last completed 5m candle closes bullish
+    Volume >= MIN_VOLUME_RATIO × Volume SMA 20
+    Candle body is not too large
 
-Important:
-    Uses completed candles only.
-    Latest in-progress candle is ignored to avoid repainting.
+SHORT:
+    15m close < 15m EMA 50
+    5m close < VWAP
+    5m EMA 9 < EMA 21
+    Price pulled back near EMA 9 or EMA 21
+    Last completed 5m candle closes bearish
+    Volume >= MIN_VOLUME_RATIO × Volume SMA 20
+    Candle body is not too large
+
+Risk:
+    SL = ATR-based dynamic stop
+    TP = SL distance × dynamic RR
 """
 
 import logging
@@ -41,21 +47,28 @@ import pandas as pd
 
 from mexc_client import get_klines
 from config import (
-    NWE_H,
-    NWE_ALPHA,
-    NWE_SIZE,
-    NWE_LAG,
-    NWE_SMOOTH,
-    NWE_TF,
-    NWE_KLINE_COUNT,
-    SUPERTREND_ENABLED,
-    SUPERTREND_ATR_LENGTH,
-    SUPERTREND_FACTOR,
-    ENTRY_DISTANCE_FILTER_ENABLED,
-    MAX_ENTRY_DISTANCE_FROM_NWE_PCT,
+    TREND_TF,
+    ENTRY_TF,
+    TREND_KLINE_COUNT,
+    ENTRY_KLINE_COUNT,
+    TREND_EMA_PERIOD,
+    EMA_FAST_PERIOD,
+    EMA_SLOW_PERIOD,
+    VOLUME_SMA_PERIOD,
+    MIN_VOLUME_RATIO,
+    MAX_ENTRY_DISTANCE_FROM_EMA_PCT,
+    MAX_SIGNAL_CANDLE_BODY_PCT,
+    DYNAMIC_RISK_ENABLED,
+    ATR_PERIOD,
+    SL_ATR_MULTIPLIER,
+    MIN_SL_PCT,
+    MAX_SL_PCT,
+    RR_WEAK,
+    RR_GOOD,
+    RR_STRONG,
+    SCORE_GOOD_MIN,
+    SCORE_STRONG_MIN,
     LEVERAGE,
-    TP_ROI_PCT,
-    SL_ROI_PCT,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,172 +89,23 @@ class Signal:
     score:             float = 0.0
 
 
-# ── NWE helpers ───────────────────────────────────────────────────
+# ── Indicator helpers ─────────────────────────────────────────────
 
-def _rqk_endpoint(closes: np.ndarray, h: float, alpha: float, size: int) -> float:
-    """
-    Rational Quadratic Kernel Nadaraya-Watson endpoint estimator.
+def _ema(series: pd.Series, period: int) -> pd.Series:
+    return series.ewm(span=period, adjust=False).mean()
 
-    TradingView equivalent weight:
-        w(i) = (1 + i² / (2 * alpha * h²)) ^ (-alpha)
-
-    Index:
-        i = 0 means most recent completed candle.
-    """
-    bars = min(size, len(closes))
-
-    if bars < 2:
-        return float(closes[-1]) if len(closes) else 0.0
-
-    # Reverse because index 0 should be the most recent completed candle.
-    src = closes[-bars:][::-1]
-
-    weights = np.array(
-        [
-            (1.0 + (i * i) / (2.0 * alpha * h * h)) ** (-alpha)
-            for i in range(bars)
-        ],
-        dtype=np.float64,
-    )
-
-    return float(np.dot(src, weights) / weights.sum())
-
-
-def _nwe_value(closes: np.ndarray, h: float) -> float:
-    return _rqk_endpoint(
-        closes=closes,
-        h=h,
-        alpha=NWE_ALPHA,
-        size=NWE_SIZE,
-    )
-
-
-def _crossover(prev_a: float, curr_a: float, prev_b: float, curr_b: float) -> bool:
-    """
-    Equivalent to TradingView ta.crossover(a, b):
-        previous a <= previous b and current a > current b
-    """
-    return prev_a <= prev_b and curr_a > curr_b
-
-
-def _crossunder(prev_a: float, curr_a: float, prev_b: float, curr_b: float) -> bool:
-    """
-    Equivalent to TradingView ta.crossunder(a, b):
-        previous a >= previous b and current a < current b
-    """
-    return prev_a >= prev_b and curr_a < curr_b
-
-
-def _detect_signal_from_nwe(closes: np.ndarray) -> tuple[str | None, dict]:
-    """
-    Detect NWE signal using completed candles only.
-
-    Smooth Colors ON:
-        yhat2 crossover yhat1 = LONG
-        yhat2 crossunder yhat1 = SHORT
-
-    Smooth Colors OFF:
-        slope color change = LONG / SHORT
-    """
-    if len(closes) < NWE_SIZE + NWE_LAG + 5:
-        return None, {}
-
-    yhat1_t0 = _nwe_value(closes, h=NWE_H)
-    yhat1_t1 = _nwe_value(closes[:-1], h=NWE_H)
-    yhat1_t2 = _nwe_value(closes[:-2], h=NWE_H)
-
-    direction = None
-
-    if NWE_SMOOTH:
-        h2 = max(NWE_H - NWE_LAG, 1.0)
-
-        yhat2_t0 = _nwe_value(closes, h=h2)
-        yhat2_t1 = _nwe_value(closes[:-1], h=h2)
-
-        bullish_cross = _crossover(
-            prev_a=yhat2_t1,
-            curr_a=yhat2_t0,
-            prev_b=yhat1_t1,
-            curr_b=yhat1_t0,
-        )
-
-        bearish_cross = _crossunder(
-            prev_a=yhat2_t1,
-            curr_a=yhat2_t0,
-            prev_b=yhat1_t1,
-            curr_b=yhat1_t0,
-        )
-
-        if bullish_cross:
-            direction = "LONG"
-        elif bearish_cross:
-            direction = "SHORT"
-
-        details = {
-            "mode": "smooth-cross",
-            "yhat1_t2": yhat1_t2,
-            "yhat1_t1": yhat1_t1,
-            "yhat1_t0": yhat1_t0,
-            "yhat2_t1": yhat2_t1,
-            "yhat2_t0": yhat2_t0,
-        }
-
-        return direction, details
-
-    # Smooth Colors OFF fallback
-    was_bearish = yhat1_t2 > yhat1_t1
-    was_bullish = yhat1_t2 < yhat1_t1
-
-    is_bearish = yhat1_t1 > yhat1_t0
-    is_bullish = yhat1_t1 < yhat1_t0
-
-    is_bearish_change = is_bearish and was_bullish
-    is_bullish_change = is_bullish and was_bearish
-
-    if is_bullish_change:
-        direction = "LONG"
-    elif is_bearish_change:
-        direction = "SHORT"
-
-    details = {
-        "mode": "slope-change",
-        "yhat1_t2": yhat1_t2,
-        "yhat1_t1": yhat1_t1,
-        "yhat1_t0": yhat1_t0,
-    }
-
-    return direction, details
-
-
-# ── Supertrend helpers ────────────────────────────────────────────
 
 def _rma(series: pd.Series, length: int) -> pd.Series:
     """
-    Wilder's RMA, close to TradingView ta.rma behavior.
+    Wilder's RMA, commonly used for ATR.
     """
     return series.ewm(alpha=1 / length, adjust=False).mean()
 
 
-def _calculate_supertrend(df: pd.DataFrame) -> tuple[str | None, float | None]:
-    """
-    Calculate Supertrend on completed candles only.
-
-    Returns:
-        ("LONG", supertrend_value)  when bullish
-        ("SHORT", supertrend_value) when bearish
-        (None, None)                when not enough data
-    """
-    completed = df.iloc[:-1].copy()
-
-    min_bars = SUPERTREND_ATR_LENGTH + 10
-    if completed.empty or len(completed) < min_bars:
-        return None, None
-
-    high = completed["high"].astype(float)
-    low = completed["low"].astype(float)
-    close = completed["close"].astype(float)
-
-    hl2 = (high + low) / 2.0
+def _atr(df: pd.DataFrame, period: int) -> pd.Series:
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
+    close = df["close"].astype(float)
 
     high_low = high - low
     high_close = (high - close.shift(1)).abs()
@@ -252,237 +116,381 @@ def _calculate_supertrend(df: pd.DataFrame) -> tuple[str | None, float | None]:
         axis=1,
     ).max(axis=1)
 
-    atr = _rma(true_range, SUPERTREND_ATR_LENGTH)
-
-    basic_upper = hl2 + (SUPERTREND_FACTOR * atr)
-    basic_lower = hl2 - (SUPERTREND_FACTOR * atr)
-
-    final_upper = basic_upper.copy()
-    final_lower = basic_lower.copy()
-
-    trend = pd.Series(index=completed.index, dtype="int64")
-    supertrend = pd.Series(index=completed.index, dtype="float64")
-
-    for i in range(len(completed)):
-        if i == 0:
-            trend.iloc[i] = 1
-            final_upper.iloc[i] = basic_upper.iloc[i]
-            final_lower.iloc[i] = basic_lower.iloc[i]
-            supertrend.iloc[i] = final_lower.iloc[i]
-            continue
-
-        prev_i = i - 1
-
-        if (
-            basic_upper.iloc[i] < final_upper.iloc[prev_i]
-            or close.iloc[prev_i] > final_upper.iloc[prev_i]
-        ):
-            final_upper.iloc[i] = basic_upper.iloc[i]
-        else:
-            final_upper.iloc[i] = final_upper.iloc[prev_i]
-
-        if (
-            basic_lower.iloc[i] > final_lower.iloc[prev_i]
-            or close.iloc[prev_i] < final_lower.iloc[prev_i]
-        ):
-            final_lower.iloc[i] = basic_lower.iloc[i]
-        else:
-            final_lower.iloc[i] = final_lower.iloc[prev_i]
-
-        if trend.iloc[prev_i] == -1 and close.iloc[i] > final_upper.iloc[i]:
-            trend.iloc[i] = 1
-        elif trend.iloc[prev_i] == 1 and close.iloc[i] < final_lower.iloc[i]:
-            trend.iloc[i] = -1
-        else:
-            trend.iloc[i] = trend.iloc[prev_i]
-
-        supertrend.iloc[i] = final_lower.iloc[i] if trend.iloc[i] == 1 else final_upper.iloc[i]
-
-    last_trend = int(trend.iloc[-1])
-    last_value = float(supertrend.iloc[-1])
-
-    if last_trend == 1:
-        return "LONG", last_value
-
-    if last_trend == -1:
-        return "SHORT", last_value
-
-    return None, None
+    return _rma(true_range, period)
 
 
-def _passes_supertrend_filter(
-    symbol: str,
-    direction: str,
-    df: pd.DataFrame,
-) -> tuple[bool, str | None, float | None]:
-    if not SUPERTREND_ENABLED:
-        return True, None, None
+def _vwap(df: pd.DataFrame) -> pd.Series:
+    """
+    Session VWAP calculated per UTC day.
 
-    st_direction, st_value = _calculate_supertrend(df)
+    Formula:
+        cumulative(typical_price * volume) / cumulative(volume)
+    """
+    typical_price = (
+        df["high"].astype(float)
+        + df["low"].astype(float)
+        + df["close"].astype(float)
+    ) / 3.0
 
-    if st_direction is None:
-        logger.info(f"[FILTER] {symbol} {direction} skipped: Supertrend unavailable")
-        return False, st_direction, st_value
+    volume = df["volume"].astype(float).replace(0, np.nan)
 
-    if direction != st_direction:
-        logger.info(
-            f"[FILTER] {symbol} {direction} skipped: "
-            f"Supertrend={st_direction} value={st_value:.6g}"
-        )
-        return False, st_direction, st_value
+    date_key = df.index.date
 
-    return True, st_direction, st_value
+    pv = typical_price * volume
+    cumulative_pv = pv.groupby(date_key).cumsum()
+    cumulative_volume = volume.groupby(date_key).cumsum()
+
+    vwap = cumulative_pv / cumulative_volume
+    return vwap.ffill()
 
 
-# ── Entry distance filter ─────────────────────────────────────────
+def _distance_pct(price: float, level: float) -> float:
+    if price <= 0 or level <= 0:
+        return 999.0
+    return abs(price - level) / price * 100.0
 
-def _passes_entry_distance_filter(
-    symbol: str,
+
+# ── Trend confirmation ────────────────────────────────────────────
+
+def _get_trend_direction(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
+    """
+    15m trend filter:
+        LONG  if close > EMA50
+        SHORT if close < EMA50
+    """
+    completed = trend_df.iloc[:-1].copy()
+
+    if len(completed) < TREND_EMA_PERIOD + 5:
+        return None, {}
+
+    close = completed["close"].astype(float)
+    ema_trend = _ema(close, TREND_EMA_PERIOD)
+
+    last_close = float(close.iloc[-1])
+    last_ema = float(ema_trend.iloc[-1])
+
+    if pd.isna(last_ema):
+        return None, {}
+
+    if last_close > last_ema:
+        direction = "LONG"
+    elif last_close < last_ema:
+        direction = "SHORT"
+    else:
+        direction = None
+
+    details = {
+        "trend_close": last_close,
+        "trend_ema": last_ema,
+    }
+
+    return direction, details
+
+
+# ── Entry analysis ────────────────────────────────────────────────
+
+def _analyze_entry(entry_df: pd.DataFrame, trend_direction: str) -> tuple[str | None, dict]:
+    """
+    5m EMA + VWAP pullback entry trigger.
+    """
+    completed = entry_df.iloc[:-1].copy()
+
+    min_bars = max(
+        EMA_SLOW_PERIOD,
+        VOLUME_SMA_PERIOD,
+        ATR_PERIOD,
+    ) + 10
+
+    if len(completed) < min_bars:
+        return None, {}
+
+    open_ = completed["open"].astype(float)
+    high = completed["high"].astype(float)
+    low = completed["low"].astype(float)
+    close = completed["close"].astype(float)
+    volume = completed["volume"].astype(float)
+
+    ema_fast = _ema(close, EMA_FAST_PERIOD)
+    ema_slow = _ema(close, EMA_SLOW_PERIOD)
+    vwap = _vwap(completed)
+    vol_sma = volume.rolling(VOLUME_SMA_PERIOD).mean()
+    atr = _atr(completed, ATR_PERIOD)
+
+    last_open = float(open_.iloc[-1])
+    last_high = float(high.iloc[-1])
+    last_low = float(low.iloc[-1])
+    last_close = float(close.iloc[-1])
+    last_volume = float(volume.iloc[-1])
+
+    last_ema_fast = float(ema_fast.iloc[-1])
+    last_ema_slow = float(ema_slow.iloc[-1])
+    last_vwap = float(vwap.iloc[-1])
+    last_vol_sma = float(vol_sma.iloc[-1])
+    last_atr = float(atr.iloc[-1])
+
+    if any(pd.isna(x) for x in [
+        last_ema_fast,
+        last_ema_slow,
+        last_vwap,
+        last_vol_sma,
+        last_atr,
+    ]):
+        return None, {}
+
+    if last_close <= 0:
+        return None, {}
+
+    candle_body_pct = abs(last_close - last_open) / last_close * 100.0
+    volume_ratio = last_volume / last_vol_sma if last_vol_sma > 0 else 0.0
+
+    distance_to_fast = _distance_pct(last_close, last_ema_fast)
+    distance_to_slow = _distance_pct(last_close, last_ema_slow)
+    min_ema_distance = min(distance_to_fast, distance_to_slow)
+
+    pulled_back_to_ema_long = (
+        last_low <= last_ema_fast
+        or last_low <= last_ema_slow
+        or min_ema_distance <= MAX_ENTRY_DISTANCE_FROM_EMA_PCT
+    )
+
+    pulled_back_to_ema_short = (
+        last_high >= last_ema_fast
+        or last_high >= last_ema_slow
+        or min_ema_distance <= MAX_ENTRY_DISTANCE_FROM_EMA_PCT
+    )
+
+    bullish_candle = last_close > last_open
+    bearish_candle = last_close < last_open
+
+    volume_ok = volume_ratio >= MIN_VOLUME_RATIO
+    body_ok = candle_body_pct <= MAX_SIGNAL_CANDLE_BODY_PCT
+    distance_ok = min_ema_distance <= MAX_ENTRY_DISTANCE_FROM_EMA_PCT
+
+    direction = None
+
+    if (
+        trend_direction == "LONG"
+        and last_close > last_vwap
+        and last_ema_fast > last_ema_slow
+        and pulled_back_to_ema_long
+        and bullish_candle
+        and volume_ok
+        and body_ok
+        and distance_ok
+    ):
+        direction = "LONG"
+
+    elif (
+        trend_direction == "SHORT"
+        and last_close < last_vwap
+        and last_ema_fast < last_ema_slow
+        and pulled_back_to_ema_short
+        and bearish_candle
+        and volume_ok
+        and body_ok
+        and distance_ok
+    ):
+        direction = "SHORT"
+
+    details = {
+        "entry": last_close,
+        "open": last_open,
+        "high": last_high,
+        "low": last_low,
+        "ema_fast": last_ema_fast,
+        "ema_slow": last_ema_slow,
+        "vwap": last_vwap,
+        "volume": last_volume,
+        "volume_sma": last_vol_sma,
+        "volume_ratio": volume_ratio,
+        "atr": last_atr,
+        "candle_body_pct": candle_body_pct,
+        "distance_to_fast_pct": distance_to_fast,
+        "distance_to_slow_pct": distance_to_slow,
+        "min_ema_distance_pct": min_ema_distance,
+        "volume_ok": volume_ok,
+        "body_ok": body_ok,
+        "distance_ok": distance_ok,
+        "bullish_candle": bullish_candle,
+        "bearish_candle": bearish_candle,
+    }
+
+    return direction, details
+
+
+# ── Scoring and risk ──────────────────────────────────────────────
+
+def _calculate_score(direction: str, trend_details: dict, entry_details: dict) -> float:
+    score = 0.0
+
+    # Trend alignment
+    score += 25.0
+
+    # VWAP confirmation
+    entry = entry_details["entry"]
+    vwap = entry_details["vwap"]
+
+    if direction == "LONG" and entry > vwap:
+        score += 15.0
+    elif direction == "SHORT" and entry < vwap:
+        score += 15.0
+
+    # EMA structure
+    ema_fast = entry_details["ema_fast"]
+    ema_slow = entry_details["ema_slow"]
+
+    ema_spread_pct = abs(ema_fast - ema_slow) / entry * 100.0
+
+    if ema_spread_pct >= 0.10:
+        score += 15.0
+    elif ema_spread_pct >= 0.05:
+        score += 10.0
+    else:
+        score += 5.0
+
+    # Entry distance quality
+    dist = entry_details["min_ema_distance_pct"]
+
+    if dist <= 0.08:
+        score += 20.0
+    elif dist <= 0.15:
+        score += 15.0
+    elif dist <= MAX_ENTRY_DISTANCE_FROM_EMA_PCT:
+        score += 10.0
+
+    # Volume strength
+    vol_ratio = entry_details["volume_ratio"]
+
+    if vol_ratio >= 1.50:
+        score += 15.0
+    elif vol_ratio >= 1.25:
+        score += 10.0
+    elif vol_ratio >= MIN_VOLUME_RATIO:
+        score += 5.0
+
+    # Candle body quality
+    body_pct = entry_details["candle_body_pct"]
+
+    if body_pct <= 0.20:
+        score += 10.0
+    elif body_pct <= MAX_SIGNAL_CANDLE_BODY_PCT:
+        score += 5.0
+
+    return round(min(score, 100.0), 1)
+
+
+def _select_rr(score: float) -> float:
+    if score >= SCORE_STRONG_MIN:
+        return RR_STRONG
+
+    if score >= SCORE_GOOD_MIN:
+        return RR_GOOD
+
+    return RR_WEAK
+
+
+def _calculate_dynamic_prices(
     direction: str,
     entry: float,
-    nwe_value: float,
-) -> tuple[bool, float]:
+    atr_value: float,
+    score: float,
+) -> tuple[float, float, float, float]:
     """
-    Prevent late entries when price has already moved too far from the NWE line.
-
-    LONG:
-        Skip if entry is too far ABOVE NWE.
-
-    SHORT:
-        Skip if entry is too far BELOW NWE.
-
-    Why:
-        With 20x leverage and 5% ROI SL, the real stop distance is only 0.25%.
-        If the entry is already stretched, a tiny retest/wick can hit SL.
+    Returns:
+        tp_price, sl_price, tp_roi_pct, sl_roi_pct
     """
-    if not ENTRY_DISTANCE_FILTER_ENABLED:
-        return True, 0.0
+    if entry <= 0:
+        return entry, entry, 0.0, 0.0
 
-    if entry <= 0 or nwe_value <= 0:
-        return True, 0.0
+    rr = _select_rr(score)
+
+    raw_risk_distance = atr_value * SL_ATR_MULTIPLIER
+
+    min_risk_distance = entry * MIN_SL_PCT / 100.0
+    max_risk_distance = entry * MAX_SL_PCT / 100.0
+
+    risk_distance = max(raw_risk_distance, min_risk_distance)
+    risk_distance = min(risk_distance, max_risk_distance)
+
+    reward_distance = risk_distance * rr
 
     if direction == "LONG":
-        distance_pct = max((entry - nwe_value) / entry * 100, 0.0)
+        sl_price = entry - risk_distance
+        tp_price = entry + reward_distance
+    else:
+        sl_price = entry + risk_distance
+        tp_price = entry - reward_distance
 
-        if distance_pct > MAX_ENTRY_DISTANCE_FROM_NWE_PCT:
-            logger.info(
-                f"[FILTER] {symbol} LONG skipped: "
-                f"entry too far above NWE "
-                f"distance={distance_pct:.3f}% > {MAX_ENTRY_DISTANCE_FROM_NWE_PCT}% "
-                f"entry={entry:.6g} nwe={nwe_value:.6g}"
-            )
-            return False, distance_pct
+    if direction == "LONG":
+        tp_price_move_pct = (tp_price - entry) / entry * 100.0
+        sl_price_move_pct = (entry - sl_price) / entry * 100.0
+    else:
+        tp_price_move_pct = (entry - tp_price) / entry * 100.0
+        sl_price_move_pct = (sl_price - entry) / entry * 100.0
 
-        return True, distance_pct
+    tp_roi_pct = tp_price_move_pct * LEVERAGE
+    sl_roi_pct = sl_price_move_pct * LEVERAGE
 
-    if direction == "SHORT":
-        distance_pct = max((nwe_value - entry) / entry * 100, 0.0)
-
-        if distance_pct > MAX_ENTRY_DISTANCE_FROM_NWE_PCT:
-            logger.info(
-                f"[FILTER] {symbol} SHORT skipped: "
-                f"entry too far below NWE "
-                f"distance={distance_pct:.3f}% > {MAX_ENTRY_DISTANCE_FROM_NWE_PCT}% "
-                f"entry={entry:.6g} nwe={nwe_value:.6g}"
-            )
-            return False, distance_pct
-
-        return True, distance_pct
-
-    return True, 0.0
+    return (
+        round(tp_price, 8),
+        round(sl_price, 8),
+        round(tp_roi_pct, 1),
+        round(sl_roi_pct, 1),
+    )
 
 
 # ── Main analysis ─────────────────────────────────────────────────
 
 def analyze_coin(symbol: str) -> "Signal | None":
     try:
-        df = get_klines(symbol, NWE_TF, count=NWE_KLINE_COUNT)
+        trend_df = get_klines(symbol, TREND_TF, count=TREND_KLINE_COUNT)
+        entry_df = get_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
 
-        if df is None or df.empty:
+        if trend_df is None or trend_df.empty:
             return None
 
-        if len(df) < NWE_SIZE + NWE_LAG + SUPERTREND_ATR_LENGTH + 10:
+        if entry_df is None or entry_df.empty:
             return None
 
-        # Latest candle is normally still forming.
-        # Use only completed candles to keep the strategy non-repainting.
-        closes = df["close"].values[:-1].astype(np.float64)
+        trend_direction, trend_details = _get_trend_direction(trend_df)
 
-        if len(closes) < NWE_SIZE + NWE_LAG + 5:
+        if trend_direction is None:
             return None
 
-        direction, details = _detect_signal_from_nwe(closes)
+        direction, entry_details = _analyze_entry(entry_df, trend_direction)
 
         if direction is None:
             return None
 
-        passed_filter, st_direction, st_value = _passes_supertrend_filter(
-            symbol,
-            direction,
-            df,
-        )
+        entry = float(entry_details["entry"])
+        atr_value = float(entry_details["atr"])
 
-        if not passed_filter:
-            return None
+        score = _calculate_score(direction, trend_details, entry_details)
 
-        entry = float(closes[-1])
-        nwe_value = float(details["yhat1_t0"])
-
-        passed_entry_filter, entry_distance_pct = _passes_entry_distance_filter(
-            symbol=symbol,
+        tp_price, sl_price, tp_roi_pct, sl_roi_pct = _calculate_dynamic_prices(
             direction=direction,
             entry=entry,
-            nwe_value=nwe_value,
+            atr_value=atr_value,
+            score=score,
         )
 
-        if not passed_entry_filter:
-            return None
-
-        # Fixed ROI targets.
-        # 20x leverage + 5% ROI = 0.25% price movement.
-        tp_offset = entry * TP_ROI_PCT / (LEVERAGE * 100)
-        sl_offset = entry * SL_ROI_PCT / (LEVERAGE * 100)
-
-        if direction == "LONG":
-            tp_price = round(entry + tp_offset, 8)
-            sl_price = round(entry - sl_offset, 8)
-        else:
-            tp_price = round(entry - tp_offset, 8)
-            sl_price = round(entry + sl_offset, 8)
-
-        yhat1_t0 = details["yhat1_t0"]
-        yhat1_t1 = details["yhat1_t1"]
-        yhat1_t2 = details["yhat1_t2"]
-
-        slope_now = abs(yhat1_t0 - yhat1_t1)
-        slope_prev = abs(yhat1_t1 - yhat1_t2)
-
-        accel = slope_now / (slope_prev + 1e-12)
-        score = round(min(accel * 50.0, 100.0), 1)
-
-        if details.get("mode") == "smooth-cross":
-            yhat2_t0 = details.get("yhat2_t0", 0.0)
-            cross_strength = abs(yhat2_t0 - yhat1_t0) / (entry + 1e-12) * 10000
-            score = round(min(score + cross_strength, 100.0), 1)
-
-        if SUPERTREND_ENABLED:
-            score = round(min(score + 10.0, 100.0), 1)
+        rr = _select_rr(score)
 
         logger.info(
             f"[SIGNAL] {direction} {symbol} @ {entry:.6g} | "
-            f"TP={tp_price:.6g} (+{TP_ROI_PCT}% ROI) "
-            f"SL={sl_price:.6g} (-{SL_ROI_PCT}% ROI) | "
-            f"mode={details.get('mode')} | "
-            f"NWE yhat1: {yhat1_t2:.6g} → {yhat1_t1:.6g} → {yhat1_t0:.6g} | "
-            f"Supertrend={st_direction} value={st_value if st_value is not None else 0:.6g} | "
-            f"entry_distance={entry_distance_pct:.3f}% | "
-            f"h={NWE_H} r={NWE_ALPHA} x0={NWE_SIZE} lag={NWE_LAG} "
-            f"smooth={NWE_SMOOTH} | score={score}"
+            f"TP={tp_price:.6g} (+{tp_roi_pct:.1f}% ROI) "
+            f"SL={sl_price:.6g} (-{sl_roi_pct:.1f}% ROI) | "
+            f"RR={rr:.2f} | "
+            f"trend={TREND_TF} close={trend_details.get('trend_close', 0):.6g} "
+            f"ema{TREND_EMA_PERIOD}={trend_details.get('trend_ema', 0):.6g} | "
+            f"entry={ENTRY_TF} ema{EMA_FAST_PERIOD}={entry_details['ema_fast']:.6g} "
+            f"ema{EMA_SLOW_PERIOD}={entry_details['ema_slow']:.6g} "
+            f"vwap={entry_details['vwap']:.6g} "
+            f"volRatio={entry_details['volume_ratio']:.2f} "
+            f"body={entry_details['candle_body_pct']:.3f}% "
+            f"dist={entry_details['min_ema_distance_pct']:.3f}% "
+            f"atr={atr_value:.6g} | score={score}"
         )
-
-        st_text = ""
-        if SUPERTREND_ENABLED and st_direction is not None and st_value is not None:
-            st_text = f" | ST={st_direction} {st_value:.6g}"
 
         return Signal(
             symbol=symbol,
@@ -491,14 +499,12 @@ def analyze_coin(symbol: str) -> "Signal | None":
             tp_price=tp_price,
             sl_price=sl_price,
             leverage=LEVERAGE,
-            tp_roi_pct=TP_ROI_PCT,
-            sl_roi_pct=SL_ROI_PCT,
+            tp_roi_pct=tp_roi_pct,
+            sl_roi_pct=sl_roi_pct,
             timeframe_summary=(
-                f"NWE-RQK {NWE_TF.upper()} + Supertrend | "
-                f"NWE h={NWE_H:g} r={NWE_ALPHA:g} x0={NWE_SIZE} lag={NWE_LAG} "
-                f"| ST {SUPERTREND_ATR_LENGTH}/{SUPERTREND_FACTOR:g}"
-                f" | MaxDist {MAX_ENTRY_DISTANCE_FROM_NWE_PCT:g}%"
-                f"{st_text}"
+                f"EMA/VWAP Pullback | Trend {TREND_TF} EMA{TREND_EMA_PERIOD} | "
+                f"Entry {ENTRY_TF} EMA{EMA_FAST_PERIOD}/{EMA_SLOW_PERIOD} + VWAP | "
+                f"ATR{ATR_PERIOD} SLx{SL_ATR_MULTIPLIER:g} RR {rr:g}"
             ),
             generated_at=datetime.now(timezone.utc),
             score=score,

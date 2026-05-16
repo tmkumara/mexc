@@ -1,5 +1,5 @@
 """
-Telegram bot: handles commands and broadcasts NWE-RQK + Supertrend signals to the channel.
+Telegram bot: handles commands and broadcasts EMA/VWAP Pullback signals to the channel.
 """
 
 import logging
@@ -32,7 +32,7 @@ async def _send(app: Application, text: str, chat_id: str = None):
 def format_signal(signal, signal_id: int) -> str:
     arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
     coin = signal.symbol.replace("_", "/")
-    stars = "⭐⭐⭐" if signal.score >= 80 else "⭐⭐" if signal.score >= 50 else "⭐"
+    stars = "⭐⭐⭐" if signal.score >= 80 else "⭐⭐" if signal.score >= 65 else "⭐"
 
     return "\n".join([
         f"{arrow} — *{coin}* Futures",
@@ -128,18 +128,23 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
 
     from config import (
-        NWE_H,
-        NWE_ALPHA,
-        NWE_SIZE,
-        NWE_LAG,
-        NWE_SMOOTH,
-        NWE_TF,
-        SUPERTREND_ENABLED,
-        SUPERTREND_ATR_LENGTH,
-        SUPERTREND_FACTOR,
+        TREND_TF,
+        ENTRY_TF,
+        TREND_EMA_PERIOD,
+        EMA_FAST_PERIOD,
+        EMA_SLOW_PERIOD,
+        VOLUME_SMA_PERIOD,
+        MIN_VOLUME_RATIO,
+        MAX_ENTRY_DISTANCE_FROM_EMA_PCT,
+        MAX_SIGNAL_CANDLE_BODY_PCT,
+        ATR_PERIOD,
+        SL_ATR_MULTIPLIER,
+        MIN_SL_PCT,
+        MAX_SL_PCT,
+        RR_WEAK,
+        RR_GOOD,
+        RR_STRONG,
         LEVERAGE,
-        TP_ROI_PCT,
-        SL_ROI_PCT,
         SIGNAL_COOLDOWN_MINUTES,
         SIGNALS_PER_SCAN,
         MAX_CONCURRENT_SIGNALS,
@@ -156,15 +161,15 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📡 *Scanner Status*\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"State:      `{state}`\n"
-        f"Strategy:   `NWE-RQK + Supertrend`\n"
-        f"Timeframe:  `{NWE_TF}`\n"
-        f"NWE:        `close h={NWE_H:g} r={NWE_ALPHA:g} x0={NWE_SIZE} lag={NWE_LAG} smooth={NWE_SMOOTH}`\n"
-        f"Supertrend: `enabled={SUPERTREND_ENABLED} ATR={SUPERTREND_ATR_LENGTH} factor={SUPERTREND_FACTOR:g}`\n"
-        f"LONG:       `NWE bullish cross + Supertrend bullish`\n"
-        f"SHORT:      `NWE bearish cross + Supertrend bearish`\n"
+        f"Strategy:   `EMA/VWAP Pullback Scalper`\n"
+        f"Trend TF:   `{TREND_TF}`  `EMA{TREND_EMA_PERIOD}`\n"
+        f"Entry TF:   `{ENTRY_TF}`  `EMA{EMA_FAST_PERIOD}/{EMA_SLOW_PERIOD} + VWAP`\n"
+        f"Volume:     `SMA{VOLUME_SMA_PERIOD} ratio ≥ {MIN_VOLUME_RATIO:g}`\n"
+        f"Entry filt: `EMA distance ≤ {MAX_ENTRY_DISTANCE_FROM_EMA_PCT:g}% | body ≤ {MAX_SIGNAL_CANDLE_BODY_PCT:g}%`\n"
+        f"Risk:       `ATR{ATR_PERIOD} × {SL_ATR_MULTIPLIER:g} | SL {MIN_SL_PCT:g}%–{MAX_SL_PCT:g}%`\n"
+        f"RR:         `weak {RR_WEAK:g} | good {RR_GOOD:g} | strong {RR_STRONG:g}`\n"
         f"Workers:    `{SCAN_WORKERS}`\n"
         f"Leverage:   `{LEVERAGE}x`\n"
-        f"TP / SL:    `+{TP_ROI_PCT:.0f}% ROI / -{SL_ROI_PCT:.0f}% ROI`\n"
         f"Per scan:   `top {SIGNALS_PER_SCAN} signals`\n"
         f"Cooldown:   `{SIGNAL_COOLDOWN_MINUTES} min per coin`\n"
         f"Active:     `{active}/{MAX_CONCURRENT_SIGNALS}`\n"
