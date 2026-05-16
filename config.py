@@ -16,7 +16,9 @@ COINGLASS_API_KEY: str = os.getenv("COINGLASS_API_KEY", "")
 
 # ── Coin pool ────────────────────────────────────────────────────
 EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
-TOP_N_COINS:              int   = 40
+
+# Increased from 40 to 80
+TOP_N_COINS:              int   = 80
 COIN_POOL_MIN_VOLUME_USD: float = 5_000_000
 COIN_REFRESH_HOURS:       int   = 6
 
@@ -46,6 +48,18 @@ SUPERTREND_ENABLED:    bool  = True
 SUPERTREND_ATR_LENGTH: int   = 10
 SUPERTREND_FACTOR:     float = 3.0
 
+# ── Entry quality filter ──────────────────────────────────────────
+# Prevent late entries after price already moved too far away from NWE.
+# Reason:
+#   20x leverage + 5% ROI SL = only 0.25% real price movement.
+#   If entry is already stretched, a small pullback/wick can hit SL.
+ENTRY_DISTANCE_FILTER_ENABLED: bool = True
+
+# Recommended starting value:
+#   0.15 = strict, fewer late entries
+#   0.20 = more signals, slightly more risk
+MAX_ENTRY_DISTANCE_FROM_NWE_PCT: float = 0.15
+
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE:     int   = 20
 TP_ROI_PCT:   float = 5.0
@@ -65,7 +79,9 @@ SCAN_CRON_MINUTES:     str = "*/5"
 SIGNALS_PER_SCAN:      int = 3
 OUTCOME_CHECK_MINUTES: int = 5
 CANDLE_MINUTES:        int = 15
-SCAN_WORKERS:          int = 8
+
+# Increased slightly because coin count is now 80
+SCAN_WORKERS:          int = 12
 
 # ── MEXC Futures REST API ─────────────────────────────────────────
 MEXC_BASE_URL = "https://contract.mexc.com/api/v1"

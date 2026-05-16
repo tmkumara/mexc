@@ -1,5 +1,6 @@
 """
-Nadaraya-Watson Rational Quadratic Kernel Strategy + Supertrend filter.
+Nadaraya-Watson Rational Quadratic Kernel Strategy + Supertrend filter
++ Entry Distance Filter.
 
 NWE TradingView settings:
     Source:                  Close
@@ -19,10 +20,12 @@ Signal logic:
     LONG:
         NWE yhat2 crosses above yhat1
         AND Supertrend is bullish
+        AND entry is not too far above NWE
 
     SHORT:
         NWE yhat2 crosses below yhat1
         AND Supertrend is bearish
+        AND entry is not too far below NWE
 
 Important:
     Uses completed candles only.
@@ -48,6 +51,8 @@ from config import (
     SUPERTREND_ENABLED,
     SUPERTREND_ATR_LENGTH,
     SUPERTREND_FACTOR,
+    ENTRY_DISTANCE_FILTER_ENABLED,
+    MAX_ENTRY_DISTANCE_FROM_NWE_PCT,
     LEVERAGE,
     TP_ROI_PCT,
     SL_ROI_PCT,
@@ -305,7 +310,11 @@ def _calculate_supertrend(df: pd.DataFrame) -> tuple[str | None, float | None]:
     return None, None
 
 
-def _passes_supertrend_filter(symbol: str, direction: str, df: pd.DataFrame) -> tuple[bool, str | None, float | None]:
+def _passes_supertrend_filter(
+    symbol: str,
+    direction: str,
+    df: pd.DataFrame,
+) -> tuple[bool, str | None, float | None]:
     if not SUPERTREND_ENABLED:
         return True, None, None
 
@@ -323,6 +332,64 @@ def _passes_supertrend_filter(symbol: str, direction: str, df: pd.DataFrame) -> 
         return False, st_direction, st_value
 
     return True, st_direction, st_value
+
+
+# ── Entry distance filter ─────────────────────────────────────────
+
+def _passes_entry_distance_filter(
+    symbol: str,
+    direction: str,
+    entry: float,
+    nwe_value: float,
+) -> tuple[bool, float]:
+    """
+    Prevent late entries when price has already moved too far from the NWE line.
+
+    LONG:
+        Skip if entry is too far ABOVE NWE.
+
+    SHORT:
+        Skip if entry is too far BELOW NWE.
+
+    Why:
+        With 20x leverage and 5% ROI SL, the real stop distance is only 0.25%.
+        If the entry is already stretched, a tiny retest/wick can hit SL.
+    """
+    if not ENTRY_DISTANCE_FILTER_ENABLED:
+        return True, 0.0
+
+    if entry <= 0 or nwe_value <= 0:
+        return True, 0.0
+
+    if direction == "LONG":
+        distance_pct = max((entry - nwe_value) / entry * 100, 0.0)
+
+        if distance_pct > MAX_ENTRY_DISTANCE_FROM_NWE_PCT:
+            logger.info(
+                f"[FILTER] {symbol} LONG skipped: "
+                f"entry too far above NWE "
+                f"distance={distance_pct:.3f}% > {MAX_ENTRY_DISTANCE_FROM_NWE_PCT}% "
+                f"entry={entry:.6g} nwe={nwe_value:.6g}"
+            )
+            return False, distance_pct
+
+        return True, distance_pct
+
+    if direction == "SHORT":
+        distance_pct = max((nwe_value - entry) / entry * 100, 0.0)
+
+        if distance_pct > MAX_ENTRY_DISTANCE_FROM_NWE_PCT:
+            logger.info(
+                f"[FILTER] {symbol} SHORT skipped: "
+                f"entry too far below NWE "
+                f"distance={distance_pct:.3f}% > {MAX_ENTRY_DISTANCE_FROM_NWE_PCT}% "
+                f"entry={entry:.6g} nwe={nwe_value:.6g}"
+            )
+            return False, distance_pct
+
+        return True, distance_pct
+
+    return True, 0.0
 
 
 # ── Main analysis ─────────────────────────────────────────────────
@@ -349,12 +416,27 @@ def analyze_coin(symbol: str) -> "Signal | None":
         if direction is None:
             return None
 
-        passed_filter, st_direction, st_value = _passes_supertrend_filter(symbol, direction, df)
+        passed_filter, st_direction, st_value = _passes_supertrend_filter(
+            symbol,
+            direction,
+            df,
+        )
 
         if not passed_filter:
             return None
 
         entry = float(closes[-1])
+        nwe_value = float(details["yhat1_t0"])
+
+        passed_entry_filter, entry_distance_pct = _passes_entry_distance_filter(
+            symbol=symbol,
+            direction=direction,
+            entry=entry,
+            nwe_value=nwe_value,
+        )
+
+        if not passed_entry_filter:
+            return None
 
         # Fixed ROI targets.
         # 20x leverage + 5% ROI = 0.25% price movement.
@@ -393,6 +475,7 @@ def analyze_coin(symbol: str) -> "Signal | None":
             f"mode={details.get('mode')} | "
             f"NWE yhat1: {yhat1_t2:.6g} → {yhat1_t1:.6g} → {yhat1_t0:.6g} | "
             f"Supertrend={st_direction} value={st_value if st_value is not None else 0:.6g} | "
+            f"entry_distance={entry_distance_pct:.3f}% | "
             f"h={NWE_H} r={NWE_ALPHA} x0={NWE_SIZE} lag={NWE_LAG} "
             f"smooth={NWE_SMOOTH} | score={score}"
         )
@@ -414,6 +497,7 @@ def analyze_coin(symbol: str) -> "Signal | None":
                 f"NWE-RQK {NWE_TF.upper()} + Supertrend | "
                 f"NWE h={NWE_H:g} r={NWE_ALPHA:g} x0={NWE_SIZE} lag={NWE_LAG} "
                 f"| ST {SUPERTREND_ATR_LENGTH}/{SUPERTREND_FACTOR:g}"
+                f" | MaxDist {MAX_ENTRY_DISTANCE_FROM_NWE_PCT:g}%"
                 f"{st_text}"
             ),
             generated_at=datetime.now(timezone.utc),
