@@ -3,10 +3,13 @@ Market data provider for the MEXC signal bot.
 
 Purpose:
     - Provide a single candle access layer for strategy/main.
-    - Prefer WebSocket CandleCache when available.
+    - Prefer WebSocket CandleCache when enough candles are available.
     - Fall back to REST when cache is not ready or missing.
 
-This lets us reduce REST API calls without rewriting strategy logic.
+Important:
+    The strategy usually requests 220 candles for trend and entry analysis.
+    If the cache contains only 60 candles, returning cache data would break
+    market-structure detection and produce 0 setups.
 
 Usage:
     from market_data import get_market_klines as get_klines
@@ -74,8 +77,13 @@ def get_market_klines(
     Return OHLCV candles.
 
     Priority:
-        1. CandleCache if registered and has enough candles.
+        1. CandleCache only if it has at least the requested candle count.
         2. REST fallback using mexc_client.get_klines().
+
+    Why strict count check matters:
+        strategy.py requests 220 candles for structure analysis.
+        Returning only 60 cached candles makes the structure look incomplete,
+        causing the strategy to return 0 setups.
 
     Args:
         symbol:
@@ -100,21 +108,23 @@ def get_market_klines(
             limit=count,
         )
 
-        if cached is not None and not cached.empty and len(cached) >= min(count, 5):
+        cached_count = 0 if cached is None else len(cached)
+
+        if cached is not None and not cached.empty and cached_count >= count:
             logger.debug(
                 "[MARKET-DATA] Cache hit %s %s candles=%s requested=%s",
                 symbol,
                 interval,
-                len(cached),
+                cached_count,
                 count,
             )
             return cached.tail(count).copy()
 
         logger.debug(
-            "[MARKET-DATA] Cache miss/not ready %s %s cached=%s requested=%s",
+            "[MARKET-DATA] Cache not ready %s %s cached=%s requested=%s",
             symbol,
             interval,
-            0 if cached is None else len(cached),
+            cached_count,
             count,
         )
 
