@@ -9,6 +9,12 @@ Scheduler jobs:
   23:55 daily     — daily report
   Mon 07:00       — weekly report
   1st 07:00       — monthly report
+
+WebSocket foundation:
+  - REST seeds CandleCache.
+  - MEXC WebSocket updates CandleCache.
+  - Candle close events are logged.
+  - Strategy still uses existing REST flow in this step.
 """
 
 import asyncio
@@ -27,7 +33,10 @@ import strategy
 import bot as tg
 import coin_scanner
 
+from candle_cache import CandleCache, CandleUpdateResult
 from mexc_client import get_klines
+from mexc_ws_client import MexcWebSocketClient
+
 from config import (
     LKT,
     SIGNAL_COOLDOWN_MINUTES,
@@ -35,6 +44,7 @@ from config import (
     COIN_REFRESH_HOURS,
     MAX_CONCURRENT_SIGNALS,
     LEVERAGE,
+    TREND_TF,
     ENTRY_TF,
     SETUP_SCAN_CRON_MINUTES,
     SETUP_MONITOR_MINUTES,
@@ -42,6 +52,10 @@ from config import (
     OUTCOME_CHECK_MINUTES,
     CANDLE_MINUTES,
     SCAN_WORKERS,
+    ENABLE_WEBSOCKET,
+    CANDLE_CACHE_LIMIT,
+    MEXC_INTERVAL_MAP,
+    WS_TEST_SYMBOLS,
 )
 
 logging.basicConfig(
@@ -59,8 +73,187 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
+logging.getLogger("websockets").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
+
+
+# ── WebSocket candle cache foundation ─────────────────────────────
+
+def _unique_intervals() -> list[str]:
+    """
+    Return unique app intervals used by the strategy.
+
+    Example:
+        ["5m", "30m"]
+    """
+    result: list[str] = []
+
+    for interval in [ENTRY_TF, TREND_TF]:
+        if interval not in result:
+            result.append(interval)
+
+    return result
+
+
+def _select_ws_symbols(coins: list[str]) -> list[str]:
+    """
+    Select symbols for WebSocket subscription.
+
+    Local safe default:
+        WS_TEST_SYMBOLS from config/env.
+
+    If WS_TEST_SYMBOLS is empty, use the full coin pool.
+    To use full coin pool:
+        set WS_TEST_SYMBOLS="" in .env or environment.
+    """
+    if WS_TEST_SYMBOLS:
+        selected = [symbol for symbol in WS_TEST_SYMBOLS if symbol]
+
+        logger.info(
+            "[WS] Using test symbols from config/env: %s",
+            ", ".join(selected),
+        )
+
+        return selected
+
+    logger.info("[WS] WS_TEST_SYMBOLS empty, using full coin pool: %s symbols", len(coins))
+    return coins
+
+
+def _seed_candle_cache_for_symbols(
+    candle_cache: CandleCache,
+    symbols: list[str],
+    app_intervals: list[str],
+) -> None:
+    """
+    Seed the in-memory candle cache using existing REST get_klines().
+
+    Strategy currently expects app intervals like:
+        5m, 15m, 30m, 1h
+
+    WebSocket cache stores MEXC intervals like:
+        Min5, Min15, Min30, Min60
+
+    Therefore:
+        REST fetch uses app interval.
+        Cache key uses MEXC interval.
+    """
+    if not symbols:
+        logger.warning("[CACHE] No symbols available for candle cache seeding")
+        return
+
+    if not app_intervals:
+        logger.warning("[CACHE] No intervals available for candle cache seeding")
+        return
+
+    logger.info(
+        "[CACHE] Seeding candle cache: symbols=%s intervals=%s limit=%s",
+        len(symbols),
+        ",".join(app_intervals),
+        CANDLE_CACHE_LIMIT,
+    )
+
+    for symbol in symbols:
+        for app_interval in app_intervals:
+            mexc_interval = MEXC_INTERVAL_MAP.get(app_interval)
+
+            if not mexc_interval:
+                logger.warning(
+                    "[CACHE] Unsupported interval for cache seed: %s",
+                    app_interval,
+                )
+                continue
+
+            try:
+                fetch_count = max(CANDLE_CACHE_LIMIT, 60)
+                df = get_klines(symbol, app_interval, count=fetch_count)
+
+                if df is None or df.empty:
+                    logger.warning(
+                        "[CACHE] Empty REST seed candles for %s %s",
+                        symbol,
+                        app_interval,
+                    )
+                    continue
+
+                candle_cache.seed(symbol, mexc_interval, df)
+
+            except Exception as e:
+                logger.warning(
+                    "[CACHE] Failed to seed %s %s: %s",
+                    symbol,
+                    app_interval,
+                    e,
+                    exc_info=True,
+                )
+
+    logger.info("[CACHE] Seed complete: %s", candle_cache.summary())
+
+
+async def _on_ws_candle_update(result: CandleUpdateResult) -> None:
+    """
+    Passive candle-close hook.
+
+    In this step we only log closed candles.
+    Next step can trigger strategy logic from this hook.
+    """
+    if not result.closed_event:
+        return
+
+    logger.info(
+        "[WS-CLOSE] %s %s closed at %s | close=%s",
+        result.closed_event.symbol,
+        result.closed_event.interval,
+        result.closed_event.closed_timestamp,
+        result.closed_event.closed_candle["close"],
+    )
+
+
+async def _start_websocket_background(
+    candle_cache: CandleCache,
+    coins: list[str],
+) -> asyncio.Task | None:
+    """
+    Start MEXC WebSocket as a background task.
+
+    Returns:
+        asyncio.Task if started, otherwise None.
+    """
+    if not ENABLE_WEBSOCKET:
+        logger.info("[WS] ENABLE_WEBSOCKET=false, skipping WebSocket startup")
+        return None
+
+    ws_symbols = _select_ws_symbols(coins)
+    app_intervals = _unique_intervals()
+
+    if not ws_symbols:
+        logger.warning("[WS] No symbols selected, skipping WebSocket startup")
+        return None
+
+    # Seed cache before WebSocket starts so candle close detection works properly.
+    _seed_candle_cache_for_symbols(
+        candle_cache=candle_cache,
+        symbols=ws_symbols,
+        app_intervals=app_intervals,
+    )
+
+    client = MexcWebSocketClient(
+        candle_cache=candle_cache,
+        symbols=ws_symbols,
+        app_intervals=app_intervals,
+        on_candle_update=_on_ws_candle_update,
+    )
+
+    task = asyncio.create_task(client.start(), name="mexc_ws_client")
+
+    logger.info(
+        "[WS] Background WebSocket task started: symbols=%s intervals=%s",
+        len(ws_symbols),
+        ",".join(app_intervals),
+    )
+
+    return task
 
 
 # ── setup detection scan ──────────────────────────────────────────
@@ -347,11 +540,23 @@ async def main():
         f"Stateful SMC Sweep + OB Retest ({ENTRY_TF})"
     )
 
+    logger.info(
+        f"Quality config — trend_tf={TREND_TF}, entry_tf={ENTRY_TF}, "
+        f"max_concurrent={MAX_CONCURRENT_SIGNALS}, cooldown={SIGNAL_COOLDOWN_MINUTES}m, "
+        f"signals_per_scan={SIGNALS_PER_SCAN}"
+    )
+
     db.init_db()
 
     logger.info("Loading coin pool...")
     coins = coin_scanner.refresh_coin_list()
     logger.info(f"Signal pool: {len(coins)} coins")
+
+    candle_cache = CandleCache(limit=CANDLE_CACHE_LIMIT)
+    ws_task: asyncio.Task | None = await _start_websocket_background(
+        candle_cache=candle_cache,
+        coins=coins,
+    )
 
     app = tg.build_app()
 
@@ -401,7 +606,7 @@ async def main():
 
     logger.info(
         f"Scheduler started — setup scan='{SETUP_SCAN_CRON_MINUTES}', "
-        f"monitor={SETUP_MONITOR_MINUTES}m, entry_tf={ENTRY_TF}"
+        f"monitor={SETUP_MONITOR_MINUTES}m, entry_tf={ENTRY_TF}, trend_tf={TREND_TF}"
     )
 
     async with app:
@@ -417,6 +622,15 @@ async def main():
             pass
         finally:
             scheduler.shutdown(wait=False)
+
+            if ws_task is not None:
+                ws_task.cancel()
+
+                try:
+                    await ws_task
+                except asyncio.CancelledError:
+                    logger.info("[WS] Background WebSocket task cancelled")
+
             await app.updater.stop()
             await app.stop()
             await app.shutdown()
