@@ -10,11 +10,12 @@ Scheduler jobs:
   Mon 07:00       — weekly report
   1st 07:00       — monthly report
 
-WebSocket foundation:
+WebSocket + CandleCache:
   - REST seeds CandleCache.
   - MEXC WebSocket updates CandleCache.
   - Candle close events are logged.
-  - Strategy still uses existing REST flow in this step.
+  - strategy.py and outcome checker read via market_data.py:
+        CandleCache first, REST fallback second.
 """
 
 import asyncio
@@ -34,7 +35,11 @@ import bot as tg
 import coin_scanner
 
 from candle_cache import CandleCache, CandleUpdateResult
-from mexc_client import get_klines
+from market_data import (
+    set_candle_cache,
+    get_market_klines as get_klines,
+)
+from mexc_client import get_klines as get_rest_klines
 from mexc_ws_client import MexcWebSocketClient
 
 from config import (
@@ -129,12 +134,12 @@ def _seed_candle_cache_for_symbols(
     app_intervals: list[str],
 ) -> None:
     """
-    Seed the in-memory candle cache using existing REST get_klines().
+    Seed the in-memory candle cache using REST get_klines().
 
-    Strategy currently expects app intervals like:
+    Strategy expects app intervals:
         5m, 15m, 30m, 1h
 
-    WebSocket cache stores MEXC intervals like:
+    WebSocket cache stores MEXC intervals:
         Min5, Min15, Min30, Min60
 
     Therefore:
@@ -169,7 +174,7 @@ def _seed_candle_cache_for_symbols(
 
             try:
                 fetch_count = max(CANDLE_CACHE_LIMIT, 60)
-                df = get_klines(symbol, app_interval, count=fetch_count)
+                df = get_rest_klines(symbol, app_interval, count=fetch_count)
 
                 if df is None or df.empty:
                     logger.warning(
@@ -195,10 +200,13 @@ def _seed_candle_cache_for_symbols(
 
 async def _on_ws_candle_update(result: CandleUpdateResult) -> None:
     """
-    Passive candle-close hook.
+    Candle-close hook.
 
-    In this step we only log closed candles.
-    Next step can trigger strategy logic from this hook.
+    Current behavior:
+        - Log candle-close events.
+
+    Future behavior:
+        - Trigger strategy only on closed candles.
     """
     if not result.closed_event:
         return
@@ -586,6 +594,8 @@ async def main():
     logger.info(f"Signal pool: {len(coins)} coins")
 
     candle_cache = CandleCache(limit=CANDLE_CACHE_LIMIT)
+    set_candle_cache(candle_cache)
+
     ws_task: asyncio.Task | None = await _start_websocket_background(
         candle_cache=candle_cache,
         coins=coins,
@@ -663,6 +673,8 @@ async def main():
                     await ws_task
                 except asyncio.CancelledError:
                     logger.info("[WS] Background WebSocket task cancelled")
+
+            set_candle_cache(None)
 
             await app.updater.stop()
             await app.stop()

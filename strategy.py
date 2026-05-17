@@ -5,7 +5,7 @@ No classic indicators are used.
 
 Flow:
     1. detect_setup(symbol)
-       - 15m market structure bias
+       - 30m market structure bias
        - 5m liquidity sweep
        - 5m displacement candle
        - 5m order block
@@ -24,7 +24,7 @@ from datetime import datetime, timezone, timedelta
 
 import pandas as pd
 
-from mexc_client import get_klines
+from market_data import get_market_klines as get_klines
 from config import (
     TREND_TF,
     ENTRY_TF,
@@ -202,7 +202,7 @@ def _find_target_swing(swings: list[dict], direction: str, pos: int, reference_p
     return candidates[-1] if candidates else None
 
 
-# ── 15m bias ──────────────────────────────────────────────────────
+# ── market structure bias ─────────────────────────────────────────
 
 def _get_market_structure_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
     completed = trend_df.iloc[:-1].copy()
