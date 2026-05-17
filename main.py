@@ -56,6 +56,8 @@ from config import (
     CANDLE_CACHE_LIMIT,
     MEXC_INTERVAL_MAP,
     WS_TEST_SYMBOLS,
+    MIN_SIGNAL_SCORE,
+    SETUPS_PER_SCAN,
 )
 
 logging.basicConfig(
@@ -302,9 +304,38 @@ async def scan_for_setups(app: Application) -> None:
         logger.info("[SETUP-SCAN] Done — 0 new setups found")
         return
 
+    qualified_setups = [
+        setup
+        for setup in setups
+        if float(setup.get("score", 0.0)) >= MIN_SIGNAL_SCORE
+    ]
+
+    if not qualified_setups:
+        logger.info(
+            "[SETUP-SCAN] Done — %s setup(s) found, 0 qualified above score %.1f",
+            len(setups),
+            MIN_SIGNAL_SCORE,
+        )
+        return
+
+    qualified_setups.sort(
+        key=lambda item: float(item.get("score", 0.0)),
+        reverse=True,
+    )
+
+    to_save = qualified_setups[:SETUPS_PER_SCAN]
+
+    logger.info(
+        "[SETUP-SCAN] %s setup(s) found, %s qualified score>=%.1f, saving top %s",
+        len(setups),
+        len(qualified_setups),
+        MIN_SIGNAL_SCORE,
+        len(to_save),
+    )
+
     saved = 0
 
-    for setup in setups:
+    for setup in to_save:
         setup_id = db.save_pending_setup(setup)
 
         if setup_id:
@@ -312,10 +343,11 @@ async def scan_for_setups(app: Application) -> None:
             logger.info(
                 f"[SETUP-SCAN] Saved setup #{setup_id} "
                 f"{setup['symbol']} {setup['direction']} "
+                f"score={setup['score']} "
                 f"OB={setup['ob_low']:.6g}-{setup['ob_high']:.6g}"
             )
 
-    logger.info(f"[SETUP-SCAN] Done — {saved}/{len(setups)} setups saved")
+    logger.info(f"[SETUP-SCAN] Done — {saved}/{len(to_save)} qualified setups saved")
 
 
 # ── pending setup monitor ─────────────────────────────────────────
@@ -543,7 +575,8 @@ async def main():
     logger.info(
         f"Quality config — trend_tf={TREND_TF}, entry_tf={ENTRY_TF}, "
         f"max_concurrent={MAX_CONCURRENT_SIGNALS}, cooldown={SIGNAL_COOLDOWN_MINUTES}m, "
-        f"signals_per_scan={SIGNALS_PER_SCAN}"
+        f"signals_per_scan={SIGNALS_PER_SCAN}, "
+        f"min_score={MIN_SIGNAL_SCORE}, setups_per_scan={SETUPS_PER_SCAN}"
     )
 
     db.init_db()

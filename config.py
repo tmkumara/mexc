@@ -73,6 +73,15 @@ TP_BUFFER_PCT: float = 0.02
 MIN_SL_PCT: float = 0.20
 MAX_SL_PCT: float = 2.00
 
+# ── Quality filters ───────────────────────────────────────────────
+# Only strong setups should be saved into pending_setups.
+# Lower values create many waiting setups and more noise.
+MIN_SIGNAL_SCORE: float = 90.0
+
+# Maximum number of pending setups to save from each full setup scan.
+# This is different from SIGNALS_PER_SCAN, which limits actual Telegram entries.
+SETUPS_PER_SCAN: int = 3
+
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE: int = 20
 
@@ -117,7 +126,7 @@ MEXC_WS_URL: str = os.getenv("MEXC_WS_URL", "wss://contract.mexc.com/edge")
 # Number of candles to keep in memory per symbol + interval.
 CANDLE_CACHE_LIMIT: int = int(os.getenv("CANDLE_CACHE_LIMIT", "60"))
 
-# First local WebSocket test should use only one symbol.
+# First local/WebSocket test should use only one symbol.
 # Later, main.py can use the real coin pool.
 WS_TEST_SYMBOLS: list[str] = [
     symbol.strip()
