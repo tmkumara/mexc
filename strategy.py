@@ -17,6 +17,16 @@ Flow:
        - validates confirmation candle
        - recalculates RR from actual retest entry
        - returns Signal only when entry confirms
+
+Clear monitor logs:
+    WAIT_DATA_NOT_READY
+    WAIT_NO_OB_TOUCH
+    WAIT_OB_BODY_TOO_LARGE
+    WAIT_OB_NO_REJECTION
+    WAIT_RR_FAILED
+    INVALIDATED_SL_TOUCHED
+    EXPIRED_TIMEOUT
+    FIRE_ENTRY_CONFIRMED
 """
 
 import logging
@@ -57,6 +67,11 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
+# Avoid repeating the exact same WAIT reason every monitor cycle.
+# This is intentionally local to strategy.py, not a config change.
+MONITOR_LOG_REPEAT_SECONDS = 300
+_LAST_MONITOR_LOG: dict[str, tuple[str, datetime]] = {}
+
 
 @dataclass
 class Signal:
@@ -71,6 +86,61 @@ class Signal:
     timeframe_summary: str
     generated_at:      datetime
     score:             float = 0.0
+
+
+# ── log helpers ───────────────────────────────────────────────────
+
+def _setup_id(setup: dict) -> str:
+    return str(setup.get("id", "?"))
+
+
+def _setup_label(setup: dict) -> str:
+    return (
+        f"#{_setup_id(setup)} "
+        f"{setup.get('symbol', '?')} "
+        f"{setup.get('direction', '?')}"
+    )
+
+
+def _fmt(value, digits: int = 8) -> str:
+    try:
+        return f"{float(value):.{digits}g}"
+    except Exception:
+        return str(value)
+
+
+def _log_monitor_reason(
+    setup: dict,
+    reason: str,
+    details: str = "",
+    *,
+    force: bool = False,
+) -> None:
+    """
+    Log monitor reason clearly without spamming identical WAIT messages.
+
+    force=True is used for terminal states:
+        EXPIRED, INVALIDATED, FIRE.
+    """
+    now = datetime.now(timezone.utc)
+    setup_key = _setup_id(setup)
+    last = _LAST_MONITOR_LOG.get(setup_key)
+
+    if not force and last is not None:
+        last_reason, last_time = last
+        seconds_since_last = (now - last_time).total_seconds()
+
+        if last_reason == reason and seconds_since_last < MONITOR_LOG_REPEAT_SECONDS:
+            return
+
+    _LAST_MONITOR_LOG[setup_key] = (reason, now)
+
+    msg = f"[SETUP-REASON] {_setup_label(setup)} | {reason}"
+
+    if details:
+        msg += f" | {details}"
+
+    logger.info(msg)
 
 
 # ── candle helpers ────────────────────────────────────────────────
@@ -185,7 +255,12 @@ def _last_swing_before(swings: list[dict], swing_type: str, pos: int) -> dict | 
     return candidates[-1] if candidates else None
 
 
-def _find_target_swing(swings: list[dict], direction: str, pos: int, reference_price: float) -> dict | None:
+def _find_target_swing(
+    swings: list[dict],
+    direction: str,
+    pos: int,
+    reference_price: float,
+) -> dict | None:
     if direction == "LONG":
         candidates = [
             s for s in swings
@@ -429,7 +504,7 @@ def _calculate_setup_prices(
 ) -> tuple[float, float, float] | None:
     """
     Returns:
-        sl_price, target_price, rr_estimate
+        sl_price, target_price, rr_estimate.
 
     RR estimate uses OB midpoint as assumed entry.
     Actual RR is recalculated on retest entry.
@@ -709,6 +784,12 @@ def detect_setup(symbol: str) -> dict | None:
             }
 
         if best_setup:
+            micro_bos_text = (
+                _fmt(best_setup.get("micro_bos_level"))
+                if best_setup.get("micro_bos_level") is not None
+                else "—"
+            )
+
             logger.info(
                 f"[SETUP] {best_setup['direction']} {symbol} | "
                 f"OB={best_setup['ob_low']:.6g}-{best_setup['ob_high']:.6g} "
@@ -716,7 +797,7 @@ def detect_setup(symbol: str) -> dict | None:
                 f"TP={best_setup['target_price']:.6g} "
                 f"RR~{best_setup['rr_estimate']:.2f} "
                 f"score={best_setup['score']} "
-                f"microBOS={best_setup.get('micro_bos_level'):.6g}"
+                f"microBOS={micro_bos_text}"
             )
 
         return best_setup
@@ -740,51 +821,132 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         now = datetime.now(timezone.utc)
         expires_at = _parse_utc(setup["expires_at"])
 
-        if now >= expires_at:
-            return "EXPIRED", None
-
         symbol = setup["symbol"]
         direction = setup["direction"]
         zone_low = float(setup["ob_low"])
         zone_high = float(setup["ob_high"])
         sl_price = float(setup["sl_price"])
 
+        if now >= expires_at:
+            _log_monitor_reason(
+                setup,
+                "EXPIRED_TIMEOUT",
+                (
+                    f"now={now.isoformat()} "
+                    f"expires_at={expires_at.isoformat()} "
+                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+                ),
+                force=True,
+            )
+            return "EXPIRED", None
+
         df = get_klines(symbol, ENTRY_TF, count=MONITOR_KLINE_COUNT)
 
         if df is None or df.empty or len(df) < 3:
+            _log_monitor_reason(
+                setup,
+                "WAIT_DATA_NOT_READY",
+                f"candles={0 if df is None else len(df)} required>=3",
+            )
             return "WAIT", None
 
         completed = df.iloc[:-1].copy()
 
+        if completed.empty or len(completed) < 3:
+            _log_monitor_reason(
+                setup,
+                "WAIT_DATA_NOT_READY",
+                f"completed_candles={len(completed)} required>=3",
+            )
+            return "WAIT", None
+
         # Check last few completed candles only.
         recent = completed.tail(4)
 
+        recent_high = float(recent["high"].astype(float).max())
+        recent_low = float(recent["low"].astype(float).min())
+
         # Invalidation before entry.
-        for _, row in recent.iterrows():
-            if direction == "LONG" and float(row["low"]) <= sl_price:
+        for candle_time, row in recent.iterrows():
+            candle_high = float(row["high"])
+            candle_low = float(row["low"])
+
+            if direction == "LONG" and candle_low <= sl_price:
+                _log_monitor_reason(
+                    setup,
+                    "INVALIDATED_SL_TOUCHED",
+                    (
+                        f"candle={candle_time} "
+                        f"low={_fmt(candle_low)} sl={_fmt(sl_price)} "
+                        f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+                    ),
+                    force=True,
+                )
                 return "INVALIDATED", None
 
-            if direction == "SHORT" and float(row["high"]) >= sl_price:
+            if direction == "SHORT" and candle_high >= sl_price:
+                _log_monitor_reason(
+                    setup,
+                    "INVALIDATED_SL_TOUCHED",
+                    (
+                        f"candle={candle_time} "
+                        f"high={_fmt(candle_high)} sl={_fmt(sl_price)} "
+                        f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+                    ),
+                    force=True,
+                )
                 return "INVALIDATED", None
 
-        for _, row in recent.iterrows():
+        touched_any = False
+        body_too_large_details = None
+        no_rejection_details = None
+        rr_failed_details = None
+
+        for candle_time, row in recent.iterrows():
+            candle_high = float(row["high"])
+            candle_low = float(row["low"])
+            candle_close = float(row["close"])
+            candle_open = float(row["open"])
+
             if not _touches_zone(row, zone_low, zone_high):
                 continue
 
-            if _body_pct(row) > MAX_SIGNAL_CANDLE_BODY_PCT:
+            touched_any = True
+
+            body_pct = _body_pct(row)
+
+            if body_pct > MAX_SIGNAL_CANDLE_BODY_PCT:
+                body_too_large_details = (
+                    f"candle={candle_time} "
+                    f"body_pct={body_pct:.3f}% max={MAX_SIGNAL_CANDLE_BODY_PCT:.3f}% "
+                    f"open={_fmt(candle_open)} close={_fmt(candle_close)} "
+                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+                )
                 continue
 
             midpoint = (zone_low + zone_high) / 2.0
 
             if direction == "LONG":
-                valid_retest = _is_bullish(row) and float(row["close"]) > midpoint
+                valid_retest = _is_bullish(row) and candle_close > midpoint
+                rejection_rule = (
+                    f"need bullish close above midpoint={_fmt(midpoint)}"
+                )
             else:
-                valid_retest = _is_bearish(row) and float(row["close"]) < midpoint
+                valid_retest = _is_bearish(row) and candle_close < midpoint
+                rejection_rule = (
+                    f"need bearish close below midpoint={_fmt(midpoint)}"
+                )
 
             if not valid_retest:
+                no_rejection_details = (
+                    f"candle={candle_time} "
+                    f"open={_fmt(candle_open)} close={_fmt(candle_close)} "
+                    f"midpoint={_fmt(midpoint)} rule='{rejection_rule}' "
+                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+                )
                 continue
 
-            entry = float(row["close"])
+            entry = candle_close
 
             prices = _calculate_final_prices(
                 direction=direction,
@@ -793,12 +955,28 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             )
 
             if not prices:
-                return "WAIT", None
+                rr_failed_details = (
+                    f"candle={candle_time} "
+                    f"entry={_fmt(entry)} sl={_fmt(sl_price)} "
+                    f"target={_fmt(setup['target_price'])} "
+                    f"min_rr={MIN_STRUCTURE_RR:g} max_rr={MAX_STRUCTURE_RR:g}"
+                )
+                continue
 
             tp_price, final_sl_price, tp_roi_pct, sl_roi_pct, rr = prices
 
             base_score = float(setup["score"])
             score = min(base_score + 5.0, 100.0)
+
+            _log_monitor_reason(
+                setup,
+                "FIRE_ENTRY_CONFIRMED",
+                (
+                    f"entry={_fmt(entry)} tp={_fmt(tp_price)} sl={_fmt(final_sl_price)} "
+                    f"rr={rr:.2f} score={score}"
+                ),
+                force=True,
+            )
 
             logger.info(
                 f"[ENTRY] {direction} {symbol} @ {entry:.6g} | "
@@ -824,6 +1002,50 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 score=score,
             )
 
+        if not touched_any:
+            _log_monitor_reason(
+                setup,
+                "WAIT_NO_OB_TOUCH",
+                (
+                    f"recent_low={_fmt(recent_low)} recent_high={_fmt(recent_high)} "
+                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
+                    f"sl={_fmt(sl_price)}"
+                ),
+            )
+            return "WAIT", None
+
+        if body_too_large_details:
+            _log_monitor_reason(
+                setup,
+                "WAIT_OB_BODY_TOO_LARGE",
+                body_too_large_details,
+            )
+            return "WAIT", None
+
+        if no_rejection_details:
+            _log_monitor_reason(
+                setup,
+                "WAIT_OB_NO_REJECTION",
+                no_rejection_details,
+            )
+            return "WAIT", None
+
+        if rr_failed_details:
+            _log_monitor_reason(
+                setup,
+                "WAIT_RR_FAILED",
+                rr_failed_details,
+            )
+            return "WAIT", None
+
+        _log_monitor_reason(
+            setup,
+            "WAIT_UNKNOWN_RETEST_CONDITION",
+            (
+                f"recent_low={_fmt(recent_low)} recent_high={_fmt(recent_high)} "
+                f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+            ),
+        )
         return "WAIT", None
 
     except Exception as e:
