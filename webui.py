@@ -17,8 +17,13 @@ This dashboard reads from SQLite directly and shows:
     - Pending SMC setups
     - Current strategy configuration
     - WebSocket/cache configuration
+
+Frontend communication:
+    - Primary: WebSocket /ws?token=<WEBUI_TOKEN>
+    - Fallback: REST /api/data?token=<WEBUI_TOKEN>
 """
 
+import asyncio
 import os
 import sqlite3
 from datetime import datetime, timezone, timedelta
@@ -27,7 +32,7 @@ from typing import Any
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 
 load_dotenv()
@@ -35,6 +40,8 @@ load_dotenv()
 WEBUI_TOKEN = os.getenv("WEBUI_TOKEN", "mexc123")
 PORT        = int(os.getenv("WEBUI_PORT", 6060))
 DB_PATH     = os.getenv("DB_PATH", "signals.db")
+
+WS_PUSH_SECONDS = int(os.getenv("WEBUI_WS_PUSH_SECONDS", "5"))
 
 app = FastAPI(docs_url=None, redoc_url=None)
 
@@ -279,6 +286,7 @@ def get_runtime_status() -> dict:
 
 def get_strategy_config() -> dict:
     ws_test_symbols = _safe_config_value("WS_TEST_SYMBOLS", [])
+
     if isinstance(ws_test_symbols, list):
         ws_mode = "Full coin pool" if len(ws_test_symbols) == 0 else ", ".join(ws_test_symbols)
     else:
@@ -317,6 +325,24 @@ def get_strategy_config() -> dict:
     }
 
 
+def build_payload() -> dict:
+    now   = datetime.now(timezone.utc)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week  = now - timedelta(days=7)
+
+    return {
+        "today": get_stats(today),
+        "week": get_stats(week),
+        "alltime": get_stats(),
+        "recent": get_recent_signals(30),
+        "setups": get_pending_setups(30),
+        "runtime": get_runtime_status(),
+        "config": get_strategy_config(),
+        "server_time": now.strftime("%Y-%m-%d %H:%M UTC"),
+        "push_interval_seconds": WS_PUSH_SECONDS,
+    }
+
+
 # ── API endpoints ─────────────────────────────────────────────────
 
 def _auth(token: str):
@@ -327,21 +353,7 @@ def _auth(token: str):
 @app.get("/api/data")
 async def api_data(token: str = Query("")):
     _auth(token)
-
-    now   = datetime.now(timezone.utc)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    week  = now - timedelta(days=7)
-
-    return JSONResponse({
-        "today": get_stats(today),
-        "week": get_stats(week),
-        "alltime": get_stats(),
-        "recent": get_recent_signals(30),
-        "setups": get_pending_setups(30),
-        "runtime": get_runtime_status(),
-        "config": get_strategy_config(),
-        "server_time": now.strftime("%Y-%m-%d %H:%M UTC"),
-    })
+    return JSONResponse(build_payload())
 
 
 @app.get("/api/health")
@@ -356,6 +368,31 @@ async def api_health(token: str = Query("")):
         "runtime": get_runtime_status(),
         "config": get_strategy_config(),
     })
+
+
+@app.websocket("/ws")
+async def ws_dashboard(websocket: WebSocket):
+    token = websocket.query_params.get("token", "")
+
+    if token != WEBUI_TOKEN:
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
+
+    try:
+        while True:
+            await websocket.send_json(build_payload())
+            await asyncio.sleep(WS_PUSH_SECONDS)
+
+    except WebSocketDisconnect:
+        return
+
+    except Exception:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 # ── dashboard HTML ────────────────────────────────────────────────
@@ -451,12 +488,24 @@ body {
   font-weight: 700;
 }
 
+.status-pill.disconnected {
+  border-color: rgba(255, 92, 108, .35);
+  background: rgba(255, 92, 108, .09);
+  color: var(--red);
+}
+
+.status-pill.connecting {
+  border-color: rgba(245, 200, 75, .35);
+  background: rgba(245, 200, 75, .09);
+  color: var(--yellow);
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 10px var(--green);
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
   display: inline-block;
   margin-right: 6px;
 }
@@ -588,10 +637,6 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.section-title span {
-  color: var(--text);
 }
 
 .green  { color: var(--green); }
@@ -754,9 +799,9 @@ tr:hover td {
       <div class="logo-sub">SMC Sweep + Micro BOS + Order Block Retest</div>
     </div>
     <div class="meta">
-      <span class="status-pill"><span class="status-dot"></span>Live</span>
+      <span class="status-pill connecting" id="wsStatus"><span class="status-dot"></span>Connecting</span>
       <span id="serverTime">—</span>
-      <span id="nextRefresh"></span>
+      <span id="lastUpdate">—</span>
     </div>
   </div>
 </header>
@@ -769,7 +814,7 @@ tr:hover td {
       <button class="tab" data-period="week" onclick="setPeriod('week')">7 Days</button>
       <button class="tab" data-period="alltime" onclick="setPeriod('alltime')">All Time</button>
     </div>
-    <button class="refresh-btn" onclick="load()">↻ Refresh</button>
+    <button class="refresh-btn" onclick="manualRefresh()">↻ Refresh</button>
   </div>
 
   <div class="section-title">Performance</div>
@@ -800,7 +845,7 @@ tr:hover td {
   <div class="grid config-grid">
     <div class="card"><div class="card-label">Timeframes</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">Trend / Entry</div></div>
     <div class="card"><div class="card-label">Quality Filter</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">Min score / setups per scan</div></div>
-    <div class="card"><div class="card-label">WebSocket</div><div class="card-value green" id="cfg-ws">—</div><div class="card-small" id="cfg-ws-sub">—</div></div>
+    <div class="card"><div class="card-label">Market WebSocket</div><div class="card-value green" id="cfg-ws">—</div><div class="card-small" id="cfg-ws-sub">—</div></div>
     <div class="card"><div class="card-label">Cache</div><div class="card-value orange" id="cfg-cache">—</div><div class="card-small">Candles per symbol + TF</div></div>
   </div>
 
@@ -865,8 +910,10 @@ tr:hover td {
 const TOKEN = new URLSearchParams(location.search).get("token") || "";
 let period = "today";
 let data = null;
-let countdown = 30;
-let timer;
+let socket = null;
+let reconnectTimer = null;
+let reconnectDelayMs = 2000;
+let lastMessageAt = null;
 
 function setPeriod(p) {
   period = p;
@@ -876,10 +923,80 @@ function setPeriod(p) {
   if (data) render();
 }
 
-async function load() {
+function wsUrl() {
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const base = location.pathname.replace(/\/+$/, "");
+  return `${protocol}//${location.host}${base}/ws?token=${encodeURIComponent(TOKEN)}`;
+}
+
+function setWsStatus(state) {
+  const el = document.getElementById("wsStatus");
+  el.classList.remove("disconnected", "connecting");
+
+  if (state === "live") {
+    el.innerHTML = `<span class="status-dot"></span>WS Live`;
+  } else if (state === "connecting") {
+    el.classList.add("connecting");
+    el.innerHTML = `<span class="status-dot"></span>Connecting`;
+  } else {
+    el.classList.add("disconnected");
+    el.innerHTML = `<span class="status-dot"></span>Disconnected`;
+  }
+}
+
+function connectSocket() {
+  clearTimeout(reconnectTimer);
+  setWsStatus("connecting");
+
   try {
-    const base = location.pathname.replace(/\/+$/, '');
-    const res = await fetch(`${base}/api/data?token=${TOKEN}`);
+    socket = new WebSocket(wsUrl());
+  } catch (e) {
+    console.error(e);
+    scheduleReconnect();
+    return;
+  }
+
+  socket.onopen = () => {
+    reconnectDelayMs = 2000;
+    setWsStatus("live");
+  };
+
+  socket.onmessage = event => {
+    try {
+      data = JSON.parse(event.data);
+      lastMessageAt = new Date();
+      render();
+      document.getElementById("loading").style.display = "none";
+      document.getElementById("serverTime").textContent = data.server_time;
+      document.getElementById("lastUpdate").textContent = `Updated ${lastMessageAt.toLocaleTimeString()}`;
+      setWsStatus("live");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  socket.onerror = () => {
+    setWsStatus("disconnected");
+  };
+
+  socket.onclose = () => {
+    setWsStatus("disconnected");
+    scheduleReconnect();
+  };
+}
+
+function scheduleReconnect() {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => {
+    reconnectDelayMs = Math.min(reconnectDelayMs * 1.5, 15000);
+    connectSocket();
+  }, reconnectDelayMs);
+}
+
+async function manualRefresh() {
+  try {
+    const base = location.pathname.replace(/\/+$/, "");
+    const res = await fetch(`${base}/api/data?token=${encodeURIComponent(TOKEN)}`);
 
     if (res.status === 401) {
       document.body.innerHTML = "<div style='padding:2rem;color:#ff5c6c;font-family:sans-serif'>401 — Invalid token. Add ?token=YOUR_TOKEN to the URL.</div>";
@@ -887,17 +1004,19 @@ async function load() {
     }
 
     data = await res.json();
+    lastMessageAt = new Date();
     render();
     document.getElementById("loading").style.display = "none";
     document.getElementById("serverTime").textContent = data.server_time;
+    document.getElementById("lastUpdate").textContent = `Manual ${lastMessageAt.toLocaleTimeString()}`;
   } catch (e) {
     console.error(e);
   }
-
-  resetCountdown();
 }
 
 function render() {
+  if (!data) return;
+
   renderStats();
   renderRuntime();
   renderConfig();
@@ -1026,20 +1145,12 @@ function fmtNum(value) {
 }
 
 function set(id, val) {
-  document.getElementById(id).textContent = val;
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
 }
 
-function resetCountdown() {
-  countdown = 30;
-  clearInterval(timer);
-  timer = setInterval(() => {
-    countdown--;
-    document.getElementById("nextRefresh").textContent = `↻ ${countdown}s`;
-    if (countdown <= 0) load();
-  }, 1000);
-}
-
-load();
+connectSocket();
+manualRefresh();
 </script>
 </body>
 </html>
@@ -1060,4 +1171,5 @@ async def index(token: str = Query("")):
 
 if __name__ == "__main__":
     print(f"Dashboard → http://0.0.0.0:{PORT}/?token={WEBUI_TOKEN}")
+    print(f"WebSocket → ws://0.0.0.0:{PORT}/ws?token={WEBUI_TOKEN}")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
