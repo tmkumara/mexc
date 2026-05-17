@@ -8,6 +8,7 @@ Flow:
        - 30m market structure bias
        - 5m liquidity sweep
        - 5m displacement candle
+       - 5m micro BOS confirmation
        - 5m order block
        - stores pending setup in database via main.py
 
@@ -39,6 +40,8 @@ from config import (
     AVG_BODY_PERIOD,
     DISPLACEMENT_BODY_MULTIPLIER,
     DISPLACEMENT_CLOSE_POSITION,
+    MICRO_BOS_LOOKBACK,
+    MICRO_BOS_BUFFER_PCT,
     ORDER_BLOCK_LOOKBACK,
     PENDING_SETUP_EXPIRE_CANDLES,
     MAX_SIGNAL_CANDLE_BODY_PCT,
@@ -247,7 +250,7 @@ def _get_market_structure_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict
     }
 
 
-# ── sweep / displacement / OB ─────────────────────────────────────
+# ── sweep / displacement / micro BOS / OB ─────────────────────────
 
 def _detect_sell_side_sweep(df: pd.DataFrame, swings: list[dict], pos: int) -> dict | None:
     prev_low = _last_swing_before(swings, "LOW", pos)
@@ -321,6 +324,57 @@ def _is_bearish_displacement(df: pd.DataFrame, pos: int) -> bool:
         and _body_size(row) >= avg_body * DISPLACEMENT_BODY_MULTIPLIER
         and _close_position(row) <= (1.0 - DISPLACEMENT_CLOSE_POSITION)
     )
+
+
+def _has_bullish_micro_bos(df: pd.DataFrame, displacement_pos: int) -> tuple[bool, float | None]:
+    """
+    LONG micro BOS:
+        displacement candle close must break above the recent minor high.
+
+    Uses raw recent highs instead of confirmed swing highs because confirmed swings
+    may appear too late on fast 5m reversals.
+    """
+    start = max(0, displacement_pos - MICRO_BOS_LOOKBACK)
+    reference = df.iloc[start:displacement_pos]
+
+    if reference.empty:
+        return False, None
+
+    recent_high = float(reference["high"].astype(float).max())
+    close = float(df["close"].iloc[displacement_pos])
+
+    break_level = recent_high * (1.0 + MICRO_BOS_BUFFER_PCT / 100.0)
+
+    return close > break_level, recent_high
+
+
+def _has_bearish_micro_bos(df: pd.DataFrame, displacement_pos: int) -> tuple[bool, float | None]:
+    """
+    SHORT micro BOS:
+        displacement candle close must break below the recent minor low.
+
+    Uses raw recent lows instead of confirmed swing lows because confirmed swings
+    may appear too late on fast 5m reversals.
+    """
+    start = max(0, displacement_pos - MICRO_BOS_LOOKBACK)
+    reference = df.iloc[start:displacement_pos]
+
+    if reference.empty:
+        return False, None
+
+    recent_low = float(reference["low"].astype(float).min())
+    close = float(df["close"].iloc[displacement_pos])
+
+    break_level = recent_low * (1.0 - MICRO_BOS_BUFFER_PCT / 100.0)
+
+    return close < break_level, recent_low
+
+
+def _has_micro_bos(df: pd.DataFrame, direction: str, displacement_pos: int) -> tuple[bool, float | None]:
+    if direction == "LONG":
+        return _has_bullish_micro_bos(df, displacement_pos)
+
+    return _has_bearish_micro_bos(df, displacement_pos)
 
 
 def _find_bullish_ob(df: pd.DataFrame, displacement_pos: int) -> dict | None:
@@ -481,7 +535,7 @@ def _calculate_final_prices(
     )
 
 
-def _score_setup(rr: float, ob_age: int, sweep_age: int) -> float:
+def _score_setup(rr: float, ob_age: int, sweep_age: int, micro_bos_confirmed: bool = False) -> float:
     score = 55.0
 
     if rr >= 3.0:
@@ -501,6 +555,9 @@ def _score_setup(rr: float, ob_age: int, sweep_age: int) -> float:
     if sweep_age <= 12:
         score += 10.0
     elif sweep_age <= 24:
+        score += 5.0
+
+    if micro_bos_confirmed:
         score += 5.0
 
     return round(min(score, 100.0), 1)
@@ -539,7 +596,10 @@ def detect_setup(symbol: str) -> dict | None:
         if len(swings) < 4:
             return None
 
-        start = max(AVG_BODY_PERIOD + SWEEP_LOOKBACK + ORDER_BLOCK_LOOKBACK, 30)
+        start = max(
+            AVG_BODY_PERIOD + SWEEP_LOOKBACK + ORDER_BLOCK_LOOKBACK + MICRO_BOS_LOOKBACK,
+            40,
+        )
         last_possible = len(completed) - 3
 
         best_setup = None
@@ -565,6 +625,15 @@ def detect_setup(symbol: str) -> dict | None:
                     break
 
             if not sweep:
+                continue
+
+            micro_bos_confirmed, micro_bos_level = _has_micro_bos(
+                completed,
+                bias,
+                displacement_pos,
+            )
+
+            if not micro_bos_confirmed:
                 continue
 
             if bias == "LONG":
@@ -596,7 +665,12 @@ def detect_setup(symbol: str) -> dict | None:
 
             ob_age = len(completed) - ob["pos"]
             sweep_age = len(completed) - sweep["pos"]
-            score = _score_setup(rr_estimate, ob_age, sweep_age)
+            score = _score_setup(
+                rr=rr_estimate,
+                ob_age=ob_age,
+                sweep_age=sweep_age,
+                micro_bos_confirmed=True,
+            )
 
             if score <= best_score:
                 continue
@@ -631,6 +705,7 @@ def detect_setup(symbol: str) -> dict | None:
                 "setup_time": setup_time.to_pydatetime().replace(tzinfo=timezone.utc).isoformat()
                     if hasattr(setup_time, "to_pydatetime") else str(setup_time),
                 "expires_at": expires_at.isoformat(),
+                "micro_bos_level": micro_bos_level,
             }
 
         if best_setup:
@@ -640,7 +715,8 @@ def detect_setup(symbol: str) -> dict | None:
                 f"SL={best_setup['sl_price']:.6g} "
                 f"TP={best_setup['target_price']:.6g} "
                 f"RR~{best_setup['rr_estimate']:.2f} "
-                f"score={best_setup['score']}"
+                f"score={best_setup['score']} "
+                f"microBOS={best_setup.get('micro_bos_level'):.6g}"
             )
 
         return best_setup
@@ -742,7 +818,7 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 sl_roi_pct=sl_roi_pct,
                 timeframe_summary=(
                     f"Stateful SMC {ENTRY_TF} | {TREND_TF} bias {setup['bias']} | "
-                    f"{setup['sweep_type']} + {setup['ob_type']} retest | RR {rr:g}"
+                    f"{setup['sweep_type']} + Micro BOS + {setup['ob_type']} retest | RR {rr:g}"
                 ),
                 generated_at=datetime.now(timezone.utc),
                 score=score,

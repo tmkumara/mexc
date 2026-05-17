@@ -51,6 +51,13 @@ AVG_BODY_PERIOD:              int   = 20
 DISPLACEMENT_BODY_MULTIPLIER: float = 1.4
 DISPLACEMENT_CLOSE_POSITION:  float = 0.65
 
+# Micro BOS confirmation
+# After sweep + displacement, the displacement candle must break recent minor structure.
+# LONG  = close breaks recent minor high.
+# SHORT = close breaks recent minor low.
+MICRO_BOS_LOOKBACK: int = 8
+MICRO_BOS_BUFFER_PCT: float = 0.00
+
 # Order block
 ORDER_BLOCK_LOOKBACK: int = 12
 
