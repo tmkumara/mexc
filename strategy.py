@@ -5,11 +5,11 @@ No classic indicators are used.
 
 Flow:
     1. detect_setup(symbol)
-       - 30m market structure bias
-       - 5m liquidity sweep
-       - 5m displacement candle
-       - 5m micro BOS confirmation
-       - 5m order block
+       - 4H market structure bias
+       - 1H liquidity sweep
+       - 1H displacement candle
+       - 1H micro BOS confirmation
+       - 1H order block
        - stores pending setup in database via main.py
 
     2. evaluate_pending_setup(setup)
@@ -53,6 +53,7 @@ from config import (
     MICRO_BOS_LOOKBACK,
     MICRO_BOS_BUFFER_PCT,
     ORDER_BLOCK_LOOKBACK,
+    OB_TOUCH_TOLERANCE_PCT,
     PENDING_SETUP_EXPIRE_CANDLES,
     MAX_SIGNAL_CANDLE_BODY_PCT,
     MIN_STRUCTURE_RR,
@@ -189,11 +190,56 @@ def _avg_body(df: pd.DataFrame, pos: int, period: int) -> float:
     return float(bodies.mean())
 
 
+def _ob_tolerance_price(zone_low: float, zone_high: float) -> float:
+    """
+    Price tolerance around the OB zone.
+
+    Uses OB midpoint so the tolerance scales naturally for both high-price
+    and low-price symbols.
+    """
+    midpoint = (zone_low + zone_high) / 2.0
+
+    if midpoint <= 0:
+        return 0.0
+
+    return midpoint * (OB_TOUCH_TOLERANCE_PCT / 100.0)
+
+
+def _expanded_ob_zone(zone_low: float, zone_high: float) -> tuple[float, float, float]:
+    """
+    Returns:
+        expanded_low, expanded_high, tolerance_price
+    """
+    tolerance = _ob_tolerance_price(zone_low, zone_high)
+    return zone_low - tolerance, zone_high + tolerance, tolerance
+
+
 def _touches_zone(row: pd.Series, zone_low: float, zone_high: float) -> bool:
+    """
+    Exact OB touch check.
+    """
     high = float(row["high"])
     low = float(row["low"])
 
     return low <= zone_high and high >= zone_low
+
+
+def _touches_zone_with_tolerance(row: pd.Series, zone_low: float, zone_high: float) -> bool:
+    """
+    OB retest check with tolerance.
+
+    This fixes the main issue found in logs:
+        WAIT_NO_OB_TOUCH
+
+    Price often comes very close to the OB but does not touch the exact
+    zone. For 1H/4H stable setups, allowing a small proximity tolerance
+    is more practical than requiring perfect touch.
+    """
+    high = float(row["high"])
+    low = float(row["low"])
+    expanded_low, expanded_high, _ = _expanded_ob_zone(zone_low, zone_high)
+
+    return low <= expanded_high and high >= expanded_low
 
 
 def _parse_utc(ts: str) -> datetime:
@@ -405,9 +451,6 @@ def _has_bullish_micro_bos(df: pd.DataFrame, displacement_pos: int) -> tuple[boo
     """
     LONG micro BOS:
         displacement candle close must break above the recent minor high.
-
-    Uses raw recent highs instead of confirmed swing highs because confirmed swings
-    may appear too late on fast 5m reversals.
     """
     start = max(0, displacement_pos - MICRO_BOS_LOOKBACK)
     reference = df.iloc[start:displacement_pos]
@@ -427,9 +470,6 @@ def _has_bearish_micro_bos(df: pd.DataFrame, displacement_pos: int) -> tuple[boo
     """
     SHORT micro BOS:
         displacement candle close must break below the recent minor low.
-
-    Uses raw recent lows instead of confirmed swing lows because confirmed swings
-    may appear too late on fast 5m reversals.
     """
     start = max(0, displacement_pos - MICRO_BOS_LOOKBACK)
     reference = df.iloc[start:displacement_pos]
@@ -792,6 +832,7 @@ def detect_setup(symbol: str) -> dict | None:
 
             logger.info(
                 f"[SETUP] {best_setup['direction']} {symbol} | "
+                f"TF={TREND_TF}/{ENTRY_TF} "
                 f"OB={best_setup['ob_low']:.6g}-{best_setup['ob_high']:.6g} "
                 f"SL={best_setup['sl_price']:.6g} "
                 f"TP={best_setup['target_price']:.6g} "
@@ -826,6 +867,7 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         zone_low = float(setup["ob_low"])
         zone_high = float(setup["ob_high"])
         sl_price = float(setup["sl_price"])
+        expanded_low, expanded_high, tolerance_price = _expanded_ob_zone(zone_low, zone_high)
 
         if now >= expires_at:
             _log_monitor_reason(
@@ -834,7 +876,9 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 (
                     f"now={now.isoformat()} "
                     f"expires_at={expires_at.isoformat()} "
-                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
+                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)} "
+                    f"ob_tolerance={OB_TOUCH_TOLERANCE_PCT:g}%"
                 ),
                 force=True,
             )
@@ -878,7 +922,8 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                     (
                         f"candle={candle_time} "
                         f"low={_fmt(candle_low)} sl={_fmt(sl_price)} "
-                        f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+                        f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
+                        f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)}"
                     ),
                     force=True,
                 )
@@ -891,7 +936,8 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                     (
                         f"candle={candle_time} "
                         f"high={_fmt(candle_high)} sl={_fmt(sl_price)} "
-                        f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+                        f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
+                        f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)}"
                     ),
                     force=True,
                 )
@@ -908,7 +954,7 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             candle_close = float(row["close"])
             candle_open = float(row["open"])
 
-            if not _touches_zone(row, zone_low, zone_high):
+            if not _touches_zone_with_tolerance(row, zone_low, zone_high):
                 continue
 
             touched_any = True
@@ -920,7 +966,10 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                     f"candle={candle_time} "
                     f"body_pct={body_pct:.3f}% max={MAX_SIGNAL_CANDLE_BODY_PCT:.3f}% "
                     f"open={_fmt(candle_open)} close={_fmt(candle_close)} "
-                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+                    f"high={_fmt(candle_high)} low={_fmt(candle_low)} "
+                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
+                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)} "
+                    f"tolerance_price={_fmt(tolerance_price)}"
                 )
                 continue
 
@@ -941,8 +990,11 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 no_rejection_details = (
                     f"candle={candle_time} "
                     f"open={_fmt(candle_open)} close={_fmt(candle_close)} "
+                    f"high={_fmt(candle_high)} low={_fmt(candle_low)} "
                     f"midpoint={_fmt(midpoint)} rule='{rejection_rule}' "
-                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
+                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)} "
+                    f"ob_tolerance={OB_TOUCH_TOLERANCE_PCT:g}%"
                 )
                 continue
 
@@ -959,7 +1011,9 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                     f"candle={candle_time} "
                     f"entry={_fmt(entry)} sl={_fmt(sl_price)} "
                     f"target={_fmt(setup['target_price'])} "
-                    f"min_rr={MIN_STRUCTURE_RR:g} max_rr={MAX_STRUCTURE_RR:g}"
+                    f"min_rr={MIN_STRUCTURE_RR:g} max_rr={MAX_STRUCTURE_RR:g} "
+                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
+                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)}"
                 )
                 continue
 
@@ -973,13 +1027,16 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 "FIRE_ENTRY_CONFIRMED",
                 (
                     f"entry={_fmt(entry)} tp={_fmt(tp_price)} sl={_fmt(final_sl_price)} "
-                    f"rr={rr:.2f} score={score}"
+                    f"rr={rr:.2f} score={score} "
+                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
+                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)}"
                 ),
                 force=True,
             )
 
             logger.info(
                 f"[ENTRY] {direction} {symbol} @ {entry:.6g} | "
+                f"TF={TREND_TF}/{ENTRY_TF} "
                 f"OB={zone_low:.6g}-{zone_high:.6g} "
                 f"TP={tp_price:.6g} SL={final_sl_price:.6g} "
                 f"RR={rr:.2f} score={score}"
@@ -996,7 +1053,8 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 sl_roi_pct=sl_roi_pct,
                 timeframe_summary=(
                     f"Stateful SMC {ENTRY_TF} | {TREND_TF} bias {setup['bias']} | "
-                    f"{setup['sweep_type']} + Micro BOS + {setup['ob_type']} retest | RR {rr:g}"
+                    f"{setup['sweep_type']} + Micro BOS + {setup['ob_type']} retest | "
+                    f"OB tolerance {OB_TOUCH_TOLERANCE_PCT:g}% | RR {rr:g}"
                 ),
                 generated_at=datetime.now(timezone.utc),
                 score=score,
@@ -1009,6 +1067,8 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 (
                     f"recent_low={_fmt(recent_low)} recent_high={_fmt(recent_high)} "
                     f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
+                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)} "
+                    f"ob_tolerance={OB_TOUCH_TOLERANCE_PCT:g}% "
                     f"sl={_fmt(sl_price)}"
                 ),
             )
@@ -1043,7 +1103,8 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             "WAIT_UNKNOWN_RETEST_CONDITION",
             (
                 f"recent_low={_fmt(recent_low)} recent_high={_fmt(recent_high)} "
-                f"zone={_fmt(zone_low)}-{_fmt(zone_high)}"
+                f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
+                f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)}"
             ),
         )
         return "WAIT", None
