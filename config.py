@@ -19,7 +19,7 @@ EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
 
 # Final selected pool size.
 TOP_N_COINS:              int   = 60
-COIN_POOL_MIN_VOLUME_USD: float = 5_000_000
+COIN_POOL_MIN_VOLUME_USD: float = 1_000_000
 COIN_REFRESH_HOURS:       int   = 6
 
 # ── Phase 2: Smart Coin Ranking ───────────────────────────────────
@@ -30,7 +30,7 @@ ENABLE_SMART_COIN_RANKING: bool = True
 # How many candidates to inspect before final TOP_N_COINS selection.
 # Example: 60 * 2 = 120 raw candidates, capped by COIN_RANK_MAX_CANDIDATES.
 COIN_RANK_CANDIDATE_MULTIPLIER: int = 2
-COIN_RANK_MAX_CANDIDATES: int = 90
+COIN_RANK_MAX_CANDIDATES: int = 120
 
 # Ranking candles.
 COIN_RANK_TIMEFRAME: str = "5m"
@@ -41,9 +41,9 @@ COIN_RANK_WORKERS: int = 3
 
 # Minimum activity filters.
 COIN_RANK_MIN_LAST_PRICE: float = 0.000001
-COIN_RANK_MIN_RANGE_PCT: float = 0.20       # too flat = skip
-COIN_RANK_MAX_RANGE_PCT: float = 9.00       # too wild = skip
-COIN_RANK_MAX_ABS_MOVE_PCT: float = 12.00   # huge pump/dump over lookback = skip/penalty
+COIN_RANK_MIN_RANGE_PCT: float = 0.10       # too flat = skip
+COIN_RANK_MAX_RANGE_PCT: float = 15.00       # too wild = skip
+COIN_RANK_MAX_ABS_MOVE_PCT: float = 15.00   # huge pump/dump over lookback = skip/penalty
 
 # Weighted score model.
 COIN_RANK_VOLUME_WEIGHT: float = 35.0
