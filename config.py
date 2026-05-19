@@ -17,15 +17,14 @@ COINGLASS_API_KEY: str = os.getenv("COINGLASS_API_KEY", "")
 # ── Coin pool ────────────────────────────────────────────────────
 EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
 
-# Phase 1 goal:
-# Cleaner momentum-pullback scalper with more signals than strict SMC.
+# Keep enough symbols for 10-12 daily opportunities, but avoid tiny illiquid pairs.
 TOP_N_COINS:              int   = 60
 COIN_POOL_MIN_VOLUME_USD: float = 5_000_000
 COIN_REFRESH_HOURS:       int   = 6
 
-# ── Strategy: Momentum Pullback Scalper ───────────────────────────
+# ── Strategy: Momentum Pullback Scalper v1.1 ─────────────────────
 # 1H = direction filter.
-# 5m = momentum impulse + pullback + confirmation entry.
+# 5m = momentum impulse + deeper wave pullback + confirmation entry.
 TREND_TF: str = "1h"
 ENTRY_TF: str = "5m"
 
@@ -49,16 +48,29 @@ MOMENTUM_BODY_MULTIPLIER: float = 1.25
 MOMENTUM_VOLUME_MULTIPLIER: float = 1.15
 MOMENTUM_CLOSE_POSITION: float = 0.62
 
-# Pullback zone from impulse range.
-# LONG: wait for price to retrace into 38.2% - 70.5% of impulse candle.
-# SHORT: same idea inverted.
-PULLBACK_MIN_RETRACE: float = 0.382
-PULLBACK_MAX_RETRACE: float = 0.705
+# Anti-chase filters added after PLAY late-entry SL issue.
+# These stop entries after a vertical pump/dump unless price pulls back enough.
+MAX_IMPULSE_CANDLE_BODY_PCT: float = 2.80
+MAX_ENTRY_EXTENSION_FROM_EMA_PCT: float = 1.80
+MAX_RECENT_RUNUP_PCT: float = 7.00
+MAX_RECENT_RUNDOWN_PCT: float = 7.00
+PULLBACK_WAVE_LOOKBACK: int = 36
+
+# Pullback zone is now calculated from the full recent impulse wave, not only
+# the single breakout candle. This avoids buying/selling at the top of a pump.
+# LONG: wait for price to retrace 23.6% - 55% from wave high.
+# SHORT: wait for price to retrace 23.6% - 55% from wave low.
+PULLBACK_MIN_RETRACE: float = 0.236
+PULLBACK_MAX_RETRACE: float = 0.550
 
 # Entry confirmation
 CONFIRM_BREAK_PREVIOUS_CANDLE: bool = True
 CONFIRM_VOLUME_MULTIPLIER: float = 0.80
 MAX_CONFIRM_CANDLE_BODY_PCT: float = 1.20
+
+# After pullback touch, confirmation must still be close to pullback zone.
+# This prevents firing after price already ran far away from the zone again.
+MAX_CONFIRM_DISTANCE_FROM_ZONE_PCT: float = 0.35
 
 # Fixed scalping risk model.
 # At 20x leverage:
@@ -78,8 +90,8 @@ PENDING_SETUP_EXPIRE_CANDLES: int = 12   # 12 x 5m = 60 minutes
 MAX_PENDING_SETUPS_PER_SYMBOL: int = 1
 
 # Signal quality
-MIN_SIGNAL_SCORE: float = 68.0
-SETUPS_PER_SCAN: int = 8
+MIN_SIGNAL_SCORE: float = 70.0
+SETUPS_PER_SCAN: int = 6
 
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE: int = 20

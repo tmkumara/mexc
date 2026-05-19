@@ -1,23 +1,12 @@
 """
-Phase 1 Strategy — Momentum Pullback Scalper.
+Phase 1.1 Strategy — Momentum Pullback Scalper with Anti-Chase Filters.
 
-Goal:
-    - More practical signal frequency than strict SMC/OB retest.
-    - Target small moves with leverage.
-    - Keep existing project flow:
-        detect_setup(symbol) -> saved to pending_setups
-        evaluate_pending_setup(setup) -> fires Signal after pullback confirmation
-
-Strategy:
-    1. 1H trend filter using EMA20/EMA50 and EMA slope.
-    2. 5m momentum impulse candle:
-        - direction matches 1H trend
-        - body larger than average
-        - volume above average
-        - close breaks recent structure
-    3. Save pullback zone as pending setup.
-    4. Monitor waits for price to retrace into pullback zone.
-    5. Fire only after confirmation candle in trend direction.
+Flow:
+    1. 1H trend filter using EMA20 / EMA50.
+    2. 5m momentum impulse detection.
+    3. Reject late/chasing entries using anti-extension filters.
+    4. Save pullback zone as pending setup.
+    5. Fire only after pullback touch + confirmation candle.
 
 This is not financial advice. No strategy can guarantee profit.
 """
@@ -46,11 +35,17 @@ from config import (
     MOMENTUM_BODY_MULTIPLIER,
     MOMENTUM_VOLUME_MULTIPLIER,
     MOMENTUM_CLOSE_POSITION,
+    MAX_IMPULSE_CANDLE_BODY_PCT,
+    MAX_ENTRY_EXTENSION_FROM_EMA_PCT,
+    MAX_RECENT_RUNUP_PCT,
+    MAX_RECENT_RUNDOWN_PCT,
+    PULLBACK_WAVE_LOOKBACK,
     PULLBACK_MIN_RETRACE,
     PULLBACK_MAX_RETRACE,
     CONFIRM_BREAK_PREVIOUS_CANDLE,
     CONFIRM_VOLUME_MULTIPLIER,
     MAX_CONFIRM_CANDLE_BODY_PCT,
+    MAX_CONFIRM_DISTANCE_FROM_ZONE_PCT,
     TAKE_PROFIT_PRICE_PCT,
     STOP_LOSS_PRICE_PCT,
     PENDING_SETUP_EXPIRE_CANDLES,
@@ -131,9 +126,11 @@ def _log_monitor_reason(
 def _ensure_df(df: pd.DataFrame | None) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
+
     required = {"open", "high", "low", "close"}
     if not required.issubset(set(df.columns)):
         return pd.DataFrame()
+
     return df.copy()
 
 
@@ -173,8 +170,10 @@ def _close_position(row: pd.Series) -> float:
 def _avg_body(df: pd.DataFrame, pos: int, period: int) -> float:
     start = max(0, pos - period)
     subset = df.iloc[start:pos]
+
     if subset.empty:
         return 0.0
+
     return float((subset["close"].astype(float) - subset["open"].astype(float)).abs().mean())
 
 
@@ -184,22 +183,33 @@ def _avg_volume(df: pd.DataFrame, pos: int, period: int) -> float:
 
     start = max(0, pos - period)
     subset = df.iloc[start:pos]
+
     if subset.empty:
         return 0.0
 
     return float(subset["volume"].astype(float).mean())
 
 
+def _distance_pct(price: float, reference: float) -> float:
+    if reference <= 0:
+        return 999.0
+
+    return abs(price - reference) / reference * 100.0
+
+
 def _touches_zone(row: pd.Series, zone_low: float, zone_high: float) -> bool:
     high = float(row["high"])
     low = float(row["low"])
+
     return low <= zone_high and high >= zone_low
 
 
 def _parse_utc(ts: str) -> datetime:
     dt = datetime.fromisoformat(ts)
+
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
+
     return dt
 
 
@@ -207,8 +217,6 @@ def _parse_utc(ts: str) -> datetime:
 
 def _get_trend_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
     df = _ensure_df(trend_df)
-
-    # Use completed candles only.
     completed = df.iloc[:-1].copy()
 
     min_len = EMA_SLOW_PERIOD + TREND_SLOPE_LOOKBACK + 5
@@ -229,11 +237,7 @@ def _get_trend_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
     fast_slope = ema_fast - float(old["ema_fast"])
     slow_slope = ema_slow - float(old["ema_slow"])
 
-    if (
-        last_close > ema_fast > ema_slow
-        and fast_slope > 0
-        and slow_slope >= 0
-    ):
+    if last_close > ema_fast > ema_slow and fast_slope > 0 and slow_slope >= 0:
         return "LONG", {
             "ema_fast": ema_fast,
             "ema_slow": ema_slow,
@@ -241,11 +245,7 @@ def _get_trend_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
             "slow_slope": slow_slope,
         }
 
-    if (
-        last_close < ema_fast < ema_slow
-        and fast_slope < 0
-        and slow_slope <= 0
-    ):
+    if last_close < ema_fast < ema_slow and fast_slope < 0 and slow_slope <= 0:
         return "SHORT", {
             "ema_fast": ema_fast,
             "ema_slow": ema_slow,
@@ -275,6 +275,7 @@ def _is_long_momentum(df: pd.DataFrame, pos: int) -> bool:
 
     prev_start = max(0, pos - MOMENTUM_BREAKOUT_LOOKBACK)
     prev = df.iloc[prev_start:pos]
+
     if prev.empty:
         return False
 
@@ -299,6 +300,7 @@ def _is_short_momentum(df: pd.DataFrame, pos: int) -> bool:
 
     prev_start = max(0, pos - MOMENTUM_BREAKOUT_LOOKBACK)
     prev = df.iloc[prev_start:pos]
+
     if prev.empty:
         return False
 
@@ -313,26 +315,57 @@ def _is_short_momentum(df: pd.DataFrame, pos: int) -> bool:
     return _is_bearish(row) and body_ok and volume_ok and close_ok and breakout_ok
 
 
-def _build_pullback_zone(direction: str, row: pd.Series) -> tuple[float, float]:
-    high = float(row["high"])
-    low = float(row["low"])
-    rng = high - low
+def _get_recent_wave(df: pd.DataFrame, pos: int, direction: str) -> tuple[float, float, float] | None:
+    """
+    Returns:
+        wave_low, wave_high, move_pct
+    """
+    start = max(0, pos - PULLBACK_WAVE_LOOKBACK)
+    previous = df.iloc[start:pos]
 
-    if rng <= 0:
-        return low, high
+    if previous.empty:
+        return None
+
+    row = df.iloc[pos]
 
     if direction == "LONG":
-        zone_high = high - rng * PULLBACK_MIN_RETRACE
-        zone_low = high - rng * PULLBACK_MAX_RETRACE
+        wave_low = float(previous["low"].astype(float).min())
+        wave_high = float(row["high"])
+        move_pct = (wave_high - wave_low) / wave_low * 100.0 if wave_low > 0 else 999.0
     else:
-        zone_low = low + rng * PULLBACK_MIN_RETRACE
-        zone_high = low + rng * PULLBACK_MAX_RETRACE
+        wave_high = float(previous["high"].astype(float).max())
+        wave_low = float(row["low"])
+        move_pct = (wave_high - wave_low) / wave_high * 100.0 if wave_high > 0 else 999.0
+
+    if wave_low <= 0 or wave_high <= 0 or wave_high <= wave_low:
+        return None
+
+    return wave_low, wave_high, move_pct
+
+
+def _build_pullback_zone(
+    direction: str,
+    wave_low: float,
+    wave_high: float,
+) -> tuple[float, float] | None:
+    rng = wave_high - wave_low
+
+    if rng <= 0:
+        return None
+
+    if direction == "LONG":
+        zone_high = wave_high - rng * PULLBACK_MIN_RETRACE
+        zone_low = wave_high - rng * PULLBACK_MAX_RETRACE
+    else:
+        zone_low = wave_low + rng * PULLBACK_MIN_RETRACE
+        zone_high = wave_low + rng * PULLBACK_MAX_RETRACE
 
     return round(min(zone_low, zone_high), 8), round(max(zone_low, zone_high), 8)
 
 
 def _score_momentum_setup(df: pd.DataFrame, pos: int, direction: str) -> float:
     row = df.iloc[pos]
+
     avg_body = _avg_body(df, pos, AVG_BODY_PERIOD)
     avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
 
@@ -350,8 +383,6 @@ def _score_momentum_setup(df: pd.DataFrame, pos: int, direction: str) -> float:
     score += min(max((volume_ratio - 1.0) * 12.0, 0.0), 15.0)
     score += min(max((close_pos - 0.5) * 50.0, 0.0), 15.0)
 
-    # Fresh impulses are better. The scanner only looks at recent momentum,
-    # but this keeps the newest candidate preferred.
     age = len(df) - 1 - pos
     if age <= 2:
         score += 10.0
@@ -389,38 +420,38 @@ def _calculate_fixed_prices(direction: str, entry: float) -> tuple[float, float,
 def detect_setup(symbol: str) -> dict | None:
     """
     Detects a momentum impulse and returns a pending pullback setup.
-
     This does NOT fire a signal.
     """
     try:
-        trend_df = get_klines(symbol, TREND_TF, count=TREND_KLINE_COUNT)
-        entry_df = get_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
-
-        trend_df = _ensure_df(trend_df)
-        entry_df = _ensure_df(entry_df)
+        trend_df = _ensure_df(get_klines(symbol, TREND_TF, count=TREND_KLINE_COUNT))
+        entry_df = _ensure_df(get_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT))
 
         if trend_df.empty or entry_df.empty:
             return None
 
         bias, trend_details = _get_trend_bias(trend_df)
+
         if bias is None:
             return None
 
         completed = entry_df.iloc[:-1].copy().tail(ENTRY_LOOKBACK)
+
         if len(completed) < max(80, AVG_BODY_PERIOD + MOMENTUM_BREAKOUT_LOOKBACK + 5):
             return None
 
-        start = max(AVG_BODY_PERIOD + MOMENTUM_BREAKOUT_LOOKBACK, len(completed) - MOMENTUM_LOOKBACK)
+        completed["entry_ema_fast"] = _ema(completed["close"].astype(float), EMA_FAST_PERIOD)
+
+        start = max(
+            AVG_BODY_PERIOD + MOMENTUM_BREAKOUT_LOOKBACK,
+            len(completed) - MOMENTUM_LOOKBACK,
+        )
         end = len(completed) - 1
 
         best_setup = None
         best_score = -1.0
 
         for pos in range(start, end + 1):
-            if bias == "LONG":
-                is_momentum = _is_long_momentum(completed, pos)
-            else:
-                is_momentum = _is_short_momentum(completed, pos)
+            is_momentum = _is_long_momentum(completed, pos) if bias == "LONG" else _is_short_momentum(completed, pos)
 
             if not is_momentum:
                 continue
@@ -431,13 +462,38 @@ def detect_setup(symbol: str) -> dict | None:
             if score < MIN_SIGNAL_SCORE or score <= best_score:
                 continue
 
-            zone_low, zone_high = _build_pullback_zone(bias, row)
             impulse_high = float(row["high"])
             impulse_low = float(row["low"])
             impulse_close = float(row["close"])
 
-            # Placeholder TP/SL for database compatibility.
-            # Final TP/SL is calculated from actual confirmed entry in evaluate_pending_setup().
+            # Anti-chase rule 1: reject oversized vertical impulse candle.
+            if _body_pct(row) > MAX_IMPULSE_CANDLE_BODY_PCT:
+                continue
+
+            # Anti-chase rule 2: reject if close is too far from 5m EMA20.
+            ema_fast = float(row.get("entry_ema_fast", 0.0))
+            if ema_fast > 0 and _distance_pct(impulse_close, ema_fast) > MAX_ENTRY_EXTENSION_FROM_EMA_PCT:
+                continue
+
+            # Anti-chase rule 3: reject full recent wave if already too extended.
+            wave = _get_recent_wave(completed, pos, bias)
+            if not wave:
+                continue
+
+            wave_low, wave_high, move_pct = wave
+
+            if bias == "LONG" and move_pct > MAX_RECENT_RUNUP_PCT:
+                continue
+
+            if bias == "SHORT" and move_pct > MAX_RECENT_RUNDOWN_PCT:
+                continue
+
+            zone = _build_pullback_zone(bias, wave_low, wave_high)
+            if not zone:
+                continue
+
+            zone_low, zone_high = zone
+
             preview_prices = _calculate_fixed_prices(bias, impulse_close)
             if not preview_prices:
                 continue
@@ -488,8 +544,7 @@ def detect_setup(symbol: str) -> dict | None:
             logger.info(
                 f"[SETUP] {best_setup['direction']} {symbol} | "
                 f"zone={best_setup['ob_low']:.6g}-{best_setup['ob_high']:.6g} "
-                f"score={best_setup['score']} "
-                f"strategy=MomentumPullback"
+                f"score={best_setup['score']} strategy=MomentumPullbackV1.1"
             )
 
         return best_setup
@@ -510,20 +565,12 @@ def _is_confirmation(row: pd.Series, prev: pd.Series, direction: str, avg_volume
 
     if direction == "LONG":
         candle_ok = _is_bullish(row)
-        close_break_ok = (
-            float(row["close"]) > float(prev["high"])
-            if CONFIRM_BREAK_PREVIOUS_CANDLE
-            else True
-        )
+        close_break_ok = float(row["close"]) > float(prev["high"]) if CONFIRM_BREAK_PREVIOUS_CANDLE else True
         close_position_ok = _close_position(row) >= 0.55
         return candle_ok and close_break_ok and close_position_ok and volume_ok
 
     candle_ok = _is_bearish(row)
-    close_break_ok = (
-        float(row["close"]) < float(prev["low"])
-        if CONFIRM_BREAK_PREVIOUS_CANDLE
-        else True
-    )
+    close_break_ok = float(row["close"]) < float(prev["low"]) if CONFIRM_BREAK_PREVIOUS_CANDLE else True
     close_position_ok = _close_position(row) <= 0.45
     return candle_ok and close_break_ok and close_position_ok and volume_ok
 
@@ -549,8 +596,7 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         zone_low = float(setup["ob_low"])
         zone_high = float(setup["ob_high"])
 
-        df = get_klines(symbol, ENTRY_TF, count=MONITOR_KLINE_COUNT)
-        df = _ensure_df(df)
+        df = _ensure_df(get_klines(symbol, ENTRY_TF, count=MONITOR_KLINE_COUNT))
 
         if df.empty or len(df) < 10:
             _log_monitor_reason(setup, "WAIT_DATA_NOT_READY")
@@ -559,13 +605,9 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         completed = df.iloc[:-1].copy()
         recent = completed.tail(8)
 
-        # Find whether the pending zone has been retested recently.
-        touched_rows = []
-        for idx, row in recent.iterrows():
-            if _touches_zone(row, zone_low, zone_high):
-                touched_rows.append((idx, row))
+        touched = any(_touches_zone(row, zone_low, zone_high) for _, row in recent.iterrows())
 
-        if not touched_rows:
+        if not touched:
             last_close = float(completed["close"].iloc[-1])
             _log_monitor_reason(
                 setup,
@@ -574,16 +616,19 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             )
             return "WAIT", None
 
-        # Use last completed candle as the actual trigger candle.
         if len(completed) < 2:
             return "WAIT", None
 
         prev = completed.iloc[-2]
         trigger = completed.iloc[-1]
-        avg_vol = float(completed["volume"].astype(float).tail(AVG_VOLUME_PERIOD + 1).iloc[:-1].mean()) \
-            if "volume" in completed.columns and len(completed) > AVG_VOLUME_PERIOD else 0.0
 
-        # Basic invalidation before entry: if price moved too far beyond zone, setup is stale.
+        avg_vol = (
+            float(completed["volume"].astype(float).tail(AVG_VOLUME_PERIOD + 1).iloc[:-1].mean())
+            if "volume" in completed.columns and len(completed) > AVG_VOLUME_PERIOD
+            else 0.0
+        )
+
+        # Invalidation before entry.
         if direction == "LONG":
             invalid_level = zone_low * (1.0 - STOP_LOSS_PRICE_PCT / 100.0)
             if float(trigger["low"]) <= invalid_level:
@@ -614,6 +659,27 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             return "WAIT", None
 
         entry = float(trigger["close"])
+
+        # Anti-chase rule 4: after zone touch, confirmation must still be close to pullback zone.
+        if direction == "LONG":
+            max_entry = zone_high * (1.0 + MAX_CONFIRM_DISTANCE_FROM_ZONE_PCT / 100.0)
+            if entry > max_entry:
+                _log_monitor_reason(
+                    setup,
+                    "WAIT_CONFIRM_TOO_FAR_FROM_ZONE",
+                    f"entry={_fmt(entry)} max={_fmt(max_entry)} zone={_fmt(zone_low)}-{_fmt(zone_high)}",
+                )
+                return "WAIT", None
+        else:
+            min_entry = zone_low * (1.0 - MAX_CONFIRM_DISTANCE_FROM_ZONE_PCT / 100.0)
+            if entry < min_entry:
+                _log_monitor_reason(
+                    setup,
+                    "WAIT_CONFIRM_TOO_FAR_FROM_ZONE",
+                    f"entry={_fmt(entry)} min={_fmt(min_entry)} zone={_fmt(zone_low)}-{_fmt(zone_high)}",
+                )
+                return "WAIT", None
+
         prices = _calculate_fixed_prices(direction, entry)
 
         if not prices:
@@ -640,8 +706,8 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             tp_roi_pct=tp_roi_pct,
             sl_roi_pct=sl_roi_pct,
             timeframe_summary=(
-                f"Momentum Pullback | {TREND_TF} trend {setup['bias']} | "
-                f"{ENTRY_TF} impulse + pullback confirmation"
+                f"Momentum Pullback v1.1 | {TREND_TF} trend {setup['bias']} | "
+                f"{ENTRY_TF} wave pullback + anti-chase confirmation"
             ),
             generated_at=datetime.now(timezone.utc),
             score=score,
@@ -652,9 +718,5 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         return "WAIT", None
 
 
-# Compatibility wrapper. Main.py does not use this in the stateful flow.
 def analyze_coin(symbol: str) -> "Signal | None":
-    setup = detect_setup(symbol)
-    if not setup:
-        return None
     return None

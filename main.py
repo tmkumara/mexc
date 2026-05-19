@@ -1,5 +1,5 @@
 """
-Main entry point — Phase 1 Momentum Pullback Scalper.
+Main entry point — Phase 1.1 Momentum Pullback Scalper.
 
 Scheduler jobs:
   Every 1 min     — full setup detection scan
@@ -27,7 +27,7 @@ import strategy
 import bot as tg
 import coin_scanner
 
-from mexc_client import get_klines
+from mexc_client import get_klines, get_current_price
 from config import (
     LKT,
     SIGNAL_COOLDOWN_MINUTES,
@@ -236,6 +236,26 @@ def _calculate_pnl_roi(
     return price_move_pct * LEVERAGE
 
 
+async def _close_signal(app: Application, sig: dict, outcome: str, pnl: float) -> None:
+    db.update_signal_outcome(sig["id"], outcome, pnl)
+
+    logger.info(
+        f"Signal {sig['id']} {outcome.upper()} ({sig['symbol']}) {pnl:+.1f}%"
+    )
+
+    try:
+        await tg.notify_outcome(
+            app,
+            {
+                **sig,
+                "status": outcome,
+                "pnl_roi": pnl,
+            },
+        )
+    except Exception as e:
+        logger.error(f"Failed to notify {outcome} for {sig['symbol']}: {e}", exc_info=True)
+
+
 async def check_outcomes(app: Application) -> None:
     pending = db.get_pending_signals()
     now = datetime.now(timezone.utc)
@@ -253,29 +273,68 @@ async def check_outcomes(app: Application) -> None:
             generated = generated.replace(tzinfo=timezone.utc)
 
         if (now - generated).total_seconds() > SIGNAL_EXPIRE_HOURS * 3600:
-            db.update_signal_outcome(sig["id"], "expired", 0.0)
-            logger.info(f"Signal {sig['id']} expired ({symbol})")
+            await _close_signal(app, sig, "expired", 0.0)
+            continue
+
+        # Fast live-price check. This marks SL/TP faster without waiting
+        # for the next completed 5m candle.
+        try:
+            current_price = get_current_price(symbol)
+        except Exception as e:
+            logger.warning(f"Could not fetch current price for {symbol}: {e}")
+            current_price = None
+
+        instant_outcome = None
+
+        if current_price is not None:
+            if direction == "LONG":
+                if current_price >= tp_price:
+                    instant_outcome = "win"
+                elif current_price <= sl_price:
+                    instant_outcome = "loss"
+            else:
+                if current_price <= tp_price:
+                    instant_outcome = "win"
+                elif current_price >= sl_price:
+                    instant_outcome = "loss"
+
+        if instant_outcome is not None:
+            pnl = _calculate_pnl_roi(
+                direction=direction,
+                outcome=instant_outcome,
+                entry_price=entry_price,
+                tp_price=tp_price,
+                sl_price=sl_price,
+            )
+
+            db.update_signal_outcome(sig["id"], instant_outcome, pnl)
+
+            logger.info(
+                f"Signal {sig['id']} {instant_outcome.upper()} ({symbol}) "
+                f"{pnl:+.1f}% live_price={current_price}"
+            )
 
             try:
                 await tg.notify_outcome(
                     app,
                     {
                         **sig,
-                        "status": "expired",
-                        "pnl_roi": 0.0,
+                        "status": instant_outcome,
+                        "pnl_roi": pnl,
                     },
                 )
             except Exception as e:
-                logger.error(f"Failed to notify expiry for {symbol}: {e}", exc_info=True)
+                logger.error(f"Failed to notify {instant_outcome} for {symbol}: {e}", exc_info=True)
 
             continue
 
+        # Fallback candle check.
         elapsed_min = max(
             (now - generated).total_seconds() / 60,
             CANDLE_MINUTES,
         )
 
-        fetch_count = int(elapsed_min / CANDLE_MINUTES) + 4
+        fetch_count = int(elapsed_min / CANDLE_MINUTES) + 3
 
         try:
             df = get_klines(symbol, ENTRY_TF, count=fetch_count)
@@ -309,8 +368,6 @@ async def check_outcomes(app: Application) -> None:
                 hit_tp = low <= tp_price
                 hit_sl = high >= sl_price
 
-            # If TP and SL are both inside same candle, choose by candle direction.
-            # This is not perfect without tick data, but keeps reporting deterministic.
             if hit_tp and hit_sl:
                 if direction == "LONG":
                     outcome = "win" if close_price >= open_price else "loss"
@@ -337,27 +394,13 @@ async def check_outcomes(app: Application) -> None:
             sl_price=sl_price,
         )
 
-        db.update_signal_outcome(sig["id"], outcome, pnl)
-
-        logger.info(f"Signal {sig['id']} {outcome.upper()} ({symbol}) {pnl:+.1f}%")
-
-        try:
-            await tg.notify_outcome(
-                app,
-                {
-                    **sig,
-                    "status": outcome,
-                    "pnl_roi": pnl,
-                },
-            )
-        except Exception as e:
-            logger.error(f"Failed to notify {outcome} for {symbol}: {e}", exc_info=True)
+        await _close_signal(app, sig, outcome, pnl)
 
 
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot — Phase 1 Momentum Pullback Scalper")
+    logger.info("Starting MEXC Signal Bot — Phase 1.1 Momentum Pullback Scalper")
 
     db.init_db()
 
@@ -374,8 +417,6 @@ async def main():
         CronTrigger(minute=SETUP_SCAN_CRON_MINUTES),
         args=[app],
         id="setup_scanner",
-        max_instances=1,
-        coalesce=True,
     )
 
     scheduler.add_job(
@@ -383,8 +424,6 @@ async def main():
         IntervalTrigger(minutes=SETUP_MONITOR_MINUTES),
         args=[app],
         id="setup_monitor",
-        max_instances=1,
-        coalesce=True,
     )
 
     scheduler.add_job(
@@ -392,16 +431,12 @@ async def main():
         IntervalTrigger(minutes=OUTCOME_CHECK_MINUTES),
         args=[app],
         id="outcome_checker",
-        max_instances=1,
-        coalesce=True,
     )
 
     scheduler.add_job(
         coin_scanner.refresh_coin_list,
         CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
         id="coin_refresh",
-        max_instances=1,
-        coalesce=True,
     )
 
     async def _daily(app=app):
