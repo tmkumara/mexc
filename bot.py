@@ -1,5 +1,5 @@
 """
-Telegram bot: handles commands and broadcasts Phase 1 Momentum Pullback signals.
+Telegram bot: handles commands and broadcasts Phase 2 Momentum Pullback signals.
 
 Important:
     Signal messages use HTML parse mode, not Markdown.
@@ -180,20 +180,45 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SETUP_SCAN_CRON_MINUTES,
         SETUP_MONITOR_MINUTES,
         MIN_SIGNAL_SCORE,
+        ENABLE_SMART_COIN_RANKING,
+        COIN_RANK_TIMEFRAME,
+        COIN_RANK_KLINE_COUNT,
+        COIN_RANK_WORKERS,
+        COIN_RANK_MIN_RANGE_PCT,
+        COIN_RANK_MAX_RANGE_PCT,
+        COIN_RANK_MAX_ABS_MOVE_PCT,
     )
 
     state = "⏸ PAUSED" if paused else "▶️ RUNNING"
     coins = coin_scanner.get_cached_coins()
+    scores = coin_scanner.get_cached_coin_scores()
     active = db.count_active_signals()
     waiting = db.count_waiting_setups()
 
     pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
 
+    if scores:
+        top_ranked = "  ".join(
+            f"{row.get('symbol', '').replace('_USDT', '')}:{row.get('score', 0)}"
+            for row in scores[:8]
+        )
+    else:
+        top_ranked = "not ranked yet"
+
+    last_refresh = coin_scanner.get_last_refresh_at()
+    refresh_text = (
+        last_refresh.astimezone(LKT).strftime("%Y-%m-%d %H:%M LKT")
+        if last_refresh
+        else "not refreshed yet"
+    )
+
+    ranking_state = "ON" if ENABLE_SMART_COIN_RANKING else "OFF"
+
     msg = "\n".join([
         "📡 <b>Scanner Status</b>",
         "━━━━━━━━━━━━━━━━━━━━",
         f"State:      {_code(state)}",
-        f"Strategy:   {_code('Phase 1 Momentum Pullback Scalper')}",
+        f"Strategy:   {_code('Phase 2 Momentum Pullback + Smart Coin Ranking')}",
         f"Trend TF:   {_code(TREND_TF)} EMA{EMA_FAST_PERIOD}/EMA{EMA_SLOW_PERIOD} bias",
         f"Entry TF:   {_code(ENTRY_TF)} momentum + pullback confirmation",
         f"Setup scan: {_code(SETUP_SCAN_CRON_MINUTES)}",
@@ -202,6 +227,15 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"TP/SL:      {_code(f'{TAKE_PROFIT_PRICE_PCT:g}% / {STOP_LOSS_PRICE_PCT:g}% price')}",
         f"ROI model:  {_code(f'+{TP_ROI_PCT:.1f}% / -{SL_ROI_PCT:.1f}% at {LEVERAGE}x')}",
         f"Min score:  {_code(MIN_SIGNAL_SCORE)}",
+        "",
+        f"Coin rank:  {_code(ranking_state)}",
+        f"Rank TF:    {_code(f'{COIN_RANK_KLINE_COUNT} x {COIN_RANK_TIMEFRAME}')}",
+        f"Rank range: {_code(f'{COIN_RANK_MIN_RANGE_PCT:g}%–{COIN_RANK_MAX_RANGE_PCT:g}%')}",
+        f"Max move:   {_code(f'{COIN_RANK_MAX_ABS_MOVE_PCT:g}% lookback')}",
+        f"Rank workers: {_code(COIN_RANK_WORKERS)}",
+        f"Refreshed:  {_code(refresh_text)}",
+        f"Top ranked: {_code(top_ranked)}",
+        "",
         f"Workers:    {_code(SCAN_WORKERS)}",
         f"Per scan:   {_code(f'top {SIGNALS_PER_SCAN} entries')}",
         f"Cooldown:   {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",

@@ -17,10 +17,43 @@ COINGLASS_API_KEY: str = os.getenv("COINGLASS_API_KEY", "")
 # ── Coin pool ────────────────────────────────────────────────────
 EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
 
-# Keep enough symbols for 10-12 daily opportunities, but avoid tiny illiquid pairs.
+# Final selected pool size.
 TOP_N_COINS:              int   = 60
 COIN_POOL_MIN_VOLUME_USD: float = 5_000_000
 COIN_REFRESH_HOURS:       int   = 6
+
+# ── Phase 2: Smart Coin Ranking ───────────────────────────────────
+# Ranking happens when the coin pool is refreshed.
+# It reduces low-quality/noisy coins and prioritizes active, liquid, tradable movement.
+ENABLE_SMART_COIN_RANKING: bool = True
+
+# How many candidates to inspect before final TOP_N_COINS selection.
+# Example: 60 * 2 = 120 raw candidates, capped by COIN_RANK_MAX_CANDIDATES.
+COIN_RANK_CANDIDATE_MULTIPLIER: int = 2
+COIN_RANK_MAX_CANDIDATES: int = 90
+
+# Ranking candles.
+COIN_RANK_TIMEFRAME: str = "5m"
+COIN_RANK_KLINE_COUNT: int = 48       # 48 x 5m = 4 hours
+
+# Ranking worker count. Keep low to avoid REST rate limits.
+COIN_RANK_WORKERS: int = 3
+
+# Minimum activity filters.
+COIN_RANK_MIN_LAST_PRICE: float = 0.000001
+COIN_RANK_MIN_RANGE_PCT: float = 0.20       # too flat = skip
+COIN_RANK_MAX_RANGE_PCT: float = 9.00       # too wild = skip
+COIN_RANK_MAX_ABS_MOVE_PCT: float = 12.00   # huge pump/dump over lookback = skip/penalty
+
+# Weighted score model.
+COIN_RANK_VOLUME_WEIGHT: float = 35.0
+COIN_RANK_VOLATILITY_WEIGHT: float = 30.0
+COIN_RANK_TREND_WEIGHT: float = 20.0
+COIN_RANK_LIQUIDITY_WEIGHT: float = 15.0
+
+# Penalties.
+COIN_RANK_OVEREXTENSION_PENALTY: float = 30.0
+COIN_RANK_LOW_ACTIVITY_PENALTY: float = 20.0
 
 # ── Strategy: Momentum Pullback Scalper v1.1 ─────────────────────
 # 1H = direction filter.
@@ -48,18 +81,14 @@ MOMENTUM_BODY_MULTIPLIER: float = 1.25
 MOMENTUM_VOLUME_MULTIPLIER: float = 1.15
 MOMENTUM_CLOSE_POSITION: float = 0.62
 
-# Anti-chase filters added after PLAY late-entry SL issue.
-# These stop entries after a vertical pump/dump unless price pulls back enough.
+# Anti-chase filters.
 MAX_IMPULSE_CANDLE_BODY_PCT: float = 2.80
 MAX_ENTRY_EXTENSION_FROM_EMA_PCT: float = 1.80
 MAX_RECENT_RUNUP_PCT: float = 7.00
 MAX_RECENT_RUNDOWN_PCT: float = 7.00
 PULLBACK_WAVE_LOOKBACK: int = 36
 
-# Pullback zone is now calculated from the full recent impulse wave, not only
-# the single breakout candle. This avoids buying/selling at the top of a pump.
-# LONG: wait for price to retrace 23.6% - 55% from wave high.
-# SHORT: wait for price to retrace 23.6% - 55% from wave low.
+# Pullback zone is calculated from the full recent impulse wave.
 PULLBACK_MIN_RETRACE: float = 0.236
 PULLBACK_MAX_RETRACE: float = 0.550
 
@@ -67,9 +96,6 @@ PULLBACK_MAX_RETRACE: float = 0.550
 CONFIRM_BREAK_PREVIOUS_CANDLE: bool = True
 CONFIRM_VOLUME_MULTIPLIER: float = 0.80
 MAX_CONFIRM_CANDLE_BODY_PCT: float = 1.20
-
-# After pullback touch, confirmation must still be close to pullback zone.
-# This prevents firing after price already ran far away from the zone again.
 MAX_CONFIRM_DISTANCE_FROM_ZONE_PCT: float = 0.35
 
 # Fixed scalping risk model.
@@ -79,14 +105,14 @@ MAX_CONFIRM_DISTANCE_FROM_ZONE_PCT: float = 0.35
 TAKE_PROFIT_PRICE_PCT: float = 0.55
 STOP_LOSS_PRICE_PCT:   float = 0.30
 
-# Emergency limits. These prevent crazy tiny/large signals.
+# Emergency limits.
 MIN_TP_ROI_PCT: float = 8.0
 MAX_TP_ROI_PCT: float = 18.0
 MIN_SL_ROI_PCT: float = 4.0
 MAX_SL_ROI_PCT: float = 9.0
 
 # Pending setup lifecycle
-PENDING_SETUP_EXPIRE_CANDLES: int = 12   # 12 x 5m = 60 minutes
+PENDING_SETUP_EXPIRE_CANDLES: int = 12
 MAX_PENDING_SETUPS_PER_SYMBOL: int = 1
 
 # Signal quality

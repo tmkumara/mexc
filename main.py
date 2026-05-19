@@ -1,5 +1,5 @@
 """
-Main entry point — Phase 1.1 Momentum Pullback Scalper.
+Main entry point — Phase 2 Momentum Pullback Scalper + Smart Coin Ranking.
 
 Scheduler jobs:
   Every 1 min     — full setup detection scan
@@ -400,13 +400,22 @@ async def check_outcomes(app: Application) -> None:
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot — Phase 1.1 Momentum Pullback Scalper")
+    logger.info("Starting MEXC Signal Bot — Phase 2 Momentum Pullback Scalper + Smart Coin Ranking")
 
     db.init_db()
 
-    logger.info("Loading coin pool...")
+    logger.info("Loading ranked coin pool...")
     coins = coin_scanner.refresh_coin_list()
-    logger.info(f"Signal pool: {len(coins)} coins")
+    ranked_preview = coin_scanner.get_cached_coin_scores()[:10]
+    logger.info(f"Signal pool: {len(coins)} ranked coins")
+    if ranked_preview:
+        logger.info(
+            "[COIN-RANK] startup top ranked: "
+            + ", ".join(
+                f"{row.get('symbol', '').replace('_USDT', '')}:{row.get('score', 0)}"
+                for row in ranked_preview
+            )
+        )
 
     app = tg.build_app()
 
