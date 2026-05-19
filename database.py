@@ -199,11 +199,17 @@ def get_all_signals() -> list[dict]:
 
 
 def signal_exists_for_coin(symbol: str, since: datetime) -> bool:
+    """
+    Cooldown helper.
+
+    Important:
+        This checks ANY signal generated after `since`, not only pending signals.
+        Otherwise a coin can fire again immediately after a quick win/loss.
+    """
     with _conn() as con:
         row = con.execute("""
             SELECT id FROM signals
             WHERE symbol = ?
-              AND status = 'pending'
               AND generated_at >= ?
             LIMIT 1
         """, (symbol, since.isoformat())).fetchone()

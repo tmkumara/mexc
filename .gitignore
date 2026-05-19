@@ -8,3 +8,5 @@ mexc_bot.log
 *.egg-info/
 dist/
 build/
+.claude/
+

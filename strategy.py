@@ -1,32 +1,25 @@
 """
-Stateful SMC / Market Structure Strategy.
+Phase 1 Strategy — Momentum Pullback Scalper.
 
-No classic indicators are used.
+Goal:
+    - More practical signal frequency than strict SMC/OB retest.
+    - Target small moves with leverage.
+    - Keep existing project flow:
+        detect_setup(symbol) -> saved to pending_setups
+        evaluate_pending_setup(setup) -> fires Signal after pullback confirmation
 
-Flow:
-    1. detect_setup(symbol)
-       - 4H market structure bias
-       - 1H liquidity sweep
-       - 1H displacement candle
-       - 1H micro BOS confirmation
-       - 1H order block
-       - stores pending setup in database via main.py
+Strategy:
+    1. 1H trend filter using EMA20/EMA50 and EMA slope.
+    2. 5m momentum impulse candle:
+        - direction matches 1H trend
+        - body larger than average
+        - volume above average
+        - close breaks recent structure
+    3. Save pullback zone as pending setup.
+    4. Monitor waits for price to retrace into pullback zone.
+    5. Fire only after confirmation candle in trend direction.
 
-    2. evaluate_pending_setup(setup)
-       - checks whether price retested OB zone
-       - validates confirmation candle
-       - recalculates RR from actual retest entry
-       - returns Signal only when entry confirms
-
-Clear monitor logs:
-    WAIT_DATA_NOT_READY
-    WAIT_NO_OB_TOUCH
-    WAIT_OB_BODY_TOO_LARGE
-    WAIT_OB_NO_REJECTION
-    WAIT_RR_FAILED
-    INVALIDATED_SL_TOUCHED
-    EXPIRED_TIMEOUT
-    FIRE_ENTRY_CONFIRMED
+This is not financial advice. No strategy can guarantee profit.
 """
 
 import logging
@@ -35,42 +28,44 @@ from datetime import datetime, timezone, timedelta
 
 import pandas as pd
 
-from market_data import get_market_klines as get_klines
+from mexc_client import get_klines
 from config import (
     TREND_TF,
     ENTRY_TF,
     TREND_KLINE_COUNT,
     ENTRY_KLINE_COUNT,
     MONITOR_KLINE_COUNT,
-    SWING_LEFT,
-    SWING_RIGHT,
-    STRUCTURE_LOOKBACK,
+    EMA_FAST_PERIOD,
+    EMA_SLOW_PERIOD,
+    TREND_SLOPE_LOOKBACK,
     ENTRY_LOOKBACK,
-    SWEEP_LOOKBACK,
     AVG_BODY_PERIOD,
-    DISPLACEMENT_BODY_MULTIPLIER,
-    DISPLACEMENT_CLOSE_POSITION,
-    MICRO_BOS_LOOKBACK,
-    MICRO_BOS_BUFFER_PCT,
-    ORDER_BLOCK_LOOKBACK,
-    OB_TOUCH_TOLERANCE_PCT,
+    AVG_VOLUME_PERIOD,
+    MOMENTUM_LOOKBACK,
+    MOMENTUM_BREAKOUT_LOOKBACK,
+    MOMENTUM_BODY_MULTIPLIER,
+    MOMENTUM_VOLUME_MULTIPLIER,
+    MOMENTUM_CLOSE_POSITION,
+    PULLBACK_MIN_RETRACE,
+    PULLBACK_MAX_RETRACE,
+    CONFIRM_BREAK_PREVIOUS_CANDLE,
+    CONFIRM_VOLUME_MULTIPLIER,
+    MAX_CONFIRM_CANDLE_BODY_PCT,
+    TAKE_PROFIT_PRICE_PCT,
+    STOP_LOSS_PRICE_PCT,
     PENDING_SETUP_EXPIRE_CANDLES,
-    MAX_SIGNAL_CANDLE_BODY_PCT,
-    MIN_STRUCTURE_RR,
-    MAX_STRUCTURE_RR,
-    SL_BUFFER_PCT,
-    TP_BUFFER_PCT,
-    MIN_SL_PCT,
-    MAX_SL_PCT,
+    MIN_TP_ROI_PCT,
+    MAX_TP_ROI_PCT,
+    MIN_SL_ROI_PCT,
+    MAX_SL_ROI_PCT,
+    MIN_SIGNAL_SCORE,
     LEVERAGE,
     CANDLE_MINUTES,
 )
 
 logger = logging.getLogger(__name__)
 
-# Avoid repeating the exact same WAIT reason every monitor cycle.
-# This is intentionally local to strategy.py, not a config change.
-MONITOR_LOG_REPEAT_SECONDS = 300
+MONITOR_LOG_REPEAT_SECONDS = 180
 _LAST_MONITOR_LOG: dict[str, tuple[str, datetime]] = {}
 
 
@@ -89,18 +84,14 @@ class Signal:
     score:             float = 0.0
 
 
-# ── log helpers ───────────────────────────────────────────────────
+# ── Logging helpers ───────────────────────────────────────────────
 
 def _setup_id(setup: dict) -> str:
     return str(setup.get("id", "?"))
 
 
 def _setup_label(setup: dict) -> str:
-    return (
-        f"#{_setup_id(setup)} "
-        f"{setup.get('symbol', '?')} "
-        f"{setup.get('direction', '?')}"
-    )
+    return f"#{_setup_id(setup)} {setup.get('symbol', '?')} {setup.get('direction', '?')}"
 
 
 def _fmt(value, digits: int = 8) -> str:
@@ -117,37 +108,46 @@ def _log_monitor_reason(
     *,
     force: bool = False,
 ) -> None:
-    """
-    Log monitor reason clearly without spamming identical WAIT messages.
-
-    force=True is used for terminal states:
-        EXPIRED, INVALIDATED, FIRE.
-    """
     now = datetime.now(timezone.utc)
     setup_key = _setup_id(setup)
     last = _LAST_MONITOR_LOG.get(setup_key)
 
     if not force and last is not None:
         last_reason, last_time = last
-        seconds_since_last = (now - last_time).total_seconds()
-
-        if last_reason == reason and seconds_since_last < MONITOR_LOG_REPEAT_SECONDS:
+        if last_reason == reason and (now - last_time).total_seconds() < MONITOR_LOG_REPEAT_SECONDS:
             return
 
     _LAST_MONITOR_LOG[setup_key] = (reason, now)
 
     msg = f"[SETUP-REASON] {_setup_label(setup)} | {reason}"
-
     if details:
         msg += f" | {details}"
 
     logger.info(msg)
 
 
-# ── candle helpers ────────────────────────────────────────────────
+# ── Candle helpers ────────────────────────────────────────────────
+
+def _ensure_df(df: pd.DataFrame | None) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    required = {"open", "high", "low", "close"}
+    if not required.issubset(set(df.columns)):
+        return pd.DataFrame()
+    return df.copy()
+
+
+def _ema(series: pd.Series, period: int) -> pd.Series:
+    return series.astype(float).ewm(span=period, adjust=False).mean()
+
 
 def _body_size(row: pd.Series) -> float:
     return abs(float(row["close"]) - float(row["open"]))
+
+
+def _body_pct(row: pd.Series) -> float:
+    close = float(row["close"])
+    return (_body_size(row) / close * 100.0) if close > 0 else 0.0
 
 
 def _is_bullish(row: pd.Series) -> bool:
@@ -156,15 +156,6 @@ def _is_bullish(row: pd.Series) -> bool:
 
 def _is_bearish(row: pd.Series) -> bool:
     return float(row["close"]) < float(row["open"])
-
-
-def _body_pct(row: pd.Series) -> float:
-    close = float(row["close"])
-
-    if close <= 0:
-        return 0.0
-
-    return _body_size(row) / close * 100.0
 
 
 def _close_position(row: pd.Series) -> float:
@@ -182,507 +173,222 @@ def _close_position(row: pd.Series) -> float:
 def _avg_body(df: pd.DataFrame, pos: int, period: int) -> float:
     start = max(0, pos - period)
     subset = df.iloc[start:pos]
+    if subset.empty:
+        return 0.0
+    return float((subset["close"].astype(float) - subset["open"].astype(float)).abs().mean())
 
+
+def _avg_volume(df: pd.DataFrame, pos: int, period: int) -> float:
+    if "volume" not in df.columns:
+        return 0.0
+
+    start = max(0, pos - period)
+    subset = df.iloc[start:pos]
     if subset.empty:
         return 0.0
 
-    bodies = (subset["close"].astype(float) - subset["open"].astype(float)).abs()
-    return float(bodies.mean())
-
-
-def _ob_tolerance_price(zone_low: float, zone_high: float) -> float:
-    """
-    Price tolerance around the OB zone.
-
-    Uses OB midpoint so the tolerance scales naturally for both high-price
-    and low-price symbols.
-    """
-    midpoint = (zone_low + zone_high) / 2.0
-
-    if midpoint <= 0:
-        return 0.0
-
-    return midpoint * (OB_TOUCH_TOLERANCE_PCT / 100.0)
-
-
-def _expanded_ob_zone(zone_low: float, zone_high: float) -> tuple[float, float, float]:
-    """
-    Returns:
-        expanded_low, expanded_high, tolerance_price
-    """
-    tolerance = _ob_tolerance_price(zone_low, zone_high)
-    return zone_low - tolerance, zone_high + tolerance, tolerance
+    return float(subset["volume"].astype(float).mean())
 
 
 def _touches_zone(row: pd.Series, zone_low: float, zone_high: float) -> bool:
-    """
-    Exact OB touch check.
-    """
     high = float(row["high"])
     low = float(row["low"])
-
     return low <= zone_high and high >= zone_low
-
-
-def _touches_zone_with_tolerance(row: pd.Series, zone_low: float, zone_high: float) -> bool:
-    """
-    OB retest check with tolerance.
-
-    This fixes the main issue found in logs:
-        WAIT_NO_OB_TOUCH
-
-    Price often comes very close to the OB but does not touch the exact
-    zone. For 1H/4H stable setups, allowing a small proximity tolerance
-    is more practical than requiring perfect touch.
-    """
-    high = float(row["high"])
-    low = float(row["low"])
-    expanded_low, expanded_high, _ = _expanded_ob_zone(zone_low, zone_high)
-
-    return low <= expanded_high and high >= expanded_low
 
 
 def _parse_utc(ts: str) -> datetime:
     dt = datetime.fromisoformat(ts)
-
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-
     return dt
 
 
-# ── swings ────────────────────────────────────────────────────────
+# ── Trend filter ──────────────────────────────────────────────────
 
-def _find_swings(df: pd.DataFrame, left: int, right: int) -> list[dict]:
-    swings: list[dict] = []
+def _get_trend_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
+    df = _ensure_df(trend_df)
 
-    if len(df) < left + right + 5:
-        return swings
+    # Use completed candles only.
+    completed = df.iloc[:-1].copy()
 
-    highs = df["high"].astype(float)
-    lows = df["low"].astype(float)
+    min_len = EMA_SLOW_PERIOD + TREND_SLOPE_LOOKBACK + 5
+    if len(completed) < min_len:
+        return None, {"reason": "NOT_ENOUGH_TREND_CANDLES"}
 
-    for i in range(left, len(df) - right):
-        high = float(highs.iloc[i])
-        low = float(lows.iloc[i])
+    close = completed["close"].astype(float)
+    completed["ema_fast"] = _ema(close, EMA_FAST_PERIOD)
+    completed["ema_slow"] = _ema(close, EMA_SLOW_PERIOD)
 
-        left_high = float(highs.iloc[i - left:i].max())
-        right_high = float(highs.iloc[i + 1:i + right + 1].max())
+    last = completed.iloc[-1]
+    old = completed.iloc[-1 - TREND_SLOPE_LOOKBACK]
 
-        left_low = float(lows.iloc[i - left:i].min())
-        right_low = float(lows.iloc[i + 1:i + right + 1].min())
+    last_close = float(last["close"])
+    ema_fast = float(last["ema_fast"])
+    ema_slow = float(last["ema_slow"])
 
-        if high > left_high and high > right_high:
-            swings.append({
-                "type": "HIGH",
-                "pos": i,
-                "time": df.index[i],
-                "price": high,
-            })
+    fast_slope = ema_fast - float(old["ema_fast"])
+    slow_slope = ema_slow - float(old["ema_slow"])
 
-        if low < left_low and low < right_low:
-            swings.append({
-                "type": "LOW",
-                "pos": i,
-                "time": df.index[i],
-                "price": low,
-            })
+    if (
+        last_close > ema_fast > ema_slow
+        and fast_slope > 0
+        and slow_slope >= 0
+    ):
+        return "LONG", {
+            "ema_fast": ema_fast,
+            "ema_slow": ema_slow,
+            "fast_slope": fast_slope,
+            "slow_slope": slow_slope,
+        }
 
-    swings.sort(key=lambda x: x["pos"])
-    return swings
+    if (
+        last_close < ema_fast < ema_slow
+        and fast_slope < 0
+        and slow_slope <= 0
+    ):
+        return "SHORT", {
+            "ema_fast": ema_fast,
+            "ema_slow": ema_slow,
+            "fast_slope": fast_slope,
+            "slow_slope": slow_slope,
+        }
 
-
-def _last_swing_before(swings: list[dict], swing_type: str, pos: int) -> dict | None:
-    candidates = [
-        s for s in swings
-        if s["type"] == swing_type and s["pos"] < pos
-    ]
-
-    return candidates[-1] if candidates else None
-
-
-def _find_target_swing(
-    swings: list[dict],
-    direction: str,
-    pos: int,
-    reference_price: float,
-) -> dict | None:
-    if direction == "LONG":
-        candidates = [
-            s for s in swings
-            if s["type"] == "HIGH"
-            and s["pos"] < pos
-            and s["price"] > reference_price
-        ]
-        return candidates[-1] if candidates else None
-
-    candidates = [
-        s for s in swings
-        if s["type"] == "LOW"
-        and s["pos"] < pos
-        and s["price"] < reference_price
-    ]
-
-    return candidates[-1] if candidates else None
-
-
-# ── market structure bias ─────────────────────────────────────────
-
-def _get_market_structure_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
-    completed = trend_df.iloc[:-1].copy()
-
-    if len(completed) < STRUCTURE_LOOKBACK // 2:
-        return None, {}
-
-    recent = completed.tail(STRUCTURE_LOOKBACK).copy()
-    swings = _find_swings(recent, SWING_LEFT, SWING_RIGHT)
-
-    if len(swings) < 4:
-        return None, {}
-
-    last_bias = None
-    last_break_price = None
-    last_break_time = None
-
-    for i in range(SWING_LEFT + SWING_RIGHT + 2, len(recent)):
-        close = float(recent["close"].iloc[i])
-
-        previous_high = _last_swing_before(swings, "HIGH", i)
-        previous_low = _last_swing_before(swings, "LOW", i)
-
-        if previous_high and close > previous_high["price"]:
-            last_bias = "LONG"
-            last_break_price = previous_high["price"]
-            last_break_time = recent.index[i]
-
-        if previous_low and close < previous_low["price"]:
-            last_bias = "SHORT"
-            last_break_price = previous_low["price"]
-            last_break_time = recent.index[i]
-
-    if not last_bias:
-        return None, {}
-
-    return last_bias, {
-        "bias": last_bias,
-        "break_price": last_break_price,
-        "break_time": last_break_time,
-        "swing_count": len(swings),
+    return None, {
+        "reason": "NO_CLEAR_EMA_TREND",
+        "close": last_close,
+        "ema_fast": ema_fast,
+        "ema_slow": ema_slow,
+        "fast_slope": fast_slope,
+        "slow_slope": slow_slope,
     }
 
 
-# ── sweep / displacement / micro BOS / OB ─────────────────────────
+# ── Momentum setup detection ──────────────────────────────────────
 
-def _detect_sell_side_sweep(df: pd.DataFrame, swings: list[dict], pos: int) -> dict | None:
-    prev_low = _last_swing_before(swings, "LOW", pos)
-
-    if not prev_low:
-        return None
-
+def _is_long_momentum(df: pd.DataFrame, pos: int) -> bool:
     row = df.iloc[pos]
-    low = float(row["low"])
+    avg_body = _avg_body(df, pos, AVG_BODY_PERIOD)
+    avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
+
+    if avg_body <= 0:
+        return False
+
+    prev_start = max(0, pos - MOMENTUM_BREAKOUT_LOOKBACK)
+    prev = df.iloc[prev_start:pos]
+    if prev.empty:
+        return False
+
     close = float(row["close"])
+    volume = float(row.get("volume", 0.0))
 
-    if low < prev_low["price"] and close > prev_low["price"]:
-        return {
-            "type": "SELL_SIDE_SWEEP",
-            "swing": prev_low,
-            "pos": pos,
-            "time": df.index[pos],
-            "level": prev_low["price"],
-            "extreme": low,
-        }
+    body_ok = _body_size(row) >= avg_body * MOMENTUM_BODY_MULTIPLIER
+    volume_ok = avg_vol <= 0 or volume >= avg_vol * MOMENTUM_VOLUME_MULTIPLIER
+    close_ok = _close_position(row) >= MOMENTUM_CLOSE_POSITION
+    breakout_ok = close > float(prev["high"].astype(float).max())
 
-    return None
+    return _is_bullish(row) and body_ok and volume_ok and close_ok and breakout_ok
 
 
-def _detect_buy_side_sweep(df: pd.DataFrame, swings: list[dict], pos: int) -> dict | None:
-    prev_high = _last_swing_before(swings, "HIGH", pos)
-
-    if not prev_high:
-        return None
-
+def _is_short_momentum(df: pd.DataFrame, pos: int) -> bool:
     row = df.iloc[pos]
+    avg_body = _avg_body(df, pos, AVG_BODY_PERIOD)
+    avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
+
+    if avg_body <= 0:
+        return False
+
+    prev_start = max(0, pos - MOMENTUM_BREAKOUT_LOOKBACK)
+    prev = df.iloc[prev_start:pos]
+    if prev.empty:
+        return False
+
+    close = float(row["close"])
+    volume = float(row.get("volume", 0.0))
+
+    body_ok = _body_size(row) >= avg_body * MOMENTUM_BODY_MULTIPLIER
+    volume_ok = avg_vol <= 0 or volume >= avg_vol * MOMENTUM_VOLUME_MULTIPLIER
+    close_ok = _close_position(row) <= (1.0 - MOMENTUM_CLOSE_POSITION)
+    breakout_ok = close < float(prev["low"].astype(float).min())
+
+    return _is_bearish(row) and body_ok and volume_ok and close_ok and breakout_ok
+
+
+def _build_pullback_zone(direction: str, row: pd.Series) -> tuple[float, float]:
     high = float(row["high"])
-    close = float(row["close"])
+    low = float(row["low"])
+    rng = high - low
 
-    if high > prev_high["price"] and close < prev_high["price"]:
-        return {
-            "type": "BUY_SIDE_SWEEP",
-            "swing": prev_high,
-            "pos": pos,
-            "time": df.index[pos],
-            "level": prev_high["price"],
-            "extreme": high,
-        }
+    if rng <= 0:
+        return low, high
 
-    return None
+    if direction == "LONG":
+        zone_high = high - rng * PULLBACK_MIN_RETRACE
+        zone_low = high - rng * PULLBACK_MAX_RETRACE
+    else:
+        zone_low = low + rng * PULLBACK_MIN_RETRACE
+        zone_high = low + rng * PULLBACK_MAX_RETRACE
+
+    return round(min(zone_low, zone_high), 8), round(max(zone_low, zone_high), 8)
 
 
-def _is_bullish_displacement(df: pd.DataFrame, pos: int) -> bool:
+def _score_momentum_setup(df: pd.DataFrame, pos: int, direction: str) -> float:
     row = df.iloc[pos]
     avg_body = _avg_body(df, pos, AVG_BODY_PERIOD)
+    avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
 
-    if avg_body <= 0:
-        return False
+    body_ratio = (_body_size(row) / avg_body) if avg_body > 0 else 1.0
 
-    return (
-        _is_bullish(row)
-        and _body_size(row) >= avg_body * DISPLACEMENT_BODY_MULTIPLIER
-        and _close_position(row) >= DISPLACEMENT_CLOSE_POSITION
-    )
+    volume = float(row.get("volume", 0.0))
+    volume_ratio = (volume / avg_vol) if avg_vol > 0 else 1.0
 
+    close_pos = _close_position(row)
+    if direction == "SHORT":
+        close_pos = 1.0 - close_pos
 
-def _is_bearish_displacement(df: pd.DataFrame, pos: int) -> bool:
-    row = df.iloc[pos]
-    avg_body = _avg_body(df, pos, AVG_BODY_PERIOD)
+    score = 50.0
+    score += min(max((body_ratio - 1.0) * 18.0, 0.0), 25.0)
+    score += min(max((volume_ratio - 1.0) * 12.0, 0.0), 15.0)
+    score += min(max((close_pos - 0.5) * 50.0, 0.0), 15.0)
 
-    if avg_body <= 0:
-        return False
-
-    return (
-        _is_bearish(row)
-        and _body_size(row) >= avg_body * DISPLACEMENT_BODY_MULTIPLIER
-        and _close_position(row) <= (1.0 - DISPLACEMENT_CLOSE_POSITION)
-    )
-
-
-def _has_bullish_micro_bos(df: pd.DataFrame, displacement_pos: int) -> tuple[bool, float | None]:
-    """
-    LONG micro BOS:
-        displacement candle close must break above the recent minor high.
-    """
-    start = max(0, displacement_pos - MICRO_BOS_LOOKBACK)
-    reference = df.iloc[start:displacement_pos]
-
-    if reference.empty:
-        return False, None
-
-    recent_high = float(reference["high"].astype(float).max())
-    close = float(df["close"].iloc[displacement_pos])
-
-    break_level = recent_high * (1.0 + MICRO_BOS_BUFFER_PCT / 100.0)
-
-    return close > break_level, recent_high
-
-
-def _has_bearish_micro_bos(df: pd.DataFrame, displacement_pos: int) -> tuple[bool, float | None]:
-    """
-    SHORT micro BOS:
-        displacement candle close must break below the recent minor low.
-    """
-    start = max(0, displacement_pos - MICRO_BOS_LOOKBACK)
-    reference = df.iloc[start:displacement_pos]
-
-    if reference.empty:
-        return False, None
-
-    recent_low = float(reference["low"].astype(float).min())
-    close = float(df["close"].iloc[displacement_pos])
-
-    break_level = recent_low * (1.0 - MICRO_BOS_BUFFER_PCT / 100.0)
-
-    return close < break_level, recent_low
-
-
-def _has_micro_bos(df: pd.DataFrame, direction: str, displacement_pos: int) -> tuple[bool, float | None]:
-    if direction == "LONG":
-        return _has_bullish_micro_bos(df, displacement_pos)
-
-    return _has_bearish_micro_bos(df, displacement_pos)
-
-
-def _find_bullish_ob(df: pd.DataFrame, displacement_pos: int) -> dict | None:
-    start = max(0, displacement_pos - ORDER_BLOCK_LOOKBACK)
-
-    for i in range(displacement_pos - 1, start - 1, -1):
-        row = df.iloc[i]
-
-        if _is_bearish(row):
-            zone_low = float(row["low"])
-            zone_high = max(float(row["open"]), float(row["close"]))
-
-            return {
-                "type": "BULLISH_OB",
-                "pos": i,
-                "time": df.index[i],
-                "zone_low": zone_low,
-                "zone_high": zone_high,
-            }
-
-    return None
-
-
-def _find_bearish_ob(df: pd.DataFrame, displacement_pos: int) -> dict | None:
-    start = max(0, displacement_pos - ORDER_BLOCK_LOOKBACK)
-
-    for i in range(displacement_pos - 1, start - 1, -1):
-        row = df.iloc[i]
-
-        if _is_bullish(row):
-            zone_low = min(float(row["open"]), float(row["close"]))
-            zone_high = float(row["high"])
-
-            return {
-                "type": "BEARISH_OB",
-                "pos": i,
-                "time": df.index[i],
-                "zone_low": zone_low,
-                "zone_high": zone_high,
-            }
-
-    return None
-
-
-# ── price calculations ────────────────────────────────────────────
-
-def _calculate_setup_prices(
-    direction: str,
-    ob: dict,
-    sweep: dict,
-    target_swing: dict | None,
-) -> tuple[float, float, float] | None:
-    """
-    Returns:
-        sl_price, target_price, rr_estimate.
-
-    RR estimate uses OB midpoint as assumed entry.
-    Actual RR is recalculated on retest entry.
-    """
-    ob_mid = (ob["zone_low"] + ob["zone_high"]) / 2.0
-
-    if ob_mid <= 0:
-        return None
-
-    if direction == "LONG":
-        sl_price = min(sweep["extreme"], ob["zone_low"]) * (1.0 - SL_BUFFER_PCT / 100.0)
-
-        if target_swing and target_swing["price"] > ob_mid:
-            target_price = target_swing["price"] * (1.0 - TP_BUFFER_PCT / 100.0)
-        else:
-            target_price = ob_mid + (ob_mid - sl_price) * MIN_STRUCTURE_RR
-
-        risk = ob_mid - sl_price
-        reward = target_price - ob_mid
-
-    else:
-        sl_price = max(sweep["extreme"], ob["zone_high"]) * (1.0 + SL_BUFFER_PCT / 100.0)
-
-        if target_swing and target_swing["price"] < ob_mid:
-            target_price = target_swing["price"] * (1.0 + TP_BUFFER_PCT / 100.0)
-        else:
-            target_price = ob_mid - (sl_price - ob_mid) * MIN_STRUCTURE_RR
-
-        risk = sl_price - ob_mid
-        reward = ob_mid - target_price
-
-    if risk <= 0 or reward <= 0:
-        return None
-
-    sl_pct = risk / ob_mid * 100.0
-
-    if sl_pct < MIN_SL_PCT or sl_pct > MAX_SL_PCT:
-        return None
-
-    rr = reward / risk
-
-    if rr < MIN_STRUCTURE_RR:
-        return None
-
-    rr = min(rr, MAX_STRUCTURE_RR)
-
-    return round(sl_price, 8), round(target_price, 8), round(rr, 2)
-
-
-def _calculate_final_prices(
-    direction: str,
-    entry: float,
-    setup: dict,
-) -> tuple[float, float, float, float, float] | None:
-    sl_price = float(setup["sl_price"])
-    target_price = float(setup["target_price"])
-
-    if entry <= 0:
-        return None
-
-    if direction == "LONG":
-        risk = entry - sl_price
-        reward = target_price - entry
-    else:
-        risk = sl_price - entry
-        reward = entry - target_price
-
-    if risk <= 0 or reward <= 0:
-        return None
-
-    sl_pct = risk / entry * 100.0
-
-    if sl_pct < MIN_SL_PCT or sl_pct > MAX_SL_PCT:
-        return None
-
-    rr = reward / risk
-
-    if rr < MIN_STRUCTURE_RR:
-        return None
-
-    if rr > MAX_STRUCTURE_RR:
-        if direction == "LONG":
-            target_price = entry + risk * MAX_STRUCTURE_RR
-        else:
-            target_price = entry - risk * MAX_STRUCTURE_RR
-
-        reward = abs(target_price - entry)
-        rr = reward / risk
-
-    if direction == "LONG":
-        tp_move_pct = (target_price - entry) / entry * 100.0
-        sl_move_pct = (entry - sl_price) / entry * 100.0
-    else:
-        tp_move_pct = (entry - target_price) / entry * 100.0
-        sl_move_pct = (sl_price - entry) / entry * 100.0
-
-    return (
-        round(target_price, 8),
-        round(sl_price, 8),
-        round(tp_move_pct * LEVERAGE, 1),
-        round(sl_move_pct * LEVERAGE, 1),
-        round(rr, 2),
-    )
-
-
-def _score_setup(rr: float, ob_age: int, sweep_age: int, micro_bos_confirmed: bool = False) -> float:
-    score = 55.0
-
-    if rr >= 3.0:
-        score += 20.0
-    elif rr >= 2.0:
-        score += 15.0
-    elif rr >= MIN_STRUCTURE_RR:
+    # Fresh impulses are better. The scanner only looks at recent momentum,
+    # but this keeps the newest candidate preferred.
+    age = len(df) - 1 - pos
+    if age <= 2:
         score += 10.0
-
-    if ob_age <= 8:
-        score += 15.0
-    elif ob_age <= 16:
-        score += 10.0
+    elif age <= 5:
+        score += 6.0
     else:
-        score += 5.0
-
-    if sweep_age <= 12:
-        score += 10.0
-    elif sweep_age <= 24:
-        score += 5.0
-
-    if micro_bos_confirmed:
-        score += 5.0
+        score += 3.0
 
     return round(min(score, 100.0), 1)
 
 
-# ── setup detection ───────────────────────────────────────────────
+def _calculate_fixed_prices(direction: str, entry: float) -> tuple[float, float, float, float] | None:
+    if entry <= 0:
+        return None
+
+    if direction == "LONG":
+        tp_price = entry * (1.0 + TAKE_PROFIT_PRICE_PCT / 100.0)
+        sl_price = entry * (1.0 - STOP_LOSS_PRICE_PCT / 100.0)
+    else:
+        tp_price = entry * (1.0 - TAKE_PROFIT_PRICE_PCT / 100.0)
+        sl_price = entry * (1.0 + STOP_LOSS_PRICE_PCT / 100.0)
+
+    tp_roi = TAKE_PROFIT_PRICE_PCT * LEVERAGE
+    sl_roi = STOP_LOSS_PRICE_PCT * LEVERAGE
+
+    if tp_roi < MIN_TP_ROI_PCT or tp_roi > MAX_TP_ROI_PCT:
+        return None
+
+    if sl_roi < MIN_SL_ROI_PCT or sl_roi > MAX_SL_ROI_PCT:
+        return None
+
+    return round(tp_price, 8), round(sl_price, 8), round(tp_roi, 1), round(sl_roi, 1)
+
 
 def detect_setup(symbol: str) -> dict | None:
     """
-    Detects SMC setup and returns pending setup dict.
+    Detects a momentum impulse and returns a pending pullback setup.
 
     This does NOT fire a signal.
     """
@@ -690,107 +396,62 @@ def detect_setup(symbol: str) -> dict | None:
         trend_df = get_klines(symbol, TREND_TF, count=TREND_KLINE_COUNT)
         entry_df = get_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
 
-        if trend_df is None or trend_df.empty:
+        trend_df = _ensure_df(trend_df)
+        entry_df = _ensure_df(entry_df)
+
+        if trend_df.empty or entry_df.empty:
             return None
 
-        if entry_df is None or entry_df.empty:
-            return None
-
-        bias, bias_details = _get_market_structure_bias(trend_df)
-
+        bias, trend_details = _get_trend_bias(trend_df)
         if bias is None:
             return None
 
         completed = entry_df.iloc[:-1].copy().tail(ENTRY_LOOKBACK)
-
-        if len(completed) < 80:
+        if len(completed) < max(80, AVG_BODY_PERIOD + MOMENTUM_BREAKOUT_LOOKBACK + 5):
             return None
 
-        swings = _find_swings(completed, SWING_LEFT, SWING_RIGHT)
-
-        if len(swings) < 4:
-            return None
-
-        start = max(
-            AVG_BODY_PERIOD + SWEEP_LOOKBACK + ORDER_BLOCK_LOOKBACK + MICRO_BOS_LOOKBACK,
-            40,
-        )
-        last_possible = len(completed) - 3
+        start = max(AVG_BODY_PERIOD + MOMENTUM_BREAKOUT_LOOKBACK, len(completed) - MOMENTUM_LOOKBACK)
+        end = len(completed) - 1
 
         best_setup = None
         best_score = -1.0
 
-        for displacement_pos in range(start, last_possible + 1):
-            if bias == "LONG" and not _is_bullish_displacement(completed, displacement_pos):
-                continue
-
-            if bias == "SHORT" and not _is_bearish_displacement(completed, displacement_pos):
-                continue
-
-            sweep = None
-            sweep_start = max(0, displacement_pos - SWEEP_LOOKBACK)
-
-            for sweep_pos in range(displacement_pos - 1, sweep_start - 1, -1):
-                if bias == "LONG":
-                    sweep = _detect_sell_side_sweep(completed, swings, sweep_pos)
-                else:
-                    sweep = _detect_buy_side_sweep(completed, swings, sweep_pos)
-
-                if sweep:
-                    break
-
-            if not sweep:
-                continue
-
-            micro_bos_confirmed, micro_bos_level = _has_micro_bos(
-                completed,
-                bias,
-                displacement_pos,
-            )
-
-            if not micro_bos_confirmed:
-                continue
-
+        for pos in range(start, end + 1):
             if bias == "LONG":
-                ob = _find_bullish_ob(completed, displacement_pos)
+                is_momentum = _is_long_momentum(completed, pos)
             else:
-                ob = _find_bearish_ob(completed, displacement_pos)
+                is_momentum = _is_short_momentum(completed, pos)
 
-            if not ob:
+            if not is_momentum:
                 continue
 
-            target_swing = _find_target_swing(
-                swings=swings,
-                direction=bias,
-                pos=displacement_pos,
-                reference_price=(ob["zone_low"] + ob["zone_high"]) / 2.0,
-            )
+            row = completed.iloc[pos]
+            score = _score_momentum_setup(completed, pos, bias)
 
-            prices = _calculate_setup_prices(
-                direction=bias,
-                ob=ob,
-                sweep=sweep,
-                target_swing=target_swing,
-            )
-
-            if not prices:
+            if score < MIN_SIGNAL_SCORE or score <= best_score:
                 continue
 
-            sl_price, target_price, rr_estimate = prices
+            zone_low, zone_high = _build_pullback_zone(bias, row)
+            impulse_high = float(row["high"])
+            impulse_low = float(row["low"])
+            impulse_close = float(row["close"])
 
-            ob_age = len(completed) - ob["pos"]
-            sweep_age = len(completed) - sweep["pos"]
-            score = _score_setup(
-                rr=rr_estimate,
-                ob_age=ob_age,
-                sweep_age=sweep_age,
-                micro_bos_confirmed=True,
-            )
-
-            if score <= best_score:
+            # Placeholder TP/SL for database compatibility.
+            # Final TP/SL is calculated from actual confirmed entry in evaluate_pending_setup().
+            preview_prices = _calculate_fixed_prices(bias, impulse_close)
+            if not preview_prices:
                 continue
 
-            setup_time = completed.index[displacement_pos]
+            target_price, sl_price, _, _ = preview_prices
+            rr_estimate = TAKE_PROFIT_PRICE_PCT / STOP_LOSS_PRICE_PCT
+
+            setup_time = completed.index[pos]
+            setup_dt = (
+                setup_time.to_pydatetime().replace(tzinfo=timezone.utc)
+                if hasattr(setup_time, "to_pydatetime")
+                else datetime.now(timezone.utc)
+            )
+
             expires_at = datetime.now(timezone.utc) + timedelta(
                 minutes=PENDING_SETUP_EXPIRE_CANDLES * CANDLE_MINUTES
             )
@@ -802,43 +463,33 @@ def detect_setup(symbol: str) -> dict | None:
                 "trend_tf": TREND_TF,
                 "entry_tf": ENTRY_TF,
                 "bias": bias,
-                "bias_break": bias_details.get("break_price"),
-                "sweep_type": sweep["type"],
-                "sweep_level": sweep["level"],
-                "sweep_extreme": sweep["extreme"],
-                "sweep_time": sweep["time"].to_pydatetime().replace(tzinfo=timezone.utc).isoformat()
-                    if hasattr(sweep["time"], "to_pydatetime") else str(sweep["time"]),
-                "ob_type": ob["type"],
-                "ob_low": ob["zone_low"],
-                "ob_high": ob["zone_high"],
-                "ob_time": ob["time"].to_pydatetime().replace(tzinfo=timezone.utc).isoformat()
-                    if hasattr(ob["time"], "to_pydatetime") else str(ob["time"]),
+                "bias_break": trend_details.get("ema_fast"),
+
+                # Reusing old DB column names for new strategy metadata.
+                "sweep_type": "MOMENTUM_IMPULSE",
+                "sweep_level": impulse_close,
+                "sweep_extreme": impulse_low if bias == "LONG" else impulse_high,
+                "sweep_time": setup_dt.isoformat(),
+
+                "ob_type": "PULLBACK_ZONE",
+                "ob_low": zone_low,
+                "ob_high": zone_high,
+                "ob_time": setup_dt.isoformat(),
+
                 "target_price": target_price,
                 "sl_price": sl_price,
-                "rr_estimate": rr_estimate,
+                "rr_estimate": round(rr_estimate, 2),
                 "score": score,
-                "setup_time": setup_time.to_pydatetime().replace(tzinfo=timezone.utc).isoformat()
-                    if hasattr(setup_time, "to_pydatetime") else str(setup_time),
+                "setup_time": setup_dt.isoformat(),
                 "expires_at": expires_at.isoformat(),
-                "micro_bos_level": micro_bos_level,
             }
 
         if best_setup:
-            micro_bos_text = (
-                _fmt(best_setup.get("micro_bos_level"))
-                if best_setup.get("micro_bos_level") is not None
-                else "—"
-            )
-
             logger.info(
                 f"[SETUP] {best_setup['direction']} {symbol} | "
-                f"TF={TREND_TF}/{ENTRY_TF} "
-                f"OB={best_setup['ob_low']:.6g}-{best_setup['ob_high']:.6g} "
-                f"SL={best_setup['sl_price']:.6g} "
-                f"TP={best_setup['target_price']:.6g} "
-                f"RR~{best_setup['rr_estimate']:.2f} "
+                f"zone={best_setup['ob_low']:.6g}-{best_setup['ob_high']:.6g} "
                 f"score={best_setup['score']} "
-                f"microBOS={micro_bos_text}"
+                f"strategy=MomentumPullback"
             )
 
         return best_setup
@@ -848,7 +499,34 @@ def detect_setup(symbol: str) -> dict | None:
         return None
 
 
-# ── pending setup monitoring ──────────────────────────────────────
+# ── Pending setup monitor ─────────────────────────────────────────
+
+def _is_confirmation(row: pd.Series, prev: pd.Series, direction: str, avg_volume: float) -> bool:
+    if _body_pct(row) > MAX_CONFIRM_CANDLE_BODY_PCT:
+        return False
+
+    volume = float(row.get("volume", 0.0))
+    volume_ok = avg_volume <= 0 or volume >= avg_volume * CONFIRM_VOLUME_MULTIPLIER
+
+    if direction == "LONG":
+        candle_ok = _is_bullish(row)
+        close_break_ok = (
+            float(row["close"]) > float(prev["high"])
+            if CONFIRM_BREAK_PREVIOUS_CANDLE
+            else True
+        )
+        close_position_ok = _close_position(row) >= 0.55
+        return candle_ok and close_break_ok and close_position_ok and volume_ok
+
+    candle_ok = _is_bearish(row)
+    close_break_ok = (
+        float(row["close"]) < float(prev["low"])
+        if CONFIRM_BREAK_PREVIOUS_CANDLE
+        else True
+    )
+    close_position_ok = _close_position(row) <= 0.45
+    return candle_ok and close_break_ok and close_position_ok and volume_ok
+
 
 def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
     """
@@ -862,258 +540,121 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         now = datetime.now(timezone.utc)
         expires_at = _parse_utc(setup["expires_at"])
 
+        if now >= expires_at:
+            _log_monitor_reason(setup, "EXPIRED_TIMEOUT", force=True)
+            return "EXPIRED", None
+
         symbol = setup["symbol"]
         direction = setup["direction"]
         zone_low = float(setup["ob_low"])
         zone_high = float(setup["ob_high"])
-        sl_price = float(setup["sl_price"])
-        expanded_low, expanded_high, tolerance_price = _expanded_ob_zone(zone_low, zone_high)
-
-        if now >= expires_at:
-            _log_monitor_reason(
-                setup,
-                "EXPIRED_TIMEOUT",
-                (
-                    f"now={now.isoformat()} "
-                    f"expires_at={expires_at.isoformat()} "
-                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
-                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)} "
-                    f"ob_tolerance={OB_TOUCH_TOLERANCE_PCT:g}%"
-                ),
-                force=True,
-            )
-            return "EXPIRED", None
 
         df = get_klines(symbol, ENTRY_TF, count=MONITOR_KLINE_COUNT)
+        df = _ensure_df(df)
 
-        if df is None or df.empty or len(df) < 3:
-            _log_monitor_reason(
-                setup,
-                "WAIT_DATA_NOT_READY",
-                f"candles={0 if df is None else len(df)} required>=3",
-            )
+        if df.empty or len(df) < 10:
+            _log_monitor_reason(setup, "WAIT_DATA_NOT_READY")
             return "WAIT", None
 
         completed = df.iloc[:-1].copy()
+        recent = completed.tail(8)
 
-        if completed.empty or len(completed) < 3:
+        # Find whether the pending zone has been retested recently.
+        touched_rows = []
+        for idx, row in recent.iterrows():
+            if _touches_zone(row, zone_low, zone_high):
+                touched_rows.append((idx, row))
+
+        if not touched_rows:
+            last_close = float(completed["close"].iloc[-1])
             _log_monitor_reason(
                 setup,
-                "WAIT_DATA_NOT_READY",
-                f"completed_candles={len(completed)} required>=3",
+                "WAIT_NO_PULLBACK_TOUCH",
+                f"zone={_fmt(zone_low)}-{_fmt(zone_high)} close={_fmt(last_close)}",
             )
             return "WAIT", None
 
-        # Check last few completed candles only.
-        recent = completed.tail(4)
+        # Use last completed candle as the actual trigger candle.
+        if len(completed) < 2:
+            return "WAIT", None
 
-        recent_high = float(recent["high"].astype(float).max())
-        recent_low = float(recent["low"].astype(float).min())
+        prev = completed.iloc[-2]
+        trigger = completed.iloc[-1]
+        avg_vol = float(completed["volume"].astype(float).tail(AVG_VOLUME_PERIOD + 1).iloc[:-1].mean()) \
+            if "volume" in completed.columns and len(completed) > AVG_VOLUME_PERIOD else 0.0
 
-        # Invalidation before entry.
-        for candle_time, row in recent.iterrows():
-            candle_high = float(row["high"])
-            candle_low = float(row["low"])
-
-            if direction == "LONG" and candle_low <= sl_price:
+        # Basic invalidation before entry: if price moved too far beyond zone, setup is stale.
+        if direction == "LONG":
+            invalid_level = zone_low * (1.0 - STOP_LOSS_PRICE_PCT / 100.0)
+            if float(trigger["low"]) <= invalid_level:
                 _log_monitor_reason(
                     setup,
-                    "INVALIDATED_SL_TOUCHED",
-                    (
-                        f"candle={candle_time} "
-                        f"low={_fmt(candle_low)} sl={_fmt(sl_price)} "
-                        f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
-                        f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)}"
-                    ),
+                    "INVALIDATED_PULLBACK_TOO_DEEP",
+                    f"low={_fmt(trigger['low'])} invalid={_fmt(invalid_level)}",
+                    force=True,
+                )
+                return "INVALIDATED", None
+        else:
+            invalid_level = zone_high * (1.0 + STOP_LOSS_PRICE_PCT / 100.0)
+            if float(trigger["high"]) >= invalid_level:
+                _log_monitor_reason(
+                    setup,
+                    "INVALIDATED_PULLBACK_TOO_DEEP",
+                    f"high={_fmt(trigger['high'])} invalid={_fmt(invalid_level)}",
                     force=True,
                 )
                 return "INVALIDATED", None
 
-            if direction == "SHORT" and candle_high >= sl_price:
-                _log_monitor_reason(
-                    setup,
-                    "INVALIDATED_SL_TOUCHED",
-                    (
-                        f"candle={candle_time} "
-                        f"high={_fmt(candle_high)} sl={_fmt(sl_price)} "
-                        f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
-                        f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)}"
-                    ),
-                    force=True,
-                )
-                return "INVALIDATED", None
-
-        touched_any = False
-        body_too_large_details = None
-        no_rejection_details = None
-        rr_failed_details = None
-
-        for candle_time, row in recent.iterrows():
-            candle_high = float(row["high"])
-            candle_low = float(row["low"])
-            candle_close = float(row["close"])
-            candle_open = float(row["open"])
-
-            if not _touches_zone_with_tolerance(row, zone_low, zone_high):
-                continue
-
-            touched_any = True
-
-            body_pct = _body_pct(row)
-
-            if body_pct > MAX_SIGNAL_CANDLE_BODY_PCT:
-                body_too_large_details = (
-                    f"candle={candle_time} "
-                    f"body_pct={body_pct:.3f}% max={MAX_SIGNAL_CANDLE_BODY_PCT:.3f}% "
-                    f"open={_fmt(candle_open)} close={_fmt(candle_close)} "
-                    f"high={_fmt(candle_high)} low={_fmt(candle_low)} "
-                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
-                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)} "
-                    f"tolerance_price={_fmt(tolerance_price)}"
-                )
-                continue
-
-            midpoint = (zone_low + zone_high) / 2.0
-
-            if direction == "LONG":
-                valid_retest = _is_bullish(row) and candle_close > midpoint
-                rejection_rule = (
-                    f"need bullish close above midpoint={_fmt(midpoint)}"
-                )
-            else:
-                valid_retest = _is_bearish(row) and candle_close < midpoint
-                rejection_rule = (
-                    f"need bearish close below midpoint={_fmt(midpoint)}"
-                )
-
-            if not valid_retest:
-                no_rejection_details = (
-                    f"candle={candle_time} "
-                    f"open={_fmt(candle_open)} close={_fmt(candle_close)} "
-                    f"high={_fmt(candle_high)} low={_fmt(candle_low)} "
-                    f"midpoint={_fmt(midpoint)} rule='{rejection_rule}' "
-                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
-                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)} "
-                    f"ob_tolerance={OB_TOUCH_TOLERANCE_PCT:g}%"
-                )
-                continue
-
-            entry = candle_close
-
-            prices = _calculate_final_prices(
-                direction=direction,
-                entry=entry,
-                setup=setup,
-            )
-
-            if not prices:
-                rr_failed_details = (
-                    f"candle={candle_time} "
-                    f"entry={_fmt(entry)} sl={_fmt(sl_price)} "
-                    f"target={_fmt(setup['target_price'])} "
-                    f"min_rr={MIN_STRUCTURE_RR:g} max_rr={MAX_STRUCTURE_RR:g} "
-                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
-                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)}"
-                )
-                continue
-
-            tp_price, final_sl_price, tp_roi_pct, sl_roi_pct, rr = prices
-
-            base_score = float(setup["score"])
-            score = min(base_score + 5.0, 100.0)
-
+        if not _is_confirmation(trigger, prev, direction, avg_vol):
             _log_monitor_reason(
                 setup,
-                "FIRE_ENTRY_CONFIRMED",
-                (
-                    f"entry={_fmt(entry)} tp={_fmt(tp_price)} sl={_fmt(final_sl_price)} "
-                    f"rr={rr:.2f} score={score} "
-                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
-                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)}"
-                ),
-                force=True,
-            )
-
-            logger.info(
-                f"[ENTRY] {direction} {symbol} @ {entry:.6g} | "
-                f"TF={TREND_TF}/{ENTRY_TF} "
-                f"OB={zone_low:.6g}-{zone_high:.6g} "
-                f"TP={tp_price:.6g} SL={final_sl_price:.6g} "
-                f"RR={rr:.2f} score={score}"
-            )
-
-            return "FIRE", Signal(
-                symbol=symbol,
-                direction=direction,
-                entry_price=entry,
-                tp_price=tp_price,
-                sl_price=final_sl_price,
-                leverage=LEVERAGE,
-                tp_roi_pct=tp_roi_pct,
-                sl_roi_pct=sl_roi_pct,
-                timeframe_summary=(
-                    f"Stateful SMC {ENTRY_TF} | {TREND_TF} bias {setup['bias']} | "
-                    f"{setup['sweep_type']} + Micro BOS + {setup['ob_type']} retest | "
-                    f"OB tolerance {OB_TOUCH_TOLERANCE_PCT:g}% | RR {rr:g}"
-                ),
-                generated_at=datetime.now(timezone.utc),
-                score=score,
-            )
-
-        if not touched_any:
-            _log_monitor_reason(
-                setup,
-                "WAIT_NO_OB_TOUCH",
-                (
-                    f"recent_low={_fmt(recent_low)} recent_high={_fmt(recent_high)} "
-                    f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
-                    f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)} "
-                    f"ob_tolerance={OB_TOUCH_TOLERANCE_PCT:g}% "
-                    f"sl={_fmt(sl_price)}"
-                ),
+                "WAIT_CONFIRMATION_CANDLE",
+                f"body={_body_pct(trigger):.2f}% close={_fmt(trigger['close'])}",
             )
             return "WAIT", None
 
-        if body_too_large_details:
-            _log_monitor_reason(
-                setup,
-                "WAIT_OB_BODY_TOO_LARGE",
-                body_too_large_details,
-            )
+        entry = float(trigger["close"])
+        prices = _calculate_fixed_prices(direction, entry)
+
+        if not prices:
+            _log_monitor_reason(setup, "WAIT_PRICE_MODEL_FAILED")
             return "WAIT", None
 
-        if no_rejection_details:
-            _log_monitor_reason(
-                setup,
-                "WAIT_OB_NO_REJECTION",
-                no_rejection_details,
-            )
-            return "WAIT", None
-
-        if rr_failed_details:
-            _log_monitor_reason(
-                setup,
-                "WAIT_RR_FAILED",
-                rr_failed_details,
-            )
-            return "WAIT", None
+        tp_price, sl_price, tp_roi_pct, sl_roi_pct = prices
+        score = min(float(setup["score"]) + 5.0, 100.0)
 
         _log_monitor_reason(
             setup,
-            "WAIT_UNKNOWN_RETEST_CONDITION",
-            (
-                f"recent_low={_fmt(recent_low)} recent_high={_fmt(recent_high)} "
-                f"zone={_fmt(zone_low)}-{_fmt(zone_high)} "
-                f"expanded_zone={_fmt(expanded_low)}-{_fmt(expanded_high)}"
-            ),
+            "FIRE_ENTRY_CONFIRMED",
+            f"entry={_fmt(entry)} tp={_fmt(tp_price)} sl={_fmt(sl_price)} score={score}",
+            force=True,
         )
-        return "WAIT", None
+
+        return "FIRE", Signal(
+            symbol=symbol,
+            direction=direction,
+            entry_price=entry,
+            tp_price=tp_price,
+            sl_price=sl_price,
+            leverage=LEVERAGE,
+            tp_roi_pct=tp_roi_pct,
+            sl_roi_pct=sl_roi_pct,
+            timeframe_summary=(
+                f"Momentum Pullback | {TREND_TF} trend {setup['bias']} | "
+                f"{ENTRY_TF} impulse + pullback confirmation"
+            ),
+            generated_at=datetime.now(timezone.utc),
+            score=score,
+        )
 
     except Exception as e:
         logger.error(f"Error evaluating pending setup {setup.get('id')}: {e}", exc_info=True)
         return "WAIT", None
 
 
-# Compatibility wrapper. Main.py does not need this in the new flow.
+# Compatibility wrapper. Main.py does not use this in the stateful flow.
 def analyze_coin(symbol: str) -> "Signal | None":
+    setup = detect_setup(symbol)
+    if not setup:
+        return None
     return None

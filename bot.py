@@ -1,10 +1,9 @@
 """
-Telegram bot: handles commands and broadcasts Stateful SMC market-structure signals.
+Telegram bot: handles commands and broadcasts Phase 1 Momentum Pullback signals.
 
 Important:
     Signal messages use HTML parse mode, not Markdown.
-    This avoids Telegram parse errors caused by symbols/strategy text containing underscores,
-    e.g. H_USDT, SELL_SIDE_SWEEP, BULLISH_OB.
+    This avoids Telegram parse errors caused by symbols containing underscores.
 """
 
 import logging
@@ -17,7 +16,11 @@ from telegram.constants import ParseMode
 
 import database as db
 import reports
-from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, LKT
+from config import (
+    TELEGRAM_TOKEN,
+    TELEGRAM_CHANNEL_ID,
+    LKT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -161,16 +164,14 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from config import (
         TREND_TF,
         ENTRY_TF,
-        SWING_LEFT,
-        SWING_RIGHT,
-        SWEEP_LOOKBACK,
-        DISPLACEMENT_BODY_MULTIPLIER,
-        ORDER_BLOCK_LOOKBACK,
-        PENDING_SETUP_EXPIRE_CANDLES,
-        MIN_STRUCTURE_RR,
-        MAX_STRUCTURE_RR,
-        MIN_SL_PCT,
-        MAX_SL_PCT,
+        EMA_FAST_PERIOD,
+        EMA_SLOW_PERIOD,
+        MOMENTUM_BODY_MULTIPLIER,
+        MOMENTUM_VOLUME_MULTIPLIER,
+        TAKE_PROFIT_PRICE_PCT,
+        STOP_LOSS_PRICE_PCT,
+        TP_ROI_PCT,
+        SL_ROI_PCT,
         LEVERAGE,
         SIGNAL_COOLDOWN_MINUTES,
         SIGNALS_PER_SCAN,
@@ -178,6 +179,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SCAN_WORKERS,
         SETUP_SCAN_CRON_MINUTES,
         SETUP_MONITOR_MINUTES,
+        MIN_SIGNAL_SCORE,
     )
 
     state = "⏸ PAUSED" if paused else "▶️ RUNNING"
@@ -191,20 +193,16 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📡 <b>Scanner Status</b>",
         "━━━━━━━━━━━━━━━━━━━━",
         f"State:      {_code(state)}",
-        f"Strategy:   {_code('Stateful SMC Sweep + OB Retest')}",
-        f"Trend TF:   {_code(TREND_TF)} market-structure bias",
-        f"Entry TF:   {_code(ENTRY_TF)} sweep/displacement/OB retest",
+        f"Strategy:   {_code('Phase 1 Momentum Pullback Scalper')}",
+        f"Trend TF:   {_code(TREND_TF)} EMA{EMA_FAST_PERIOD}/EMA{EMA_SLOW_PERIOD} bias",
+        f"Entry TF:   {_code(ENTRY_TF)} momentum + pullback confirmation",
         f"Setup scan: {_code(SETUP_SCAN_CRON_MINUTES)}",
         f"Monitor:    {_code(f'every {SETUP_MONITOR_MINUTES} min')}",
-        f"Swings:     {_code(f'left={SWING_LEFT} right={SWING_RIGHT}')}",
-        f"Sweep:      {_code(f'lookback={SWEEP_LOOKBACK}')}",
-        f"Displace:   {_code(f'body × {DISPLACEMENT_BODY_MULTIPLIER:g}')}",
-        f"OB:         {_code(f'lookback={ORDER_BLOCK_LOOKBACK}')}",
-        f"Expire:     {_code(f'{PENDING_SETUP_EXPIRE_CANDLES} candles')}",
-        f"RR:         {_code(f'{MIN_STRUCTURE_RR:g}–{MAX_STRUCTURE_RR:g}')}",
-        f"SL limit:   {_code(f'{MIN_SL_PCT:g}%–{MAX_SL_PCT:g}%')}",
+        f"Momentum:   {_code(f'body×{MOMENTUM_BODY_MULTIPLIER:g}, volume×{MOMENTUM_VOLUME_MULTIPLIER:g}')}",
+        f"TP/SL:      {_code(f'{TAKE_PROFIT_PRICE_PCT:g}% / {STOP_LOSS_PRICE_PCT:g}% price')}",
+        f"ROI model:  {_code(f'+{TP_ROI_PCT:.1f}% / -{SL_ROI_PCT:.1f}% at {LEVERAGE}x')}",
+        f"Min score:  {_code(MIN_SIGNAL_SCORE)}",
         f"Workers:    {_code(SCAN_WORKERS)}",
-        f"Leverage:   {_code(f'{LEVERAGE}x')}",
         f"Per scan:   {_code(f'top {SIGNALS_PER_SCAN} entries')}",
         f"Cooldown:   {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
         f"Waiting:    {_code(f'{waiting} setups')}",
