@@ -16,136 +16,126 @@ COINGLASS_API_KEY: str = os.getenv("COINGLASS_API_KEY", "")
 
 # ── Coin pool ────────────────────────────────────────────────────
 EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
-
-# Final selected pool size.
-TOP_N_COINS:              int   = 60
-COIN_POOL_MIN_VOLUME_USD: float = 1_000_000
+TOP_N_COINS:              int   = 40
+COIN_POOL_MIN_VOLUME_USD: float = 2_000_000
 COIN_REFRESH_HOURS:       int   = 6
 
 # ── Phase 2: Smart Coin Ranking ───────────────────────────────────
-# Ranking happens when the coin pool is refreshed.
-# It reduces low-quality/noisy coins and prioritizes active, liquid, tradable movement.
 ENABLE_SMART_COIN_RANKING: bool = True
-
-# How many candidates to inspect before final TOP_N_COINS selection.
-# Example: 60 * 2 = 120 raw candidates, capped by COIN_RANK_MAX_CANDIDATES.
-COIN_RANK_CANDIDATE_MULTIPLIER: int = 2
+COIN_RANK_CANDIDATE_MULTIPLIER: int = 3
 COIN_RANK_MAX_CANDIDATES: int = 120
-
-# Ranking candles.
 COIN_RANK_TIMEFRAME: str = "5m"
-COIN_RANK_KLINE_COUNT: int = 48       # 48 x 5m = 4 hours
-
-# Ranking worker count. Keep low to avoid REST rate limits.
+COIN_RANK_KLINE_COUNT: int = 48
 COIN_RANK_WORKERS: int = 3
-
-# Minimum activity filters.
 COIN_RANK_MIN_LAST_PRICE: float = 0.000001
-COIN_RANK_MIN_RANGE_PCT: float = 0.10       # too flat = skip
-COIN_RANK_MAX_RANGE_PCT: float = 15.00       # too wild = skip
-COIN_RANK_MAX_ABS_MOVE_PCT: float = 15.00   # huge pump/dump over lookback = skip/penalty
+COIN_RANK_MIN_RANGE_PCT: float = 0.25
+COIN_RANK_MAX_RANGE_PCT: float = 7.50
+COIN_RANK_MAX_ABS_MOVE_PCT: float = 8.00
+COIN_RANK_VOLUME_WEIGHT: float = 40.0
+COIN_RANK_VOLATILITY_WEIGHT: float = 25.0
+COIN_RANK_TREND_WEIGHT: float = 15.0
+COIN_RANK_LIQUIDITY_WEIGHT: float = 20.0
+COIN_RANK_OVEREXTENSION_PENALTY: float = 45.0
+COIN_RANK_LOW_ACTIVITY_PENALTY: float = 25.0
 
-# Weighted score model.
-COIN_RANK_VOLUME_WEIGHT: float = 35.0
-COIN_RANK_VOLATILITY_WEIGHT: float = 30.0
-COIN_RANK_TREND_WEIGHT: float = 20.0
-COIN_RANK_LIQUIDITY_WEIGHT: float = 15.0
-
-# Penalties.
-COIN_RANK_OVEREXTENSION_PENALTY: float = 30.0
-COIN_RANK_LOW_ACTIVITY_PENALTY: float = 20.0
-
-# ── Strategy: Momentum Pullback Scalper v1.1 ─────────────────────
-# 1H = direction filter.
-# 5m = momentum impulse + deeper wave pullback + confirmation entry.
+# ── Strategy: AMD + FVG Distribution v2.2 ─────────────────────────
+# 1h = soft directional filter. 5m = AMD detection and entry.
 TREND_TF: str = "1h"
 ENTRY_TF: str = "5m"
-
 TREND_KLINE_COUNT:   int = 180
-ENTRY_KLINE_COUNT:   int = 220
-MONITOR_KLINE_COUNT: int = 80
+ENTRY_KLINE_COUNT:   int = 240
+MONITOR_KLINE_COUNT: int = 90
 
-# Trend filter
+# Trend filter compatibility / soft bias.
 EMA_FAST_PERIOD: int = 20
 EMA_SLOW_PERIOD: int = 50
 TREND_SLOPE_LOOKBACK: int = 5
 
-# Entry/momentum filters
-ENTRY_LOOKBACK: int = 160
+# AMD accumulation settings.
+AMD_ACCUMULATION_MIN_CANDLES: int = 10
+AMD_ACCUMULATION_MAX_CANDLES: int = 26
+AMD_MAX_ACCUMULATION_RANGE_PCT: float = 1.20
+AMD_MIN_ACCUMULATION_RANGE_PCT: float = 0.18
+AMD_RANGE_END_LOOKBACK: int = 18
+
+# Manipulation / liquidity sweep settings.
+AMD_SWEEP_LOOKBACK: int = 10
+AMD_MIN_SWEEP_PCT: float = 0.08
+AMD_MAX_SWEEP_PCT: float = 1.20
+AMD_SWEEP_CLOSE_BACK_INSIDE: bool = True
+
+# FVG settings.
+AMD_FVG_LOOKBACK_AFTER_SWEEP: int = 5
+AMD_MIN_FVG_SIZE_PCT: float = 0.035
+AMD_MAX_FVG_SIZE_PCT: float = 0.55
+AMD_DISTRIBUTION_BODY_MULTIPLIER: float = 1.35
+AMD_DISTRIBUTION_CLOSE_POSITION: float = 0.65
+
+# Retest / confirmation settings.
+AMD_REQUIRE_FVG_RETEST: bool = True
+AMD_CONFIRM_CLOSE_BEYOND_FVG: bool = True
+AMD_CONFIRM_BREAK_PREVIOUS_CANDLE: bool = True
+AMD_MAX_CONFIRM_DISTANCE_FROM_FVG_PCT: float = 0.18
+AMD_INVALIDATE_BEYOND_SWEEP_BUFFER_PCT: float = 0.04
+
+# Candle stats.
+ENTRY_LOOKBACK: int = 180
 AVG_BODY_PERIOD: int = 20
 AVG_VOLUME_PERIOD: int = 20
+AMD_MIN_VOLUME_MULTIPLIER: float = 1.05
 
+# Momentum compatibility constants used by status/UI. AMD uses its own rules.
 MOMENTUM_LOOKBACK: int = 10
 MOMENTUM_BREAKOUT_LOOKBACK: int = 18
-MOMENTUM_BODY_MULTIPLIER: float = 1.25
-MOMENTUM_VOLUME_MULTIPLIER: float = 1.15
-MOMENTUM_CLOSE_POSITION: float = 0.62
-
-# Anti-chase filters.
-MAX_IMPULSE_CANDLE_BODY_PCT: float = 2.80
-MAX_ENTRY_EXTENSION_FROM_EMA_PCT: float = 1.80
-MAX_RECENT_RUNUP_PCT: float = 7.00
-MAX_RECENT_RUNDOWN_PCT: float = 7.00
+MOMENTUM_BODY_MULTIPLIER: float = 1.65
+MOMENTUM_VOLUME_MULTIPLIER: float = 1.45
+MOMENTUM_CLOSE_POSITION: float = 0.68
+MAX_IMPULSE_CANDLE_BODY_PCT: float = 1.80
+MAX_ENTRY_EXTENSION_FROM_EMA_PCT: float = 0.95
+MAX_RECENT_RUNUP_PCT: float = 4.50
+MAX_RECENT_RUNDOWN_PCT: float = 4.50
 PULLBACK_WAVE_LOOKBACK: int = 36
-
-# Pullback zone is calculated from the full recent impulse wave.
-PULLBACK_MIN_RETRACE: float = 0.236
-PULLBACK_MAX_RETRACE: float = 0.550
-
-# Entry confirmation
+PULLBACK_MIN_RETRACE: float = 0.382
+PULLBACK_MAX_RETRACE: float = 0.618
 CONFIRM_BREAK_PREVIOUS_CANDLE: bool = True
-CONFIRM_VOLUME_MULTIPLIER: float = 0.80
-MAX_CONFIRM_CANDLE_BODY_PCT: float = 1.20
-MAX_CONFIRM_DISTANCE_FROM_ZONE_PCT: float = 0.35
+CONFIRM_VOLUME_MULTIPLIER: float = 1.00
+MAX_CONFIRM_CANDLE_BODY_PCT: float = 0.85
+MAX_CONFIRM_DISTANCE_FROM_ZONE_PCT: float = 0.20
 
 # Fixed scalping risk model.
 # At 20x leverage:
-#   0.55% price TP ≈ 11% ROI
-#   0.30% price SL ≈ 6% ROI loss
-TAKE_PROFIT_PRICE_PCT: float = 0.55
-STOP_LOSS_PRICE_PCT:   float = 0.30
-
-# Emergency limits.
-MIN_TP_ROI_PCT: float = 8.0
+#   0.60% price TP ≈ 12% ROI
+#   0.35% price SL ≈ 7% ROI loss
+TAKE_PROFIT_PRICE_PCT: float = 0.60
+STOP_LOSS_PRICE_PCT:   float = 0.35
+MIN_TP_ROI_PCT: float = 9.0
 MAX_TP_ROI_PCT: float = 18.0
-MIN_SL_ROI_PCT: float = 4.0
-MAX_SL_ROI_PCT: float = 9.0
+MIN_SL_ROI_PCT: float = 5.0
+MAX_SL_ROI_PCT: float = 10.0
 
-# Pending setup lifecycle
-PENDING_SETUP_EXPIRE_CANDLES: int = 12
+# Pending setup lifecycle.
+PENDING_SETUP_EXPIRE_CANDLES: int = 9   # 45 minutes on 5m
 MAX_PENDING_SETUPS_PER_SYMBOL: int = 1
 
-# Signal quality
-MIN_SIGNAL_SCORE: float = 70.0
-SETUPS_PER_SCAN: int = 6
+# Signal quality.
+MIN_SIGNAL_SCORE: float = 82.0
+SETUPS_PER_SCAN: int = 2
 
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE: int = 20
-
-# Kept for compatibility with old report/status references.
 TP_ROI_PCT: float = TAKE_PROFIT_PRICE_PCT * LEVERAGE
 SL_ROI_PCT: float = STOP_LOSS_PRICE_PCT * LEVERAGE
 REWARD_RATIO: float = TAKE_PROFIT_PRICE_PCT / STOP_LOSS_PRICE_PCT
 
 # ── Scheduler ────────────────────────────────────────────────────
-SIGNAL_COOLDOWN_MINUTES: int = 25
-SIGNAL_EXPIRE_HOURS:     int = 4
-MAX_CONCURRENT_SIGNALS:  int = 5
-
-# Full setup detection scan.
+SIGNAL_COOLDOWN_MINUTES: int = 60
+SIGNAL_EXPIRE_HOURS:     int = 3
+MAX_CONCURRENT_SIGNALS:  int = 2
 SETUP_SCAN_CRON_MINUTES: str = "*/1"
-
-# Pending pullback monitor.
 SETUP_MONITOR_MINUTES: int = 1
-
-# Outcome checker.
 OUTCOME_CHECK_MINUTES: int = 1
 CANDLE_MINUTES:        int = 5
-
-# Telegram messages per monitor cycle.
-SIGNALS_PER_SCAN: int = 3
-
-# Keep modest to avoid MEXC rate limits.
+SIGNALS_PER_SCAN: int = 1
 SCAN_WORKERS: int = 4
 
 # ── MEXC Futures REST API ─────────────────────────────────────────

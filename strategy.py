@@ -1,14 +1,15 @@
 """
-Phase 1.1 Strategy — Momentum Pullback Scalper with Anti-Chase Filters.
+Phase 2.2 Strategy — AMD + FVG Distribution.
 
-Flow:
-    1. 1H trend filter using EMA20 / EMA50.
-    2. 5m momentum impulse detection.
-    3. Reject late/chasing entries using anti-extension filters.
-    4. Save pullback zone as pending setup.
-    5. Fire only after pullback touch + confirmation candle.
+AMD model:
+    1. Accumulation: tight sideways range.
+    2. Manipulation: sweep outside range to take liquidity.
+    3. FVG: displacement candle leaves imbalance.
+    4. Distribution: entry after FVG retest + confirmation in true direction.
 
-This is not financial advice. No strategy can guarantee profit.
+The strategy keeps the same interface used by main.py:
+    detect_setup(symbol) -> pending setup dict | None
+    evaluate_pending_setup(setup) -> (status, Signal | None)
 """
 
 import logging
@@ -30,22 +31,26 @@ from config import (
     ENTRY_LOOKBACK,
     AVG_BODY_PERIOD,
     AVG_VOLUME_PERIOD,
-    MOMENTUM_LOOKBACK,
-    MOMENTUM_BREAKOUT_LOOKBACK,
-    MOMENTUM_BODY_MULTIPLIER,
-    MOMENTUM_VOLUME_MULTIPLIER,
-    MOMENTUM_CLOSE_POSITION,
-    MAX_IMPULSE_CANDLE_BODY_PCT,
-    MAX_ENTRY_EXTENSION_FROM_EMA_PCT,
-    MAX_RECENT_RUNUP_PCT,
-    MAX_RECENT_RUNDOWN_PCT,
-    PULLBACK_WAVE_LOOKBACK,
-    PULLBACK_MIN_RETRACE,
-    PULLBACK_MAX_RETRACE,
-    CONFIRM_BREAK_PREVIOUS_CANDLE,
-    CONFIRM_VOLUME_MULTIPLIER,
-    MAX_CONFIRM_CANDLE_BODY_PCT,
-    MAX_CONFIRM_DISTANCE_FROM_ZONE_PCT,
+    AMD_ACCUMULATION_MIN_CANDLES,
+    AMD_ACCUMULATION_MAX_CANDLES,
+    AMD_MAX_ACCUMULATION_RANGE_PCT,
+    AMD_MIN_ACCUMULATION_RANGE_PCT,
+    AMD_RANGE_END_LOOKBACK,
+    AMD_SWEEP_LOOKBACK,
+    AMD_MIN_SWEEP_PCT,
+    AMD_MAX_SWEEP_PCT,
+    AMD_SWEEP_CLOSE_BACK_INSIDE,
+    AMD_FVG_LOOKBACK_AFTER_SWEEP,
+    AMD_MIN_FVG_SIZE_PCT,
+    AMD_MAX_FVG_SIZE_PCT,
+    AMD_DISTRIBUTION_BODY_MULTIPLIER,
+    AMD_DISTRIBUTION_CLOSE_POSITION,
+    AMD_REQUIRE_FVG_RETEST,
+    AMD_CONFIRM_CLOSE_BEYOND_FVG,
+    AMD_CONFIRM_BREAK_PREVIOUS_CANDLE,
+    AMD_MAX_CONFIRM_DISTANCE_FROM_FVG_PCT,
+    AMD_INVALIDATE_BEYOND_SWEEP_BUFFER_PCT,
+    AMD_MIN_VOLUME_MULTIPLIER,
     TAKE_PROFIT_PRICE_PCT,
     STOP_LOSS_PRICE_PCT,
     PENDING_SETUP_EXPIRE_CANDLES,
@@ -96,13 +101,7 @@ def _fmt(value, digits: int = 8) -> str:
         return str(value)
 
 
-def _log_monitor_reason(
-    setup: dict,
-    reason: str,
-    details: str = "",
-    *,
-    force: bool = False,
-) -> None:
+def _log_monitor_reason(setup: dict, reason: str, details: str = "", *, force: bool = False) -> None:
     now = datetime.now(timezone.utc)
     setup_key = _setup_id(setup)
     last = _LAST_MONITOR_LOG.get(setup_key)
@@ -117,7 +116,6 @@ def _log_monitor_reason(
     msg = f"[SETUP-REASON] {_setup_label(setup)} | {reason}"
     if details:
         msg += f" | {details}"
-
     logger.info(msg)
 
 
@@ -126,11 +124,9 @@ def _log_monitor_reason(
 def _ensure_df(df: pd.DataFrame | None) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
-
     required = {"open", "high", "low", "close"}
     if not required.issubset(set(df.columns)):
         return pd.DataFrame()
-
     return df.copy()
 
 
@@ -160,65 +156,51 @@ def _close_position(row: pd.Series) -> float:
     low = float(row["low"])
     close = float(row["close"])
     rng = high - low
-
     if rng <= 0:
         return 0.5
-
     return (close - low) / rng
 
 
 def _avg_body(df: pd.DataFrame, pos: int, period: int) -> float:
     start = max(0, pos - period)
     subset = df.iloc[start:pos]
-
     if subset.empty:
         return 0.0
-
     return float((subset["close"].astype(float) - subset["open"].astype(float)).abs().mean())
 
 
 def _avg_volume(df: pd.DataFrame, pos: int, period: int) -> float:
     if "volume" not in df.columns:
         return 0.0
-
     start = max(0, pos - period)
     subset = df.iloc[start:pos]
-
     if subset.empty:
         return 0.0
-
     return float(subset["volume"].astype(float).mean())
 
 
-def _distance_pct(price: float, reference: float) -> float:
-    if reference <= 0:
-        return 999.0
-
-    return abs(price - reference) / reference * 100.0
-
-
 def _touches_zone(row: pd.Series, zone_low: float, zone_high: float) -> bool:
-    high = float(row["high"])
-    low = float(row["low"])
-
-    return low <= zone_high and high >= zone_low
+    return float(row["low"]) <= zone_high and float(row["high"]) >= zone_low
 
 
 def _parse_utc(ts: str) -> datetime:
     dt = datetime.fromisoformat(ts)
-
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-
     return dt
 
 
-# ── Trend filter ──────────────────────────────────────────────────
+def _to_iso(ts) -> str:
+    if hasattr(ts, "to_pydatetime"):
+        return ts.to_pydatetime().replace(tzinfo=timezone.utc).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
-def _get_trend_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
+
+# ── Soft trend filter ─────────────────────────────────────────────
+
+def _get_soft_trend_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
     df = _ensure_df(trend_df)
     completed = df.iloc[:-1].copy()
-
     min_len = EMA_SLOW_PERIOD + TREND_SLOPE_LOOKBACK + 5
     if len(completed) < min_len:
         return None, {"reason": "NOT_ENOUGH_TREND_CANDLES"}
@@ -233,165 +215,184 @@ def _get_trend_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
     last_close = float(last["close"])
     ema_fast = float(last["ema_fast"])
     ema_slow = float(last["ema_slow"])
-
     fast_slope = ema_fast - float(old["ema_fast"])
-    slow_slope = ema_slow - float(old["ema_slow"])
 
-    if last_close > ema_fast > ema_slow and fast_slope > 0 and slow_slope >= 0:
-        return "LONG", {
-            "ema_fast": ema_fast,
-            "ema_slow": ema_slow,
-            "fast_slope": fast_slope,
-            "slow_slope": slow_slope,
-        }
+    if last_close > ema_fast > ema_slow and fast_slope > 0:
+        return "LONG", {"ema_fast": ema_fast, "ema_slow": ema_slow, "fast_slope": fast_slope}
 
-    if last_close < ema_fast < ema_slow and fast_slope < 0 and slow_slope <= 0:
-        return "SHORT", {
-            "ema_fast": ema_fast,
-            "ema_slow": ema_slow,
-            "fast_slope": fast_slope,
-            "slow_slope": slow_slope,
-        }
+    if last_close < ema_fast < ema_slow and fast_slope < 0:
+        return "SHORT", {"ema_fast": ema_fast, "ema_slow": ema_slow, "fast_slope": fast_slope}
 
-    return None, {
-        "reason": "NO_CLEAR_EMA_TREND",
-        "close": last_close,
-        "ema_fast": ema_fast,
-        "ema_slow": ema_slow,
-        "fast_slope": fast_slope,
-        "slow_slope": slow_slope,
-    }
+    return None, {"ema_fast": ema_fast, "ema_slow": ema_slow, "fast_slope": fast_slope}
 
 
-# ── Momentum setup detection ──────────────────────────────────────
+# ── AMD detection ─────────────────────────────────────────────────
 
-def _is_long_momentum(df: pd.DataFrame, pos: int) -> bool:
-    row = df.iloc[pos]
-    avg_body = _avg_body(df, pos, AVG_BODY_PERIOD)
-    avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
-
-    if avg_body <= 0:
-        return False
-
-    prev_start = max(0, pos - MOMENTUM_BREAKOUT_LOOKBACK)
-    prev = df.iloc[prev_start:pos]
-
-    if prev.empty:
-        return False
-
-    close = float(row["close"])
-    volume = float(row.get("volume", 0.0))
-
-    body_ok = _body_size(row) >= avg_body * MOMENTUM_BODY_MULTIPLIER
-    volume_ok = avg_vol <= 0 or volume >= avg_vol * MOMENTUM_VOLUME_MULTIPLIER
-    close_ok = _close_position(row) >= MOMENTUM_CLOSE_POSITION
-    breakout_ok = close > float(prev["high"].astype(float).max())
-
-    return _is_bullish(row) and body_ok and volume_ok and close_ok and breakout_ok
-
-
-def _is_short_momentum(df: pd.DataFrame, pos: int) -> bool:
-    row = df.iloc[pos]
-    avg_body = _avg_body(df, pos, AVG_BODY_PERIOD)
-    avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
-
-    if avg_body <= 0:
-        return False
-
-    prev_start = max(0, pos - MOMENTUM_BREAKOUT_LOOKBACK)
-    prev = df.iloc[prev_start:pos]
-
-    if prev.empty:
-        return False
-
-    close = float(row["close"])
-    volume = float(row.get("volume", 0.0))
-
-    body_ok = _body_size(row) >= avg_body * MOMENTUM_BODY_MULTIPLIER
-    volume_ok = avg_vol <= 0 or volume >= avg_vol * MOMENTUM_VOLUME_MULTIPLIER
-    close_ok = _close_position(row) <= (1.0 - MOMENTUM_CLOSE_POSITION)
-    breakout_ok = close < float(prev["low"].astype(float).min())
-
-    return _is_bearish(row) and body_ok and volume_ok and close_ok and breakout_ok
-
-
-def _get_recent_wave(df: pd.DataFrame, pos: int, direction: str) -> tuple[float, float, float] | None:
+def _find_best_accumulation_range(df: pd.DataFrame, end_pos: int) -> dict | None:
     """
-    Returns:
-        wave_low, wave_high, move_pct
+    Search for a tight sideways range immediately before the manipulation.
+    end_pos is exclusive.
     """
-    start = max(0, pos - PULLBACK_WAVE_LOOKBACK)
-    previous = df.iloc[start:pos]
+    best = None
+    best_score = -1.0
 
-    if previous.empty:
-        return None
+    for length in range(AMD_ACCUMULATION_MIN_CANDLES, AMD_ACCUMULATION_MAX_CANDLES + 1):
+        start = end_pos - length
+        if start < 0:
+            continue
 
+        window = df.iloc[start:end_pos]
+        if window.empty:
+            continue
+
+        high = float(window["high"].astype(float).max())
+        low = float(window["low"].astype(float).min())
+        mid = (high + low) / 2.0
+        if mid <= 0:
+            continue
+
+        range_pct = (high - low) / mid * 100.0
+        if range_pct < AMD_MIN_ACCUMULATION_RANGE_PCT or range_pct > AMD_MAX_ACCUMULATION_RANGE_PCT:
+            continue
+
+        closes = window["close"].astype(float)
+        close_std_pct = float(closes.std() / mid * 100.0) if len(closes) > 1 else 0.0
+
+        score = 70.0 - range_pct * 20.0 - close_std_pct * 10.0 + length * 0.8
+
+        if score > best_score:
+            best_score = score
+            best = {
+                "start": start,
+                "end": end_pos - 1,
+                "high": high,
+                "low": low,
+                "mid": mid,
+                "range_pct": range_pct,
+                "length": length,
+                "score": round(max(score, 0.0), 2),
+            }
+
+    return best
+
+
+def _detect_sweep(df: pd.DataFrame, pos: int, acc: dict) -> dict | None:
     row = df.iloc[pos]
+    high = float(row["high"])
+    low = float(row["low"])
+    close = float(row["close"])
+    acc_high = float(acc["high"])
+    acc_low = float(acc["low"])
 
-    if direction == "LONG":
-        wave_low = float(previous["low"].astype(float).min())
-        wave_high = float(row["high"])
-        move_pct = (wave_high - wave_low) / wave_low * 100.0 if wave_low > 0 else 999.0
-    else:
-        wave_high = float(previous["high"].astype(float).max())
-        wave_low = float(row["low"])
-        move_pct = (wave_high - wave_low) / wave_high * 100.0 if wave_high > 0 else 999.0
-
-    if wave_low <= 0 or wave_high <= 0 or wave_high <= wave_low:
+    if acc_low <= 0 or acc_high <= 0:
         return None
 
-    return wave_low, wave_high, move_pct
+    sell_side_sweep_pct = (acc_low - low) / acc_low * 100.0
+    buy_side_sweep_pct = (high - acc_high) / acc_high * 100.0
+
+    if AMD_MIN_SWEEP_PCT <= sell_side_sweep_pct <= AMD_MAX_SWEEP_PCT:
+        if (not AMD_SWEEP_CLOSE_BACK_INSIDE) or close > acc_low:
+            return {
+                "direction": "LONG",
+                "type": "SELL_SIDE_SWEEP",
+                "level": acc_low,
+                "extreme": low,
+                "pos": pos,
+                "time": df.index[pos],
+                "sweep_pct": sell_side_sweep_pct,
+            }
+
+    if AMD_MIN_SWEEP_PCT <= buy_side_sweep_pct <= AMD_MAX_SWEEP_PCT:
+        if (not AMD_SWEEP_CLOSE_BACK_INSIDE) or close < acc_high:
+            return {
+                "direction": "SHORT",
+                "type": "BUY_SIDE_SWEEP",
+                "level": acc_high,
+                "extreme": high,
+                "pos": pos,
+                "time": df.index[pos],
+                "sweep_pct": buy_side_sweep_pct,
+            }
+
+    return None
 
 
-def _build_pullback_zone(
-    direction: str,
-    wave_low: float,
-    wave_high: float,
-) -> tuple[float, float] | None:
-    rng = wave_high - wave_low
+def _find_fvg_after_sweep(df: pd.DataFrame, sweep: dict) -> dict | None:
+    start = max(2, int(sweep["pos"]) + 1)
+    end = min(len(df) - 1, int(sweep["pos"]) + AMD_FVG_LOOKBACK_AFTER_SWEEP)
+    direction = sweep["direction"]
 
-    if rng <= 0:
-        return None
+    best = None
+    best_score = -1.0
 
-    if direction == "LONG":
-        zone_high = wave_high - rng * PULLBACK_MIN_RETRACE
-        zone_low = wave_high - rng * PULLBACK_MAX_RETRACE
-    else:
-        zone_low = wave_low + rng * PULLBACK_MIN_RETRACE
-        zone_high = wave_low + rng * PULLBACK_MAX_RETRACE
+    for i in range(start, end + 1):
+        row = df.iloc[i]
+        avg_body = _avg_body(df, i, AVG_BODY_PERIOD)
+        avg_vol = _avg_volume(df, i, AVG_VOLUME_PERIOD)
+        volume = float(row.get("volume", 0.0))
 
-    return round(min(zone_low, zone_high), 8), round(max(zone_low, zone_high), 8)
+        if avg_body <= 0:
+            continue
 
+        body_ratio = _body_size(row) / avg_body
+        vol_ratio = volume / avg_vol if avg_vol > 0 else 1.0
 
-def _score_momentum_setup(df: pd.DataFrame, pos: int, direction: str) -> float:
-    row = df.iloc[pos]
+        if body_ratio < AMD_DISTRIBUTION_BODY_MULTIPLIER:
+            continue
+        if vol_ratio < AMD_MIN_VOLUME_MULTIPLIER:
+            continue
 
-    avg_body = _avg_body(df, pos, AVG_BODY_PERIOD)
-    avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
+        c1 = df.iloc[i - 2]
+        c3 = row
 
-    body_ratio = (_body_size(row) / avg_body) if avg_body > 0 else 1.0
+        if direction == "LONG":
+            if not _is_bullish(row):
+                continue
+            if _close_position(row) < AMD_DISTRIBUTION_CLOSE_POSITION:
+                continue
 
-    volume = float(row.get("volume", 0.0))
-    volume_ratio = (volume / avg_vol) if avg_vol > 0 else 1.0
+            # Bullish FVG: candle3 low > candle1 high.
+            gap_low = float(c1["high"])
+            gap_high = float(c3["low"])
+            if gap_high <= gap_low:
+                continue
 
-    close_pos = _close_position(row)
-    if direction == "SHORT":
-        close_pos = 1.0 - close_pos
+        else:
+            if not _is_bearish(row):
+                continue
+            if _close_position(row) > (1.0 - AMD_DISTRIBUTION_CLOSE_POSITION):
+                continue
 
-    score = 50.0
-    score += min(max((body_ratio - 1.0) * 18.0, 0.0), 25.0)
-    score += min(max((volume_ratio - 1.0) * 12.0, 0.0), 15.0)
-    score += min(max((close_pos - 0.5) * 50.0, 0.0), 15.0)
+            # Bearish FVG: candle3 high < candle1 low.
+            gap_low = float(c3["high"])
+            gap_high = float(c1["low"])
+            if gap_high <= gap_low:
+                continue
 
-    age = len(df) - 1 - pos
-    if age <= 2:
-        score += 10.0
-    elif age <= 5:
-        score += 6.0
-    else:
-        score += 3.0
+        mid = (gap_low + gap_high) / 2.0
+        gap_pct = (gap_high - gap_low) / mid * 100.0 if mid > 0 else 0.0
+        if gap_pct < AMD_MIN_FVG_SIZE_PCT or gap_pct > AMD_MAX_FVG_SIZE_PCT:
+            continue
 
-    return round(min(score, 100.0), 1)
+        score = 60.0 + min(body_ratio * 8.0, 18.0) + min(vol_ratio * 5.0, 12.0) + min(gap_pct * 20.0, 10.0)
+
+        if score > best_score:
+            best_score = score
+            best = {
+                "type": "BULLISH_FVG" if direction == "LONG" else "BEARISH_FVG",
+                "direction": direction,
+                "pos": i,
+                "time": df.index[i],
+                "low": round(gap_low, 8),
+                "high": round(gap_high, 8),
+                "mid": round(mid, 8),
+                "gap_pct": round(gap_pct, 4),
+                "body_ratio": round(body_ratio, 2),
+                "volume_ratio": round(vol_ratio, 2),
+                "score": round(score, 2),
+            }
+
+    return best
 
 
 def _calculate_fixed_prices(direction: str, entry: float) -> tuple[float, float, float, float] | None:
@@ -410,179 +411,163 @@ def _calculate_fixed_prices(direction: str, entry: float) -> tuple[float, float,
 
     if tp_roi < MIN_TP_ROI_PCT or tp_roi > MAX_TP_ROI_PCT:
         return None
-
     if sl_roi < MIN_SL_ROI_PCT or sl_roi > MAX_SL_ROI_PCT:
         return None
 
     return round(tp_price, 8), round(sl_price, 8), round(tp_roi, 1), round(sl_roi, 1)
 
 
+def _score_amd_setup(acc: dict, sweep: dict, fvg: dict, trend_bias: str | None) -> float:
+    score = 45.0
+
+    if acc["range_pct"] <= 0.60:
+        score += 18.0
+    elif acc["range_pct"] <= 0.90:
+        score += 12.0
+    else:
+        score += 6.0
+
+    if acc["length"] >= 18:
+        score += 8.0
+    elif acc["length"] >= 12:
+        score += 5.0
+
+    if 0.12 <= sweep["sweep_pct"] <= 0.75:
+        score += 12.0
+    else:
+        score += 5.0
+
+    score += min(float(fvg.get("score", 0.0)) - 60.0, 25.0)
+
+    if trend_bias == sweep["direction"]:
+        score += 7.0
+
+    return round(min(max(score, 0.0), 100.0), 1)
+
+
+# ── Public setup detection ────────────────────────────────────────
+
 def detect_setup(symbol: str) -> dict | None:
-    """
-    Detects a momentum impulse and returns a pending pullback setup.
-    This does NOT fire a signal.
-    """
     try:
         trend_df = _ensure_df(get_klines(symbol, TREND_TF, count=TREND_KLINE_COUNT))
         entry_df = _ensure_df(get_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT))
 
-        if trend_df.empty or entry_df.empty:
+        if entry_df.empty:
             return None
 
-        bias, trend_details = _get_trend_bias(trend_df)
-
-        if bias is None:
-            return None
+        trend_bias, trend_details = _get_soft_trend_bias(trend_df) if not trend_df.empty else (None, {})
 
         completed = entry_df.iloc[:-1].copy().tail(ENTRY_LOOKBACK)
-
-        if len(completed) < max(80, AVG_BODY_PERIOD + MOMENTUM_BREAKOUT_LOOKBACK + 5):
+        if len(completed) < AMD_ACCUMULATION_MAX_CANDLES + AMD_SWEEP_LOOKBACK + AMD_FVG_LOOKBACK_AFTER_SWEEP + 10:
             return None
-
-        completed["entry_ema_fast"] = _ema(completed["close"].astype(float), EMA_FAST_PERIOD)
-
-        start = max(
-            AVG_BODY_PERIOD + MOMENTUM_BREAKOUT_LOOKBACK,
-            len(completed) - MOMENTUM_LOOKBACK,
-        )
-        end = len(completed) - 1
 
         best_setup = None
         best_score = -1.0
 
-        for pos in range(start, end + 1):
-            is_momentum = _is_long_momentum(completed, pos) if bias == "LONG" else _is_short_momentum(completed, pos)
+        scan_start = max(AMD_ACCUMULATION_MAX_CANDLES + 2, len(completed) - AMD_RANGE_END_LOOKBACK)
+        scan_end = len(completed) - 2
 
-            if not is_momentum:
+        for sweep_pos in range(scan_start, scan_end + 1):
+            acc = _find_best_accumulation_range(completed, sweep_pos)
+            if not acc:
                 continue
 
-            row = completed.iloc[pos]
-            score = _score_momentum_setup(completed, pos, bias)
+            sweep = _detect_sweep(completed, sweep_pos, acc)
+            if not sweep:
+                continue
+
+            fvg = _find_fvg_after_sweep(completed, sweep)
+            if not fvg:
+                continue
+
+            direction = sweep["direction"]
+            score = _score_amd_setup(acc, sweep, fvg, trend_bias)
 
             if score < MIN_SIGNAL_SCORE or score <= best_score:
                 continue
 
-            impulse_high = float(row["high"])
-            impulse_low = float(row["low"])
-            impulse_close = float(row["close"])
-
-            # Anti-chase rule 1: reject oversized vertical impulse candle.
-            if _body_pct(row) > MAX_IMPULSE_CANDLE_BODY_PCT:
+            preview_entry = float(fvg["mid"])
+            prices = _calculate_fixed_prices(direction, preview_entry)
+            if not prices:
                 continue
 
-            # Anti-chase rule 2: reject if close is too far from 5m EMA20.
-            ema_fast = float(row.get("entry_ema_fast", 0.0))
-            if ema_fast > 0 and _distance_pct(impulse_close, ema_fast) > MAX_ENTRY_EXTENSION_FROM_EMA_PCT:
-                continue
-
-            # Anti-chase rule 3: reject full recent wave if already too extended.
-            wave = _get_recent_wave(completed, pos, bias)
-            if not wave:
-                continue
-
-            wave_low, wave_high, move_pct = wave
-
-            if bias == "LONG" and move_pct > MAX_RECENT_RUNUP_PCT:
-                continue
-
-            if bias == "SHORT" and move_pct > MAX_RECENT_RUNDOWN_PCT:
-                continue
-
-            zone = _build_pullback_zone(bias, wave_low, wave_high)
-            if not zone:
-                continue
-
-            zone_low, zone_high = zone
-
-            preview_prices = _calculate_fixed_prices(bias, impulse_close)
-            if not preview_prices:
-                continue
-
-            target_price, sl_price, _, _ = preview_prices
+            target_price, sl_price, _, _ = prices
             rr_estimate = TAKE_PROFIT_PRICE_PCT / STOP_LOSS_PRICE_PCT
 
-            setup_time = completed.index[pos]
-            setup_dt = (
-                setup_time.to_pydatetime().replace(tzinfo=timezone.utc)
-                if hasattr(setup_time, "to_pydatetime")
-                else datetime.now(timezone.utc)
-            )
+            if direction == "LONG":
+                range_target = float(acc["high"])
+                if range_target <= preview_entry:
+                    continue
+            else:
+                range_target = float(acc["low"])
+                if range_target >= preview_entry:
+                    continue
 
-            expires_at = datetime.now(timezone.utc) + timedelta(
-                minutes=PENDING_SETUP_EXPIRE_CANDLES * CANDLE_MINUTES
-            )
+            expires_at = datetime.now(timezone.utc) + timedelta(minutes=PENDING_SETUP_EXPIRE_CANDLES * CANDLE_MINUTES)
 
             best_score = score
             best_setup = {
                 "symbol": symbol,
-                "direction": bias,
+                "direction": direction,
                 "trend_tf": TREND_TF,
                 "entry_tf": ENTRY_TF,
-                "bias": bias,
+                "bias": direction,
                 "bias_break": trend_details.get("ema_fast"),
 
-                # Reusing old DB column names for new strategy metadata.
-                "sweep_type": "MOMENTUM_IMPULSE",
-                "sweep_level": impulse_close,
-                "sweep_extreme": impulse_low if bias == "LONG" else impulse_high,
-                "sweep_time": setup_dt.isoformat(),
+                "sweep_type": sweep["type"],
+                "sweep_level": float(sweep["level"]),
+                "sweep_extreme": float(sweep["extreme"]),
+                "sweep_time": _to_iso(sweep["time"]),
 
-                "ob_type": "PULLBACK_ZONE",
-                "ob_low": zone_low,
-                "ob_high": zone_high,
-                "ob_time": setup_dt.isoformat(),
+                "ob_type": fvg["type"],
+                "ob_low": float(fvg["low"]),
+                "ob_high": float(fvg["high"]),
+                "ob_time": _to_iso(fvg["time"]),
 
                 "target_price": target_price,
                 "sl_price": sl_price,
                 "rr_estimate": round(rr_estimate, 2),
                 "score": score,
-                "setup_time": setup_dt.isoformat(),
+                "setup_time": _to_iso(fvg["time"]),
                 "expires_at": expires_at.isoformat(),
             }
 
         if best_setup:
             logger.info(
                 f"[SETUP] {best_setup['direction']} {symbol} | "
-                f"zone={best_setup['ob_low']:.6g}-{best_setup['ob_high']:.6g} "
-                f"score={best_setup['score']} strategy=MomentumPullbackV1.1"
+                f"AMD={best_setup['sweep_type']} + {best_setup['ob_type']} "
+                f"FVG={best_setup['ob_low']:.6g}-{best_setup['ob_high']:.6g} "
+                f"score={best_setup['score']}"
             )
 
         return best_setup
 
     except Exception as e:
-        logger.error(f"Error detecting setup for {symbol}: {e}", exc_info=True)
+        logger.error(f"Error detecting AMD setup for {symbol}: {e}", exc_info=True)
         return None
 
 
 # ── Pending setup monitor ─────────────────────────────────────────
 
-def _is_confirmation(row: pd.Series, prev: pd.Series, direction: str, avg_volume: float) -> bool:
-    if _body_pct(row) > MAX_CONFIRM_CANDLE_BODY_PCT:
-        return False
-
+def _is_confirmation(row: pd.Series, prev: pd.Series, direction: str, zone_low: float, zone_high: float, avg_volume: float) -> bool:
     volume = float(row.get("volume", 0.0))
-    volume_ok = avg_volume <= 0 or volume >= avg_volume * CONFIRM_VOLUME_MULTIPLIER
+    volume_ok = avg_volume <= 0 or volume >= avg_volume * AMD_MIN_VOLUME_MULTIPLIER
 
     if direction == "LONG":
         candle_ok = _is_bullish(row)
-        close_break_ok = float(row["close"]) > float(prev["high"]) if CONFIRM_BREAK_PREVIOUS_CANDLE else True
         close_position_ok = _close_position(row) >= 0.55
-        return candle_ok and close_break_ok and close_position_ok and volume_ok
+        fvg_ok = float(row["close"]) > zone_high if AMD_CONFIRM_CLOSE_BEYOND_FVG else float(row["close"]) > (zone_low + zone_high) / 2.0
+        break_ok = float(row["close"]) > float(prev["high"]) if AMD_CONFIRM_BREAK_PREVIOUS_CANDLE else True
+        return candle_ok and close_position_ok and fvg_ok and break_ok and volume_ok
 
     candle_ok = _is_bearish(row)
-    close_break_ok = float(row["close"]) < float(prev["low"]) if CONFIRM_BREAK_PREVIOUS_CANDLE else True
     close_position_ok = _close_position(row) <= 0.45
-    return candle_ok and close_break_ok and close_position_ok and volume_ok
+    fvg_ok = float(row["close"]) < zone_low if AMD_CONFIRM_CLOSE_BEYOND_FVG else float(row["close"]) < (zone_low + zone_high) / 2.0
+    break_ok = float(row["close"]) < float(prev["low"]) if AMD_CONFIRM_BREAK_PREVIOUS_CANDLE else True
+    return candle_ok and close_position_ok and fvg_ok and break_ok and volume_ok
 
 
 def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
-    """
-    Returns:
-        ("WAIT", None)
-        ("EXPIRED", None)
-        ("INVALIDATED", None)
-        ("FIRE", Signal)
-    """
     try:
         now = datetime.now(timezone.utc)
         expires_at = _parse_utc(setup["expires_at"])
@@ -595,28 +580,45 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         direction = setup["direction"]
         zone_low = float(setup["ob_low"])
         zone_high = float(setup["ob_high"])
+        sweep_extreme = float(setup["sweep_extreme"])
 
         df = _ensure_df(get_klines(symbol, ENTRY_TF, count=MONITOR_KLINE_COUNT))
-
-        if df.empty or len(df) < 10:
+        if df.empty or len(df) < 12:
             _log_monitor_reason(setup, "WAIT_DATA_NOT_READY")
             return "WAIT", None
 
         completed = df.iloc[:-1].copy()
         recent = completed.tail(8)
 
-        touched = any(_touches_zone(row, zone_low, zone_high) for _, row in recent.iterrows())
+        if direction == "LONG":
+            invalid_level = sweep_extreme * (1.0 - AMD_INVALIDATE_BEYOND_SWEEP_BUFFER_PCT / 100.0)
+            if float(recent["low"].astype(float).min()) <= invalid_level:
+                _log_monitor_reason(
+                    setup,
+                    "INVALIDATED_SWEEP_EXTREME_BROKEN",
+                    f"low={_fmt(recent['low'].astype(float).min())} invalid={_fmt(invalid_level)}",
+                    force=True,
+                )
+                return "INVALIDATED", None
+        else:
+            invalid_level = sweep_extreme * (1.0 + AMD_INVALIDATE_BEYOND_SWEEP_BUFFER_PCT / 100.0)
+            if float(recent["high"].astype(float).max()) >= invalid_level:
+                _log_monitor_reason(
+                    setup,
+                    "INVALIDATED_SWEEP_EXTREME_BROKEN",
+                    f"high={_fmt(recent['high'].astype(float).max())} invalid={_fmt(invalid_level)}",
+                    force=True,
+                )
+                return "INVALIDATED", None
 
-        if not touched:
+        touched = any(_touches_zone(row, zone_low, zone_high) for _, row in recent.iterrows())
+        if AMD_REQUIRE_FVG_RETEST and not touched:
             last_close = float(completed["close"].iloc[-1])
             _log_monitor_reason(
                 setup,
-                "WAIT_NO_PULLBACK_TOUCH",
-                f"zone={_fmt(zone_low)}-{_fmt(zone_high)} close={_fmt(last_close)}",
+                "WAIT_FVG_RETEST",
+                f"fvg={_fmt(zone_low)}-{_fmt(zone_high)} close={_fmt(last_close)}",
             )
-            return "WAIT", None
-
-        if len(completed) < 2:
             return "WAIT", None
 
         prev = completed.iloc[-2]
@@ -628,60 +630,28 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             else 0.0
         )
 
-        # Invalidation before entry.
-        if direction == "LONG":
-            invalid_level = zone_low * (1.0 - STOP_LOSS_PRICE_PCT / 100.0)
-            if float(trigger["low"]) <= invalid_level:
-                _log_monitor_reason(
-                    setup,
-                    "INVALIDATED_PULLBACK_TOO_DEEP",
-                    f"low={_fmt(trigger['low'])} invalid={_fmt(invalid_level)}",
-                    force=True,
-                )
-                return "INVALIDATED", None
-        else:
-            invalid_level = zone_high * (1.0 + STOP_LOSS_PRICE_PCT / 100.0)
-            if float(trigger["high"]) >= invalid_level:
-                _log_monitor_reason(
-                    setup,
-                    "INVALIDATED_PULLBACK_TOO_DEEP",
-                    f"high={_fmt(trigger['high'])} invalid={_fmt(invalid_level)}",
-                    force=True,
-                )
-                return "INVALIDATED", None
-
-        if not _is_confirmation(trigger, prev, direction, avg_vol):
+        if not _is_confirmation(trigger, prev, direction, zone_low, zone_high, avg_vol):
             _log_monitor_reason(
                 setup,
-                "WAIT_CONFIRMATION_CANDLE",
-                f"body={_body_pct(trigger):.2f}% close={_fmt(trigger['close'])}",
+                "WAIT_DISTRIBUTION_CONFIRMATION",
+                f"close={_fmt(trigger['close'])} fvg={_fmt(zone_low)}-{_fmt(zone_high)}",
             )
             return "WAIT", None
 
         entry = float(trigger["close"])
 
-        # Anti-chase rule 4: after zone touch, confirmation must still be close to pullback zone.
         if direction == "LONG":
-            max_entry = zone_high * (1.0 + MAX_CONFIRM_DISTANCE_FROM_ZONE_PCT / 100.0)
+            max_entry = zone_high * (1.0 + AMD_MAX_CONFIRM_DISTANCE_FROM_FVG_PCT / 100.0)
             if entry > max_entry:
-                _log_monitor_reason(
-                    setup,
-                    "WAIT_CONFIRM_TOO_FAR_FROM_ZONE",
-                    f"entry={_fmt(entry)} max={_fmt(max_entry)} zone={_fmt(zone_low)}-{_fmt(zone_high)}",
-                )
+                _log_monitor_reason(setup, "WAIT_CONFIRM_TOO_FAR_FROM_FVG", f"entry={_fmt(entry)} max={_fmt(max_entry)}")
                 return "WAIT", None
         else:
-            min_entry = zone_low * (1.0 - MAX_CONFIRM_DISTANCE_FROM_ZONE_PCT / 100.0)
+            min_entry = zone_low * (1.0 - AMD_MAX_CONFIRM_DISTANCE_FROM_FVG_PCT / 100.0)
             if entry < min_entry:
-                _log_monitor_reason(
-                    setup,
-                    "WAIT_CONFIRM_TOO_FAR_FROM_ZONE",
-                    f"entry={_fmt(entry)} min={_fmt(min_entry)} zone={_fmt(zone_low)}-{_fmt(zone_high)}",
-                )
+                _log_monitor_reason(setup, "WAIT_CONFIRM_TOO_FAR_FROM_FVG", f"entry={_fmt(entry)} min={_fmt(min_entry)}")
                 return "WAIT", None
 
         prices = _calculate_fixed_prices(direction, entry)
-
         if not prices:
             _log_monitor_reason(setup, "WAIT_PRICE_MODEL_FAILED")
             return "WAIT", None
@@ -691,7 +661,7 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
 
         _log_monitor_reason(
             setup,
-            "FIRE_ENTRY_CONFIRMED",
+            "FIRE_AMD_FVG_ENTRY_CONFIRMED",
             f"entry={_fmt(entry)} tp={_fmt(tp_price)} sl={_fmt(sl_price)} score={score}",
             force=True,
         )
@@ -706,15 +676,15 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             tp_roi_pct=tp_roi_pct,
             sl_roi_pct=sl_roi_pct,
             timeframe_summary=(
-                f"Momentum Pullback v1.1 | {TREND_TF} trend {setup['bias']} | "
-                f"{ENTRY_TF} wave pullback + anti-chase confirmation"
+                f"AMD + FVG Distribution | {ENTRY_TF} accumulation, sweep, FVG retest | "
+                f"{TREND_TF} soft bias"
             ),
             generated_at=datetime.now(timezone.utc),
             score=score,
         )
 
     except Exception as e:
-        logger.error(f"Error evaluating pending setup {setup.get('id')}: {e}", exc_info=True)
+        logger.error(f"Error evaluating AMD setup {setup.get('id')}: {e}", exc_info=True)
         return "WAIT", None
 
 
