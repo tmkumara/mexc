@@ -4,6 +4,7 @@ Smart MEXC Futures-only coin scanner.
 Purpose:
     - Build the coin pool using MEXC futures contract symbols only.
     - Avoid symbols not listed on MEXC futures.
+    - Avoid stock-token futures when CRYPTO_FUTURES_ONLY=True.
     - Rank futures symbols using liquidity + recent activity.
 """
 
@@ -37,6 +38,7 @@ from config import (
     COIN_RANK_OVEREXTENSION_PENALTY,
     COIN_RANK_LOW_ACTIVITY_PENALTY,
     QUOTE_CURRENCY,
+    CRYPTO_FUTURES_ONLY,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,6 +95,31 @@ def _normalize_score(value: float, min_value: float, max_value: float) -> float:
 
 # ── futures contract filtering ────────────────────────────────────
 
+def _is_crypto_symbol(symbol: str) -> bool:
+    """
+    Removes MEXC stock/index style contracts when CRYPTO_FUTURES_ONLY=True.
+
+    Examples removed:
+        CVNASTOCK_USDT
+        PANWSTOCK_USDT
+        WMTSTOCK_USDT
+    """
+    if not CRYPTO_FUTURES_ONLY:
+        return True
+
+    blocked_keywords = (
+        "STOCK",
+        "INDEX",
+        "ETF",
+        "NASDAQ",
+        "NYSE",
+    )
+
+    upper = symbol.upper()
+
+    return not any(keyword in upper for keyword in blocked_keywords)
+
+
 def _is_contract_active(contract: dict) -> bool:
     symbol = str(contract.get("symbol") or "").upper().strip()
 
@@ -105,22 +132,34 @@ def _is_contract_active(contract: dict) -> bool:
     if symbol in EXCLUDE_COINS:
         return False
 
+    if not _is_crypto_symbol(symbol):
+        return False
+
     # MEXC futures usually uses state=0 for active contracts.
-    # Be defensive because fields can vary.
+    # Be defensive because response fields can vary.
     state = contract.get("state")
+
     if state is not None:
         try:
             if int(state) != 0:
                 return False
         except Exception:
-            state_text = str(state).lower()
+            state_text = str(state).lower().strip()
             if state_text not in ("0", "online", "enabled", "normal", "trading"):
                 return False
 
     status = contract.get("status")
+
     if status is not None:
-        status_text = str(status).lower()
-        if status_text in {"offline", "delisted", "suspend", "suspended", "disabled", "false"}:
+        status_text = str(status).lower().strip()
+        if status_text in {
+            "offline",
+            "delisted",
+            "suspend",
+            "suspended",
+            "disabled",
+            "false",
+        }:
             return False
 
     return True
@@ -145,6 +184,7 @@ def _fetch_valid_futures_symbols(tickers: dict[str, dict]) -> set[str]:
         str(symbol).upper().strip()
         for symbol in tickers.keys()
         if str(symbol).upper().strip().endswith(f"_{QUOTE_CURRENCY}")
+        and _is_crypto_symbol(str(symbol).upper().strip())
     }
 
     if ticker_symbols:
@@ -155,19 +195,22 @@ def _fetch_valid_futures_symbols(tickers: dict[str, dict]) -> set[str]:
     valid = {
         symbol
         for symbol in valid
-        if symbol and symbol not in EXCLUDE_COINS
+        if symbol
+        and symbol not in EXCLUDE_COINS
+        and _is_crypto_symbol(symbol)
     }
 
     _cached_valid_futures = valid
 
     logger.info(
-        "[COIN-FILTER] contracts=%s active_%s_futures=%s tickers=%s valid=%s excluded=%s",
+        "[COIN-FILTER] contracts=%s active_%s_futures=%s tickers=%s valid=%s excluded=%s crypto_only=%s",
         len(contracts),
         QUOTE_CURRENCY,
         len(contract_symbols),
         len(ticker_symbols),
         len(valid),
         len(EXCLUDE_COINS),
+        CRYPTO_FUTURES_ONLY,
     )
 
     return valid
@@ -187,6 +230,9 @@ def _filter_valid_futures(symbols: list[str], valid_futures: set[str]) -> list[s
             continue
 
         seen.add(symbol)
+
+        if not _is_crypto_symbol(symbol):
+            continue
 
         if symbol not in valid_futures:
             continue
@@ -233,17 +279,25 @@ def _fetch_coinglass_candidates(valid_futures: set[str]) -> list[tuple[str, floa
 
         items.sort(key=_oi, reverse=True)
 
-        max_candidates = min(TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER, COIN_RANK_MAX_CANDIDATES)
+        max_candidates = min(
+            TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER,
+            COIN_RANK_MAX_CANDIDATES,
+        )
+
         rows: list[tuple[str, float]] = []
 
         for item in items:
             coin = (item.get("symbol") or item.get("baseSymbol") or "").upper().strip()
+
             if not coin:
                 continue
 
             symbol = f"{coin}_{QUOTE_CURRENCY}"
 
             if symbol not in valid_futures:
+                continue
+
+            if not _is_crypto_symbol(symbol):
                 continue
 
             rows.append((symbol, _oi(item)))
@@ -259,8 +313,15 @@ def _fetch_coinglass_candidates(valid_futures: set[str]) -> list[tuple[str, floa
         return []
 
 
-def _fetch_mexc_volume_candidates(tickers: dict[str, dict], valid_futures: set[str]) -> list[tuple[str, float]]:
-    max_candidates = min(TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER, COIN_RANK_MAX_CANDIDATES)
+def _fetch_mexc_volume_candidates(
+    tickers: dict[str, dict],
+    valid_futures: set[str],
+) -> list[tuple[str, float]]:
+    max_candidates = min(
+        TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER,
+        COIN_RANK_MAX_CANDIDATES,
+    )
+
     rows: list[tuple[str, float]] = []
 
     for symbol, ticker in tickers.items():
@@ -269,11 +330,16 @@ def _fetch_mexc_volume_candidates(tickers: dict[str, dict], valid_futures: set[s
         if symbol not in valid_futures:
             continue
 
+        if not _is_crypto_symbol(symbol):
+            continue
+
         last_price = _ticker_last_price(ticker)
+
         if last_price < COIN_RANK_MIN_LAST_PRICE:
             continue
 
         vol_usd = _ticker_volume_usd(ticker)
+
         if vol_usd < COIN_POOL_MIN_VOLUME_USD:
             continue
 
@@ -287,12 +353,18 @@ def _fetch_mexc_volume_candidates(tickers: dict[str, dict], valid_futures: set[s
         len(rows),
         COIN_POOL_MIN_VOLUME_USD,
     )
+
     return rows
 
 
 # ── ranking model ─────────────────────────────────────────────────
 
-def _rank_one_symbol(symbol: str, ticker: dict, raw_priority: float, max_raw_priority: float) -> dict | None:
+def _rank_one_symbol(
+    symbol: str,
+    ticker: dict,
+    raw_priority: float,
+    max_raw_priority: float,
+) -> dict | None:
     try:
         last_price = _ticker_last_price(ticker)
         volume_usd = _ticker_volume_usd(ticker)
@@ -336,6 +408,7 @@ def _rank_one_symbol(symbol: str, ticker: dict, raw_priority: float, max_raw_pri
             / completed["close"].astype(float)
             * 100.0
         )
+
         avg_candle_range_pct = float(candle_ranges.mean())
 
         volume_score = min(math.log10(max(volume_usd, 1.0)) / 10.0, 1.0)
@@ -404,18 +477,32 @@ def _smart_rank_candidates(
         if symbol not in valid_futures:
             continue
 
-        priority_by_symbol[symbol] = max(priority_by_symbol.get(symbol, 0.0), raw_priority)
+        if not _is_crypto_symbol(symbol):
+            continue
+
+        priority_by_symbol[symbol] = max(
+            priority_by_symbol.get(symbol, 0.0),
+            raw_priority,
+        )
 
     symbols = list(priority_by_symbol.keys())
     symbols = _filter_valid_futures(symbols, valid_futures)
 
-    max_candidates = min(TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER, COIN_RANK_MAX_CANDIDATES)
+    max_candidates = min(
+        TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER,
+        COIN_RANK_MAX_CANDIDATES,
+    )
+
     symbols = symbols[:max_candidates]
 
     if not symbols:
         return []
 
-    max_raw_priority = max((priority_by_symbol.get(symbol, 0.0) for symbol in symbols), default=1.0)
+    max_raw_priority = max(
+        (priority_by_symbol.get(symbol, 0.0) for symbol in symbols),
+        default=1.0,
+    )
+
     ranked: list[dict] = []
 
     logger.info(
@@ -443,6 +530,7 @@ def _smart_rank_candidates(
                 ranked.append(result)
 
     ranked.sort(key=lambda row: row["score"], reverse=True)
+
     return ranked
 
 
@@ -497,6 +585,7 @@ def refresh_coin_list() -> list[str]:
             f"{row['symbol'].replace('_USDT', '')}:{row.get('score', 0)}"
             for row in _cached_scores[:10]
         ]
+
         logger.info(
             "[COIN-RANK] selected %s futures coins | top=%s",
             len(_cached_coins),
@@ -505,12 +594,13 @@ def refresh_coin_list() -> list[str]:
     else:
         logger.warning("[COIN-RANK] no coins selected — keeping previous cache")
 
-    return _cached_coins
+    return list(_cached_coins)
 
 
 def get_cached_coins() -> list[str]:
     if not _cached_coins:
         return refresh_coin_list()
+
     return list(_cached_coins)
 
 
