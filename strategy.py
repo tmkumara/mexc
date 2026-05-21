@@ -1,526 +1,734 @@
 """
-Smart MEXC Futures-only coin scanner.
+Strategy — Breakout + Retest + EMA/VWAP Scalper.
 
-Purpose:
-    - Build the coin pool using MEXC futures contract symbols only.
-    - Avoid symbols not listed on MEXC futures.
-    - Rank futures symbols using liquidity + recent activity.
+Flow:
+    1. detect_setup(symbol)
+       - Uses completed 5m candles.
+       - Detects close above previous 20-candle high or below previous 20-candle low.
+       - Requires EMA50 + VWAP direction alignment.
+       - Saves a pending retest setup.
+
+    2. evaluate_pending_setup(setup)
+       - Waits max RETEST_MAX_CANDLES / expiry window.
+       - Confirms retest of breakout level.
+       - Uses ATR + structure SL.
+       - Uses TARGET_RR TP.
+       - Returns Signal only when confirmed.
+
+This is not financial advice and does not guarantee profit.
 """
 
 import logging
-import math
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 
-import requests
+import pandas as pd
 
-from mexc_client import get_all_contracts, get_tickers, get_klines
+from market_data import get_market_klines
 from config import (
-    EXCLUDE_COINS,
-    TOP_N_COINS,
-    COINGLASS_API_KEY,
-    COIN_POOL_MIN_VOLUME_USD,
-    ENABLE_SMART_COIN_RANKING,
-    COIN_RANK_CANDIDATE_MULTIPLIER,
-    COIN_RANK_MAX_CANDIDATES,
-    COIN_RANK_TIMEFRAME,
-    COIN_RANK_KLINE_COUNT,
-    COIN_RANK_WORKERS,
-    COIN_RANK_MIN_LAST_PRICE,
-    COIN_RANK_MIN_RANGE_PCT,
-    COIN_RANK_MAX_RANGE_PCT,
-    COIN_RANK_MAX_ABS_MOVE_PCT,
-    COIN_RANK_VOLUME_WEIGHT,
-    COIN_RANK_VOLATILITY_WEIGHT,
-    COIN_RANK_TREND_WEIGHT,
-    COIN_RANK_LIQUIDITY_WEIGHT,
-    COIN_RANK_OVEREXTENSION_PENALTY,
-    COIN_RANK_LOW_ACTIVITY_PENALTY,
-    QUOTE_CURRENCY,
+    ENTRY_TF,
+    TREND_TF,
+    ENTRY_KLINE_COUNT,
+    MONITOR_KLINE_COUNT,
+    BREAKOUT_LOOKBACK,
+    RETEST_MAX_CANDLES,
+    EMA_PERIOD,
+    VWAP_LOOKBACK_BARS,
+    ATR_PERIOD,
+    ATR_SL_BUFFER_MULTIPLIER,
+    MIN_RR,
+    TARGET_RR,
+    MAX_RR,
+    MAX_BREAKOUT_CANDLE_BODY_PCT,
+    MAX_RETEST_CANDLE_BODY_PCT,
+    MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT,
+    MAX_DISTANCE_FROM_VWAP_PCT,
+    MIN_VOLUME_MULTIPLIER,
+    AVG_VOLUME_PERIOD,
+    MIN_SIGNAL_SCORE,
+    PENDING_SETUP_EXPIRE_CANDLES,
+    CANDLE_MINUTES,
+    LEVERAGE,
+    MIN_TP_ROI_PCT,
+    MAX_TP_ROI_PCT,
+    MIN_SL_ROI_PCT,
+    MAX_SL_ROI_PCT,
+    REST_FALLBACK_ENABLED,
 )
 
 logger = logging.getLogger(__name__)
 
-COINGLASS_BASE = "https://open-api.coinglass.com/public/v2"
-
-_cached_coins: list[str] = []
-_cached_scores: list[dict] = []
-_last_refresh_at: datetime | None = None
-_cached_valid_futures: set[str] = set()
+MONITOR_LOG_REPEAT_SECONDS = 180
+_LAST_MONITOR_LOG: dict[str, tuple[str, datetime]] = {}
 
 
-# ── safe conversion helpers ───────────────────────────────────────
+@dataclass
+class Signal:
+    symbol:            str
+    direction:         str
+    entry_price:       float
+    tp_price:          float
+    sl_price:          float
+    leverage:          int
+    tp_roi_pct:        float
+    sl_roi_pct:        float
+    timeframe_summary: str
+    generated_at:      datetime
+    score:             float = 0.0
 
-def _to_float(value, default: float = 0.0) -> float:
+
+# ── logging helpers ───────────────────────────────────────────────
+
+def _setup_id(setup: dict) -> str:
+    return str(setup.get("id", "?"))
+
+
+def _setup_label(setup: dict) -> str:
+    return f"#{_setup_id(setup)} {setup.get('symbol', '?')} {setup.get('direction', '?')}"
+
+
+def _fmt(value, digits: int = 8) -> str:
     try:
-        if value is None:
-            return default
-        return float(value)
-    except (ValueError, TypeError):
-        return default
+        return f"{float(value):.{digits}g}"
+    except Exception:
+        return str(value)
 
 
-def _ticker_volume_usd(ticker: dict) -> float:
-    for key in (
-        "amount24",
-        "amount",
-        "turnover24",
-        "turnover",
-        "volume24",
-        "vol24",
-        "quoteVolume",
-        "volume",
-    ):
-        vol = _to_float(ticker.get(key), 0.0)
-        if vol > 0:
-            return vol
-    return 0.0
+def _log_monitor_reason(setup: dict, reason: str, details: str = "", *, force: bool = False) -> None:
+    now = datetime.now(timezone.utc)
+    setup_key = _setup_id(setup)
+    last = _LAST_MONITOR_LOG.get(setup_key)
+
+    if not force and last is not None:
+        last_reason, last_time = last
+        if last_reason == reason and (now - last_time).total_seconds() < MONITOR_LOG_REPEAT_SECONDS:
+            return
+
+    _LAST_MONITOR_LOG[setup_key] = (reason, now)
+
+    msg = f"[RETEST-REASON] {_setup_label(setup)} | {reason}"
+    if details:
+        msg += f" | {details}"
+
+    logger.info(msg)
 
 
-def _ticker_last_price(ticker: dict) -> float:
-    for key in ("lastPrice", "last", "fairPrice", "indexPrice"):
-        price = _to_float(ticker.get(key), 0.0)
-        if price > 0:
-            return price
-    return 0.0
+# ── candle helpers ────────────────────────────────────────────────
+
+def _ensure_df(df: pd.DataFrame | None) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    required = {"open", "high", "low", "close"}
+
+    if not required.issubset(set(df.columns)):
+        return pd.DataFrame()
+
+    out = df.copy()
+
+    for col in ["open", "high", "low", "close", "volume"]:
+        if col in out.columns:
+            out[col] = out[col].astype(float)
+
+    if "volume" not in out.columns:
+        out["volume"] = 0.0
+
+    return out
 
 
-def _normalize_score(value: float, min_value: float, max_value: float) -> float:
-    if max_value <= min_value:
+def _ema(series: pd.Series, period: int) -> pd.Series:
+    return series.astype(float).ewm(span=period, adjust=False).mean()
+
+
+def _true_range(df: pd.DataFrame) -> pd.Series:
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
+    close = df["close"].astype(float)
+    prev_close = close.shift(1)
+
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+
+    return pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+
+def _atr(df: pd.DataFrame, period: int) -> pd.Series:
+    return _true_range(df).ewm(alpha=1 / period, adjust=False).mean()
+
+
+def _rolling_vwap(df: pd.DataFrame, lookback: int) -> pd.Series:
+    typical = (df["high"] + df["low"] + df["close"]) / 3.0
+    volume = df["volume"].clip(lower=0.0)
+
+    pv = typical * volume
+
+    rolling_pv = pv.rolling(lookback, min_periods=max(5, min(lookback, 20))).sum()
+    rolling_vol = volume.rolling(lookback, min_periods=max(5, min(lookback, 20))).sum()
+
+    return (rolling_pv / rolling_vol.replace(0, pd.NA)).ffill()
+
+
+def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
+    out = _ensure_df(df)
+
+    if out.empty:
+        return out
+
+    out["ema"] = _ema(out["close"], EMA_PERIOD)
+    out["vwap"] = _rolling_vwap(out, VWAP_LOOKBACK_BARS)
+    out["atr"] = _atr(out, ATR_PERIOD)
+
+    return out
+
+
+def _body_pct(row: pd.Series) -> float:
+    close = float(row["close"])
+    if close <= 0:
         return 0.0
-    return max(0.0, min(1.0, (value - min_value) / (max_value - min_value)))
+    return abs(float(row["close"]) - float(row["open"])) / close * 100.0
 
 
-# ── futures contract filtering ────────────────────────────────────
-
-def _is_contract_active(contract: dict) -> bool:
-    symbol = str(contract.get("symbol") or "").upper().strip()
-
-    if not symbol:
-        return False
-
-    if not symbol.endswith(f"_{QUOTE_CURRENCY}"):
-        return False
-
-    if symbol in EXCLUDE_COINS:
-        return False
-
-    # MEXC futures usually uses state=0 for active contracts.
-    # Be defensive because fields can vary.
-    state = contract.get("state")
-    if state is not None:
-        try:
-            if int(state) != 0:
-                return False
-        except Exception:
-            state_text = str(state).lower()
-            if state_text not in ("0", "online", "enabled", "normal", "trading"):
-                return False
-
-    status = contract.get("status")
-    if status is not None:
-        status_text = str(status).lower()
-        if status_text in {"offline", "delisted", "suspend", "suspended", "disabled", "false"}:
-            return False
-
-    return True
+def _distance_pct(price: float, reference: float) -> float:
+    if reference <= 0:
+        return 999.0
+    return abs(price - reference) / reference * 100.0
 
 
-def _fetch_valid_futures_symbols(tickers: dict[str, dict]) -> set[str]:
-    global _cached_valid_futures
+def _is_bullish(row: pd.Series) -> bool:
+    return float(row["close"]) > float(row["open"])
 
-    try:
-        contracts = get_all_contracts()
-    except Exception as e:
-        logger.error("[COIN-FILTER] failed to fetch futures contracts: %s", e)
-        return _cached_valid_futures
 
-    contract_symbols = {
-        str(contract.get("symbol")).upper().strip()
-        for contract in contracts
-        if _is_contract_active(contract)
-    }
+def _is_bearish(row: pd.Series) -> bool:
+    return float(row["close"]) < float(row["open"])
 
-    ticker_symbols = {
-        str(symbol).upper().strip()
-        for symbol in tickers.keys()
-        if str(symbol).upper().strip().endswith(f"_{QUOTE_CURRENCY}")
-    }
 
-    if ticker_symbols:
-        valid = contract_symbols & ticker_symbols
+def _avg_volume(df: pd.DataFrame, pos: int, period: int) -> float:
+    start = max(0, pos - period)
+    subset = df.iloc[start:pos]
+
+    if subset.empty or "volume" not in subset.columns:
+        return 0.0
+
+    return float(subset["volume"].astype(float).mean())
+
+
+def _to_iso(ts) -> str:
+    if hasattr(ts, "to_pydatetime"):
+        return ts.to_pydatetime().replace(tzinfo=timezone.utc).isoformat()
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_utc(ts: str) -> datetime:
+    dt = datetime.fromisoformat(ts)
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    return dt
+
+
+# ── scoring / price model ─────────────────────────────────────────
+
+def _score_breakout(df: pd.DataFrame, pos: int, direction: str, level: float) -> float:
+    row = df.iloc[pos]
+    close = float(row["close"])
+    ema = float(row.get("ema", 0.0))
+    vwap = float(row.get("vwap", 0.0))
+
+    score = 45.0
+
+    if direction == "LONG" and close > ema:
+        score += 12.0
+    if direction == "SHORT" and close < ema:
+        score += 12.0
+
+    if direction == "LONG" and close > vwap:
+        score += 12.0
+    if direction == "SHORT" and close < vwap:
+        score += 12.0
+
+    dist_level = _distance_pct(close, level)
+    if dist_level <= 0.20:
+        score += 12.0
+    elif dist_level <= MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT:
+        score += 7.0
     else:
-        valid = contract_symbols
+        score -= 10.0
 
-    valid = {
-        symbol
-        for symbol in valid
-        if symbol and symbol not in EXCLUDE_COINS
-    }
+    dist_vwap = _distance_pct(close, vwap)
+    if dist_vwap <= 0.40:
+        score += 8.0
+    elif dist_vwap <= MAX_DISTANCE_FROM_VWAP_PCT:
+        score += 4.0
+    else:
+        score -= 10.0
 
-    _cached_valid_futures = valid
+    body_pct = _body_pct(row)
+    if body_pct <= 0.60:
+        score += 7.0
+    elif body_pct <= MAX_BREAKOUT_CANDLE_BODY_PCT:
+        score += 3.0
+    else:
+        score -= 12.0
 
-    logger.info(
-        "[COIN-FILTER] contracts=%s active_%s_futures=%s tickers=%s valid=%s excluded=%s",
-        len(contracts),
-        QUOTE_CURRENCY,
-        len(contract_symbols),
-        len(ticker_symbols),
-        len(valid),
-        len(EXCLUDE_COINS),
+    avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
+    volume = float(row.get("volume", 0.0))
+
+    if avg_vol > 0:
+        vol_ratio = volume / avg_vol
+        if vol_ratio >= 1.30:
+            score += 8.0
+        elif vol_ratio >= MIN_VOLUME_MULTIPLIER:
+            score += 4.0
+        else:
+            score -= 8.0
+
+    return round(max(0.0, min(score, 100.0)), 1)
+
+
+def _calculate_prices(
+    direction: str,
+    entry: float,
+    level: float,
+    atr_value: float,
+    trigger_row: pd.Series,
+) -> tuple[float, float, float, float, float] | None:
+    if entry <= 0 or atr_value <= 0 or level <= 0:
+        return None
+
+    buffer = atr_value * ATR_SL_BUFFER_MULTIPLIER
+
+    if direction == "LONG":
+        structure_sl = min(float(trigger_row["low"]), level - buffer)
+        sl_price = structure_sl
+        risk = entry - sl_price
+
+        if risk <= 0:
+            return None
+
+        rr = TARGET_RR
+        tp_price = entry + risk * rr
+
+        tp_move_pct = (tp_price - entry) / entry * 100.0
+        sl_move_pct = (entry - sl_price) / entry * 100.0
+
+    else:
+        structure_sl = max(float(trigger_row["high"]), level + buffer)
+        sl_price = structure_sl
+        risk = sl_price - entry
+
+        if risk <= 0:
+            return None
+
+        rr = TARGET_RR
+        tp_price = entry - risk * rr
+
+        tp_move_pct = (entry - tp_price) / entry * 100.0
+        sl_move_pct = (sl_price - entry) / entry * 100.0
+
+    if rr < MIN_RR or rr > MAX_RR:
+        return None
+
+    tp_roi = tp_move_pct * LEVERAGE
+    sl_roi = sl_move_pct * LEVERAGE
+
+    if tp_roi < MIN_TP_ROI_PCT or tp_roi > MAX_TP_ROI_PCT:
+        return None
+
+    if sl_roi < MIN_SL_ROI_PCT or sl_roi > MAX_SL_ROI_PCT:
+        return None
+
+    return (
+        round(tp_price, 8),
+        round(sl_price, 8),
+        round(tp_roi, 1),
+        round(sl_roi, 1),
+        round(rr, 2),
     )
 
-    return valid
 
+# ── setup detection ───────────────────────────────────────────────
 
-def _filter_valid_futures(symbols: list[str], valid_futures: set[str]) -> list[str]:
-    filtered = []
-    seen = set()
+def detect_setup(symbol: str) -> dict | None:
+    """
+    Detects breakout and returns a pending setup dict.
 
-    for symbol in symbols:
-        symbol = str(symbol).upper().strip()
-
-        if not symbol:
-            continue
-
-        if symbol in seen:
-            continue
-
-        seen.add(symbol)
-
-        if symbol not in valid_futures:
-            continue
-
-        filtered.append(symbol)
-
-    removed = len(seen) - len(filtered)
-
-    if removed:
-        logger.info("[COIN-FILTER] removed non-futures/invalid symbols=%s", removed)
-
-    return filtered
-
-
-# ── candidate fetchers ────────────────────────────────────────────
-
-def _fetch_coinglass_candidates(valid_futures: set[str]) -> list[tuple[str, float]]:
-    if not COINGLASS_API_KEY:
-        return []
-
+    This does not fire Telegram signal. It waits for retest.
+    """
     try:
-        response = requests.get(
-            f"{COINGLASS_BASE}/open_interest",
-            headers={"coinglassSecret": COINGLASS_API_KEY},
-            timeout=15,
-        )
-        response.raise_for_status()
-        data = response.json()
-
-        if str(data.get("code")) != "0":
-            logger.warning("[COIN-RANK] CoinGlass API: %s", data.get("msg", "unknown error"))
-            return []
-
-        items = data.get("data", [])
-        if not items:
-            return []
-
-        def _oi(item: dict) -> float:
-            for key in ("openInterest", "oi", "usdtOI", "oiUsd"):
-                val = _to_float(item.get(key), 0.0)
-                if val > 0:
-                    return val
-            return 0.0
-
-        items.sort(key=_oi, reverse=True)
-
-        max_candidates = min(TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER, COIN_RANK_MAX_CANDIDATES)
-        rows: list[tuple[str, float]] = []
-
-        for item in items:
-            coin = (item.get("symbol") or item.get("baseSymbol") or "").upper().strip()
-            if not coin:
-                continue
-
-            symbol = f"{coin}_{QUOTE_CURRENCY}"
-
-            if symbol not in valid_futures:
-                continue
-
-            rows.append((symbol, _oi(item)))
-
-            if len(rows) >= max_candidates:
-                break
-
-        logger.info("[COIN-RANK] CoinGlass futures candidates=%s", len(rows))
-        return rows
-
-    except Exception as e:
-        logger.error("[COIN-RANK] CoinGlass fetch error: %s", e)
-        return []
-
-
-def _fetch_mexc_volume_candidates(tickers: dict[str, dict], valid_futures: set[str]) -> list[tuple[str, float]]:
-    max_candidates = min(TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER, COIN_RANK_MAX_CANDIDATES)
-    rows: list[tuple[str, float]] = []
-
-    for symbol, ticker in tickers.items():
-        symbol = str(symbol).upper().strip()
-
-        if symbol not in valid_futures:
-            continue
-
-        last_price = _ticker_last_price(ticker)
-        if last_price < COIN_RANK_MIN_LAST_PRICE:
-            continue
-
-        vol_usd = _ticker_volume_usd(ticker)
-        if vol_usd < COIN_POOL_MIN_VOLUME_USD:
-            continue
-
-        rows.append((symbol, vol_usd))
-
-    rows.sort(key=lambda x: x[1], reverse=True)
-    rows = rows[:max_candidates]
-
-    logger.info(
-        "[COIN-RANK] MEXC futures volume candidates=%s min_volume=$%.2f",
-        len(rows),
-        COIN_POOL_MIN_VOLUME_USD,
-    )
-    return rows
-
-
-# ── ranking model ─────────────────────────────────────────────────
-
-def _rank_one_symbol(symbol: str, ticker: dict, raw_priority: float, max_raw_priority: float) -> dict | None:
-    try:
-        last_price = _ticker_last_price(ticker)
-        volume_usd = _ticker_volume_usd(ticker)
-
-        if last_price < COIN_RANK_MIN_LAST_PRICE:
-            return None
-
-        if volume_usd < COIN_POOL_MIN_VOLUME_USD:
-            return None
-
-        df = get_klines(symbol, COIN_RANK_TIMEFRAME, count=COIN_RANK_KLINE_COUNT)
-
-        if df is None or df.empty or len(df) < 12:
-            return None
-
-        completed = df.iloc[:-1].copy()
-
-        if completed.empty or len(completed) < 10:
-            return None
-
-        first_open = float(completed["open"].iloc[0])
-        last_close = float(completed["close"].iloc[-1])
-        high = float(completed["high"].astype(float).max())
-        low = float(completed["low"].astype(float).min())
-
-        if first_open <= 0 or last_close <= 0 or low <= 0:
-            return None
-
-        lookback_move_pct = (last_close - first_open) / first_open * 100.0
-        abs_move_pct = abs(lookback_move_pct)
-        range_pct = (high - low) / low * 100.0
-
-        if range_pct < COIN_RANK_MIN_RANGE_PCT:
-            return None
-
-        if range_pct > COIN_RANK_MAX_RANGE_PCT:
-            return None
-
-        candle_ranges = (
-            (completed["high"].astype(float) - completed["low"].astype(float))
-            / completed["close"].astype(float)
-            * 100.0
-        )
-        avg_candle_range_pct = float(candle_ranges.mean())
-
-        volume_score = min(math.log10(max(volume_usd, 1.0)) / 10.0, 1.0)
-
-        volatility_score = _normalize_score(
-            avg_candle_range_pct,
-            COIN_RANK_MIN_RANGE_PCT / 2.0,
-            1.25,
+        raw_df = _ensure_df(
+            get_market_klines(
+                symbol,
+                ENTRY_TF,
+                count=ENTRY_KLINE_COUNT,
+                allow_rest_fallback=REST_FALLBACK_ENABLED,
+            )
         )
 
-        trend_score = _normalize_score(abs_move_pct, 0.30, 4.50)
+        if raw_df.empty or len(raw_df) < EMA_PERIOD + BREAKOUT_LOOKBACK + 10:
+            logger.debug("[SETUP-REASON] %s rejected | not_enough_candles", symbol)
+            return None
 
-        priority_score = raw_priority / max_raw_priority if max_raw_priority > 0 else 0.0
-        priority_score = max(0.0, min(1.0, priority_score))
+        completed = raw_df.iloc[:-1].copy()
+        df = _prepare_df(completed)
 
-        score = (
-            volume_score * COIN_RANK_VOLUME_WEIGHT
-            + volatility_score * COIN_RANK_VOLATILITY_WEIGHT
-            + trend_score * COIN_RANK_TREND_WEIGHT
-            + priority_score * COIN_RANK_LIQUIDITY_WEIGHT
+        if df.empty or len(df) < EMA_PERIOD + BREAKOUT_LOOKBACK + 5:
+            return None
+
+        pos = len(df) - 1
+        row = df.iloc[pos]
+        prev = df.iloc[pos - BREAKOUT_LOOKBACK:pos]
+
+        if len(prev) < BREAKOUT_LOOKBACK:
+            return None
+
+        close = float(row["close"])
+        high = float(row["high"])
+        low = float(row["low"])
+        ema = float(row["ema"])
+        vwap = float(row["vwap"])
+        atr_value = float(row["atr"])
+
+        if close <= 0 or ema <= 0 or vwap <= 0 or atr_value <= 0:
+            return None
+
+        previous_high = float(prev["high"].max())
+        previous_low = float(prev["low"].min())
+
+        avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
+        volume = float(row.get("volume", 0.0))
+
+        if avg_vol > 0 and volume < avg_vol * MIN_VOLUME_MULTIPLIER:
+            logger.debug(
+                "[SETUP-REASON] %s rejected | volume_low vol=%s avg=%s",
+                symbol,
+                _fmt(volume),
+                _fmt(avg_vol),
+            )
+            return None
+
+        if _body_pct(row) > MAX_BREAKOUT_CANDLE_BODY_PCT:
+            logger.debug(
+                "[SETUP-REASON] %s rejected | breakout_body_too_large body=%s%%",
+                symbol,
+                _fmt(_body_pct(row)),
+            )
+            return None
+
+        direction = None
+        level = None
+        breakout_type = None
+
+        if close > previous_high and close > ema and close > vwap:
+            direction = "LONG"
+            level = previous_high
+            breakout_type = "BREAKOUT_PREV_HIGH"
+
+        elif close < previous_low and close < ema and close < vwap:
+            direction = "SHORT"
+            level = previous_low
+            breakout_type = "BREAKDOWN_PREV_LOW"
+
+        else:
+            logger.debug(
+                "[SETUP-REASON] %s rejected | no_breakout close=%s high20=%s low20=%s ema=%s vwap=%s",
+                symbol,
+                _fmt(close),
+                _fmt(previous_high),
+                _fmt(previous_low),
+                _fmt(ema),
+                _fmt(vwap),
+            )
+            return None
+
+        if _distance_pct(close, level) > MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT:
+            logger.info(
+                "[SETUP-REASON] %s %s rejected | too_far_from_breakout close=%s level=%s dist=%.3f%%",
+                symbol,
+                direction,
+                _fmt(close),
+                _fmt(level),
+                _distance_pct(close, level),
+            )
+            return None
+
+        if _distance_pct(close, vwap) > MAX_DISTANCE_FROM_VWAP_PCT:
+            logger.info(
+                "[SETUP-REASON] %s %s rejected | too_far_from_vwap close=%s vwap=%s dist=%.3f%%",
+                symbol,
+                direction,
+                _fmt(close),
+                _fmt(vwap),
+                _distance_pct(close, vwap),
+            )
+            return None
+
+        score = _score_breakout(df, pos, direction, level)
+
+        if score < MIN_SIGNAL_SCORE:
+            logger.info(
+                "[SETUP-REASON] %s %s rejected | score_low score=%s min=%s",
+                symbol,
+                direction,
+                score,
+                MIN_SIGNAL_SCORE,
+            )
+            return None
+
+        # Initial display prices only; final prices are recalculated on retest entry.
+        display_prices = _calculate_prices(direction, close, level, atr_value, row)
+        if not display_prices:
+            logger.info(
+                "[SETUP-REASON] %s %s rejected | initial_price_model_failed close=%s atr=%s",
+                symbol,
+                direction,
+                _fmt(close),
+                _fmt(atr_value),
+            )
+            return None
+
+        target_price, sl_price, _, _, rr_estimate = display_prices
+
+        zone_pad = level * (MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT / 100.0)
+        zone_low = level - zone_pad
+        zone_high = level + zone_pad
+
+        setup_time = _to_iso(df.index[pos])
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            minutes=RETEST_MAX_CANDLES * CANDLE_MINUTES
         )
 
-        penalty = 0.0
-
-        if abs_move_pct > COIN_RANK_MAX_ABS_MOVE_PCT:
-            penalty += COIN_RANK_OVEREXTENSION_PENALTY
-
-        if avg_candle_range_pct < COIN_RANK_MIN_RANGE_PCT:
-            penalty += COIN_RANK_LOW_ACTIVITY_PENALTY
-
-        final_score = max(score - penalty, 0.0)
-
-        return {
+        setup = {
             "symbol": symbol,
-            "score": round(final_score, 2),
-            "volume_usd": round(volume_usd, 2),
-            "last_price": last_price,
-            "range_pct": round(range_pct, 3),
-            "avg_candle_range_pct": round(avg_candle_range_pct, 3),
-            "lookback_move_pct": round(lookback_move_pct, 3),
-            "volume_score": round(volume_score, 3),
-            "volatility_score": round(volatility_score, 3),
-            "trend_score": round(trend_score, 3),
-            "priority_score": round(priority_score, 3),
-            "penalty": round(penalty, 2),
+            "direction": direction,
+            "trend_tf": TREND_TF,
+            "entry_tf": ENTRY_TF,
+            "bias": direction,
+            "bias_break": level,
+
+            "sweep_type": breakout_type,
+            "sweep_level": level,
+            "sweep_extreme": low if direction == "LONG" else high,
+            "sweep_time": setup_time,
+
+            # Reusing old OB columns for breakout/retest zone.
+            "ob_type": "BREAKOUT_RETEST_ZONE",
+            "ob_low": round(zone_low, 8),
+            "ob_high": round(zone_high, 8),
+            "ob_time": setup_time,
+
+            "target_price": target_price,
+            "sl_price": sl_price,
+            "rr_estimate": rr_estimate,
+            "score": score,
+            "setup_time": setup_time,
+            "expires_at": expires_at.isoformat(),
         }
 
+        logger.info(
+            "[SETUP] %s %s | level=%s close=%s ema=%s vwap=%s score=%s expires=%s",
+            direction,
+            symbol,
+            _fmt(level),
+            _fmt(close),
+            _fmt(ema),
+            _fmt(vwap),
+            score,
+            expires_at.strftime("%H:%M:%S UTC"),
+        )
+
+        return setup
+
     except Exception as e:
-        logger.debug("[COIN-RANK] %s ranking failed: %s", symbol, e)
+        logger.error("Error detecting breakout setup for %s: %s", symbol, e, exc_info=True)
         return None
 
 
-def _smart_rank_candidates(
-    candidates: list[tuple[str, float]],
-    tickers: dict[str, dict],
-    valid_futures: set[str],
-) -> list[dict]:
-    if not candidates:
-        return []
+# ── pending retest monitor ────────────────────────────────────────
 
-    priority_by_symbol: dict[str, float] = {}
+def _is_valid_retest(trigger: pd.Series, setup: dict) -> tuple[bool, str]:
+    direction = setup["direction"]
+    level = float(setup["sweep_level"])
 
-    for symbol, raw_priority in candidates:
-        symbol = str(symbol).upper().strip()
+    close = float(trigger["close"])
+    ema = float(trigger.get("ema", 0.0))
+    vwap = float(trigger.get("vwap", 0.0))
 
-        if symbol not in valid_futures:
-            continue
+    if _body_pct(trigger) > MAX_RETEST_CANDLE_BODY_PCT:
+        return False, "retest_candle_body_too_large"
 
-        priority_by_symbol[symbol] = max(priority_by_symbol.get(symbol, 0.0), raw_priority)
+    if _distance_pct(close, level) > MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT:
+        return False, "entry_too_far_from_breakout_level"
 
-    symbols = list(priority_by_symbol.keys())
-    symbols = _filter_valid_futures(symbols, valid_futures)
+    if _distance_pct(close, vwap) > MAX_DISTANCE_FROM_VWAP_PCT:
+        return False, "entry_too_far_from_vwap"
 
-    max_candidates = min(TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER, COIN_RANK_MAX_CANDIDATES)
-    symbols = symbols[:max_candidates]
+    if direction == "LONG":
+        touched = float(trigger["low"]) <= level * (1.0 + MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT / 100.0)
+        reclaimed = close >= level
+        trend_ok = close > ema and close > vwap
+        candle_ok = _is_bullish(trigger)
 
-    if not symbols:
-        return []
+        if not touched:
+            return False, "price_not_retested_level"
+        if not reclaimed:
+            return False, "close_not_reclaimed_level"
+        if not trend_ok:
+            return False, "ema_vwap_not_bullish"
+        if not candle_ok:
+            return False, "retest_candle_not_bullish"
 
-    max_raw_priority = max((priority_by_symbol.get(symbol, 0.0) for symbol in symbols), default=1.0)
-    ranked: list[dict] = []
+        return True, "long_retest_confirmed"
 
-    logger.info(
-        "[COIN-RANK] ranking %s futures candidates using %sx %s candles",
-        len(symbols),
-        COIN_RANK_KLINE_COUNT,
-        COIN_RANK_TIMEFRAME,
-    )
+    touched = float(trigger["high"]) >= level * (1.0 - MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT / 100.0)
+    reclaimed = close <= level
+    trend_ok = close < ema and close < vwap
+    candle_ok = _is_bearish(trigger)
 
-    with ThreadPoolExecutor(max_workers=COIN_RANK_WORKERS) as executor:
-        futures = {
-            executor.submit(
-                _rank_one_symbol,
-                symbol,
-                tickers.get(symbol, {}),
-                priority_by_symbol.get(symbol, 0.0),
-                max_raw_priority,
-            ): symbol
-            for symbol in symbols
-        }
+    if not touched:
+        return False, "price_not_retested_level"
+    if not reclaimed:
+        return False, "close_not_reclaimed_level"
+    if not trend_ok:
+        return False, "ema_vwap_not_bearish"
+    if not candle_ok:
+        return False, "retest_candle_not_bearish"
 
-        for future in as_completed(futures):
-            result = future.result()
-            if result is not None:
-                ranked.append(result)
-
-    ranked.sort(key=lambda row: row["score"], reverse=True)
-    return ranked
+    return True, "short_retest_confirmed"
 
 
-# ── public API ────────────────────────────────────────────────────
-
-def refresh_coin_list() -> list[str]:
-    global _cached_coins, _cached_scores, _last_refresh_at
-
+def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
+    """
+    Returns:
+        ("WAIT", None)
+        ("EXPIRED", None)
+        ("INVALIDATED", None)
+        ("FIRE", Signal)
+    """
     try:
-        tickers = get_tickers()
-    except Exception as e:
-        logger.error("[COIN-RANK] ticker fetch failed: %s", e)
-        tickers = {}
+        now = datetime.now(timezone.utc)
+        expires_at = _parse_utc(setup["expires_at"])
 
-    valid_futures = _fetch_valid_futures_symbols(tickers)
+        if now >= expires_at:
+            _log_monitor_reason(setup, "EXPIRED_RETEST_TIMEOUT", force=True)
+            return "EXPIRED", None
 
-    if not valid_futures:
-        logger.warning("[COIN-RANK] no valid futures symbols found — keeping previous cache")
-        return _cached_coins
+        symbol = setup["symbol"]
+        direction = setup["direction"]
+        level = float(setup["sweep_level"])
 
-    raw_candidates = _fetch_coinglass_candidates(valid_futures)
-
-    if not raw_candidates:
-        logger.info("[COIN-RANK] no CoinGlass futures data — using MEXC futures volume candidates")
-        raw_candidates = _fetch_mexc_volume_candidates(tickers, valid_futures)
-
-    if not raw_candidates:
-        logger.warning("[COIN-RANK] no candidates fetched — keeping previous cache")
-        return _cached_coins
-
-    if ENABLE_SMART_COIN_RANKING and tickers:
-        ranked = _smart_rank_candidates(raw_candidates, tickers, valid_futures)
-
-        if ranked:
-            selected = ranked[:TOP_N_COINS]
-            _cached_scores = selected
-            _cached_coins = [row["symbol"] for row in selected]
-        else:
-            logger.warning("[COIN-RANK] smart ranking returned empty — using raw futures fallback")
-            symbols = _filter_valid_futures([symbol for symbol, _ in raw_candidates], valid_futures)
-            _cached_scores = [{"symbol": s, "score": 0.0} for s in symbols[:TOP_N_COINS]]
-            _cached_coins = symbols[:TOP_N_COINS]
-    else:
-        symbols = _filter_valid_futures([symbol for symbol, _ in raw_candidates], valid_futures)
-        _cached_scores = [{"symbol": s, "score": 0.0} for s in symbols[:TOP_N_COINS]]
-        _cached_coins = symbols[:TOP_N_COINS]
-
-    _last_refresh_at = datetime.now(timezone.utc)
-
-    if _cached_coins:
-        top_preview = [
-            f"{row['symbol'].replace('_USDT', '')}:{row.get('score', 0)}"
-            for row in _cached_scores[:10]
-        ]
-        logger.info(
-            "[COIN-RANK] selected %s futures coins | top=%s",
-            len(_cached_coins),
-            top_preview,
+        raw_df = _ensure_df(
+            get_market_klines(
+                symbol,
+                ENTRY_TF,
+                count=MONITOR_KLINE_COUNT,
+                allow_rest_fallback=REST_FALLBACK_ENABLED,
+            )
         )
-    else:
-        logger.warning("[COIN-RANK] no coins selected — keeping previous cache")
 
-    return _cached_coins
+        if raw_df.empty or len(raw_df) < EMA_PERIOD + ATR_PERIOD + 5:
+            _log_monitor_reason(setup, "WAIT_DATA_NOT_READY")
+            return "WAIT", None
+
+        completed = raw_df.iloc[:-1].copy()
+        df = _prepare_df(completed)
+
+        if df.empty or len(df) < EMA_PERIOD + ATR_PERIOD + 5:
+            _log_monitor_reason(setup, "WAIT_INDICATORS_NOT_READY")
+            return "WAIT", None
+
+        recent = df.tail(RETEST_MAX_CANDLES + 1)
+
+        # Simple invalidation: after breakout, if price closes back too far beyond level.
+        last = recent.iloc[-1]
+        atr_value = float(last.get("atr", 0.0))
+
+        if atr_value <= 0:
+            _log_monitor_reason(setup, "WAIT_ATR_NOT_READY")
+            return "WAIT", None
+
+        if direction == "LONG":
+            invalid_close = level - atr_value * 0.50
+            if float(last["close"]) < invalid_close:
+                _log_monitor_reason(
+                    setup,
+                    "INVALIDATED_CLOSE_BELOW_BREAKOUT",
+                    f"close={_fmt(last['close'])} invalid={_fmt(invalid_close)}",
+                    force=True,
+                )
+                return "INVALIDATED", None
+        else:
+            invalid_close = level + atr_value * 0.50
+            if float(last["close"]) > invalid_close:
+                _log_monitor_reason(
+                    setup,
+                    "INVALIDATED_CLOSE_ABOVE_BREAKDOWN",
+                    f"close={_fmt(last['close'])} invalid={_fmt(invalid_close)}",
+                    force=True,
+                )
+                return "INVALIDATED", None
+
+        trigger = recent.iloc[-1]
+        valid, reason = _is_valid_retest(trigger, setup)
+
+        if not valid:
+            _log_monitor_reason(
+                setup,
+                f"WAIT_{reason.upper()}",
+                f"close={_fmt(trigger['close'])} level={_fmt(level)}",
+            )
+            return "WAIT", None
+
+        entry = float(trigger["close"])
+
+        prices = _calculate_prices(
+            direction=direction,
+            entry=entry,
+            level=level,
+            atr_value=atr_value,
+            trigger_row=trigger,
+        )
+
+        if not prices:
+            _log_monitor_reason(
+                setup,
+                "WAIT_PRICE_MODEL_FAILED",
+                f"entry={_fmt(entry)} level={_fmt(level)} atr={_fmt(atr_value)}",
+            )
+            return "WAIT", None
+
+        tp_price, sl_price, tp_roi_pct, sl_roi_pct, rr = prices
+        score = min(float(setup["score"]) + 7.0, 100.0)
+
+        _log_monitor_reason(
+            setup,
+            "FIRE_RETEST_CONFIRMED",
+            f"entry={_fmt(entry)} tp={_fmt(tp_price)} sl={_fmt(sl_price)} rr={rr} score={score}",
+            force=True,
+        )
+
+        return "FIRE", Signal(
+            symbol=symbol,
+            direction=direction,
+            entry_price=entry,
+            tp_price=tp_price,
+            sl_price=sl_price,
+            leverage=LEVERAGE,
+            tp_roi_pct=tp_roi_pct,
+            sl_roi_pct=sl_roi_pct,
+            timeframe_summary=(
+                f"Breakout Retest | {ENTRY_TF} | EMA{EMA_PERIOD}+VWAP | RR {rr:g}"
+            ),
+            generated_at=datetime.now(timezone.utc),
+            score=score,
+        )
+
+    except Exception as e:
+        logger.error("Error evaluating retest setup %s: %s", setup.get("id"), e, exc_info=True)
+        return "WAIT", None
 
 
-def get_cached_coins() -> list[str]:
-    if not _cached_coins:
-        return refresh_coin_list()
-    return list(_cached_coins)
-
-
-def get_cached_coin_scores() -> list[dict]:
-    return list(_cached_scores)
-
-
-def get_last_refresh_at() -> datetime | None:
-    return _last_refresh_at
-
-
-def get_cached_valid_futures() -> set[str]:
-    return set(_cached_valid_futures)
+# Compatibility wrapper.
+def analyze_coin(symbol: str) -> Signal | None:
+    return None
