@@ -1,15 +1,15 @@
 """
-Phase 2.2 Strategy — AMD + FVG Distribution.
+Phase 3 Strategy — VWAP Liquidity Sweep Scalper.
 
-AMD model:
-    1. Accumulation: tight sideways range.
-    2. Manipulation: sweep outside range to take liquidity.
-    3. FVG: displacement candle leaves imbalance.
-    4. Distribution: entry after FVG retest + confirmation in true direction.
+Model:
+    1. Use 1h EMA bias as a direction filter.
+    2. On 5m, find a liquidity sweep of a recent high/low.
+    3. Confirm that price rejects the sweep and reclaims VWAP/EMA direction.
+    4. Save the setup as pending.
+    5. Fire only when the next confirmation candle appears.
 
-The strategy keeps the same interface used by main.py:
-    detect_setup(symbol) -> pending setup dict | None
-    evaluate_pending_setup(setup) -> (status, Signal | None)
+This strategy is designed to be less rare than strict AMD/FVG and less chasey
+than pure momentum. It does not guarantee profit.
 """
 
 import logging
@@ -28,29 +28,29 @@ from config import (
     EMA_FAST_PERIOD,
     EMA_SLOW_PERIOD,
     TREND_SLOPE_LOOKBACK,
+    REQUIRE_TREND_ALIGNMENT,
+    VWAP_LOOKBACK_BARS,
+    ENTRY_EMA_FAST_PERIOD,
+    ENTRY_EMA_SLOW_PERIOD,
+    MAX_ENTRY_DISTANCE_FROM_VWAP_PCT,
+    MIN_DISTANCE_TO_VWAP_TP_PCT,
     ENTRY_LOOKBACK,
+    LIQUIDITY_LOOKBACK,
+    SWEEP_SCAN_LOOKBACK,
+    MIN_SWEEP_PCT,
+    MAX_SWEEP_PCT,
+    SWEEP_CLOSE_BACK_INSIDE,
+    MIN_REJECTION_WICK_RATIO,
     AVG_BODY_PERIOD,
     AVG_VOLUME_PERIOD,
-    AMD_ACCUMULATION_MIN_CANDLES,
-    AMD_ACCUMULATION_MAX_CANDLES,
-    AMD_MAX_ACCUMULATION_RANGE_PCT,
-    AMD_MIN_ACCUMULATION_RANGE_PCT,
-    AMD_RANGE_END_LOOKBACK,
-    AMD_SWEEP_LOOKBACK,
-    AMD_MIN_SWEEP_PCT,
-    AMD_MAX_SWEEP_PCT,
-    AMD_SWEEP_CLOSE_BACK_INSIDE,
-    AMD_FVG_LOOKBACK_AFTER_SWEEP,
-    AMD_MIN_FVG_SIZE_PCT,
-    AMD_MAX_FVG_SIZE_PCT,
-    AMD_DISTRIBUTION_BODY_MULTIPLIER,
-    AMD_DISTRIBUTION_CLOSE_POSITION,
-    AMD_REQUIRE_FVG_RETEST,
-    AMD_CONFIRM_CLOSE_BEYOND_FVG,
-    AMD_CONFIRM_BREAK_PREVIOUS_CANDLE,
-    AMD_MAX_CONFIRM_DISTANCE_FROM_FVG_PCT,
-    AMD_INVALIDATE_BEYOND_SWEEP_BUFFER_PCT,
-    AMD_MIN_VOLUME_MULTIPLIER,
+    MIN_SWEEP_VOLUME_MULTIPLIER,
+    CONFIRM_VOLUME_MULTIPLIER,
+    CONFIRM_BREAK_PREVIOUS_CANDLE,
+    MAX_CONFIRM_CANDLE_BODY_PCT,
+    MAX_CONFIRM_DISTANCE_FROM_SWEEP_LEVEL_PCT,
+    MAX_RECENT_MOVE_PCT,
+    RECENT_MOVE_LOOKBACK,
+    INVALIDATE_SWEEP_BUFFER_PCT,
     TAKE_PROFIT_PRICE_PCT,
     STOP_LOSS_PRICE_PCT,
     PENDING_SETUP_EXPIRE_CANDLES,
@@ -119,7 +119,7 @@ def _log_monitor_reason(setup: dict, reason: str, details: str = "", *, force: b
     logger.info(msg)
 
 
-# ── Candle helpers ────────────────────────────────────────────────
+# ── Data / candle helpers ─────────────────────────────────────────
 
 def _ensure_df(df: pd.DataFrame | None) -> pd.DataFrame:
     if df is None or df.empty:
@@ -132,6 +132,28 @@ def _ensure_df(df: pd.DataFrame | None) -> pd.DataFrame:
 
 def _ema(series: pd.Series, period: int) -> pd.Series:
     return series.astype(float).ewm(span=period, adjust=False).mean()
+
+
+def _vwap(df: pd.DataFrame, lookback: int) -> pd.Series:
+    recent = df.tail(lookback).copy()
+    typical = (
+        recent["high"].astype(float)
+        + recent["low"].astype(float)
+        + recent["close"].astype(float)
+    ) / 3.0
+
+    if "volume" in recent.columns:
+        volume = recent["volume"].astype(float).clip(lower=0.0)
+    else:
+        volume = pd.Series([1.0] * len(recent), index=recent.index)
+
+    pv = typical * volume
+    cumulative_volume = volume.cumsum().replace(0, pd.NA)
+    values = (pv.cumsum() / cumulative_volume).ffill()
+
+    out = pd.Series(index=df.index, dtype=float)
+    out.loc[recent.index] = values
+    return out.ffill()
 
 
 def _body_size(row: pd.Series) -> float:
@@ -161,6 +183,30 @@ def _close_position(row: pd.Series) -> float:
     return (close - low) / rng
 
 
+def _lower_wick_ratio(row: pd.Series) -> float:
+    high = float(row["high"])
+    low = float(row["low"])
+    open_price = float(row["open"])
+    close = float(row["close"])
+    rng = high - low
+    if rng <= 0:
+        return 0.0
+    lower_wick = min(open_price, close) - low
+    return max(lower_wick / rng, 0.0)
+
+
+def _upper_wick_ratio(row: pd.Series) -> float:
+    high = float(row["high"])
+    low = float(row["low"])
+    open_price = float(row["open"])
+    close = float(row["close"])
+    rng = high - low
+    if rng <= 0:
+        return 0.0
+    upper_wick = high - max(open_price, close)
+    return max(upper_wick / rng, 0.0)
+
+
 def _avg_body(df: pd.DataFrame, pos: int, period: int) -> float:
     start = max(0, pos - period)
     subset = df.iloc[start:pos]
@@ -179,8 +225,10 @@ def _avg_volume(df: pd.DataFrame, pos: int, period: int) -> float:
     return float(subset["volume"].astype(float).mean())
 
 
-def _touches_zone(row: pd.Series, zone_low: float, zone_high: float) -> bool:
-    return float(row["low"]) <= zone_high and float(row["high"]) >= zone_low
+def _distance_pct(price: float, reference: float) -> float:
+    if reference <= 0:
+        return 999.0
+    return abs(price - reference) / reference * 100.0
 
 
 def _parse_utc(ts: str) -> datetime:
@@ -196,11 +244,12 @@ def _to_iso(ts) -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# ── Soft trend filter ─────────────────────────────────────────────
+# ── Trend ─────────────────────────────────────────────────────────
 
-def _get_soft_trend_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
+def _get_trend_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
     df = _ensure_df(trend_df)
     completed = df.iloc[:-1].copy()
+
     min_len = EMA_SLOW_PERIOD + TREND_SLOPE_LOOKBACK + 5
     if len(completed) < min_len:
         return None, {"reason": "NOT_ENOUGH_TREND_CANDLES"}
@@ -216,184 +265,33 @@ def _get_soft_trend_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
     ema_fast = float(last["ema_fast"])
     ema_slow = float(last["ema_slow"])
     fast_slope = ema_fast - float(old["ema_fast"])
+    slow_slope = ema_slow - float(old["ema_slow"])
 
-    if last_close > ema_fast > ema_slow and fast_slope > 0:
-        return "LONG", {"ema_fast": ema_fast, "ema_slow": ema_slow, "fast_slope": fast_slope}
+    if last_close > ema_fast > ema_slow and fast_slope > 0 and slow_slope >= 0:
+        return "LONG", {
+            "ema_fast": ema_fast,
+            "ema_slow": ema_slow,
+            "fast_slope": fast_slope,
+            "slow_slope": slow_slope,
+        }
 
-    if last_close < ema_fast < ema_slow and fast_slope < 0:
-        return "SHORT", {"ema_fast": ema_fast, "ema_slow": ema_slow, "fast_slope": fast_slope}
+    if last_close < ema_fast < ema_slow and fast_slope < 0 and slow_slope <= 0:
+        return "SHORT", {
+            "ema_fast": ema_fast,
+            "ema_slow": ema_slow,
+            "fast_slope": fast_slope,
+            "slow_slope": slow_slope,
+        }
 
-    return None, {"ema_fast": ema_fast, "ema_slow": ema_slow, "fast_slope": fast_slope}
-
-
-# ── AMD detection ─────────────────────────────────────────────────
-
-def _find_best_accumulation_range(df: pd.DataFrame, end_pos: int) -> dict | None:
-    """
-    Search for a tight sideways range immediately before the manipulation.
-    end_pos is exclusive.
-    """
-    best = None
-    best_score = -1.0
-
-    for length in range(AMD_ACCUMULATION_MIN_CANDLES, AMD_ACCUMULATION_MAX_CANDLES + 1):
-        start = end_pos - length
-        if start < 0:
-            continue
-
-        window = df.iloc[start:end_pos]
-        if window.empty:
-            continue
-
-        high = float(window["high"].astype(float).max())
-        low = float(window["low"].astype(float).min())
-        mid = (high + low) / 2.0
-        if mid <= 0:
-            continue
-
-        range_pct = (high - low) / mid * 100.0
-        if range_pct < AMD_MIN_ACCUMULATION_RANGE_PCT or range_pct > AMD_MAX_ACCUMULATION_RANGE_PCT:
-            continue
-
-        closes = window["close"].astype(float)
-        close_std_pct = float(closes.std() / mid * 100.0) if len(closes) > 1 else 0.0
-
-        score = 70.0 - range_pct * 20.0 - close_std_pct * 10.0 + length * 0.8
-
-        if score > best_score:
-            best_score = score
-            best = {
-                "start": start,
-                "end": end_pos - 1,
-                "high": high,
-                "low": low,
-                "mid": mid,
-                "range_pct": range_pct,
-                "length": length,
-                "score": round(max(score, 0.0), 2),
-            }
-
-    return best
+    return "NEUTRAL", {
+        "ema_fast": ema_fast,
+        "ema_slow": ema_slow,
+        "fast_slope": fast_slope,
+        "slow_slope": slow_slope,
+    }
 
 
-def _detect_sweep(df: pd.DataFrame, pos: int, acc: dict) -> dict | None:
-    row = df.iloc[pos]
-    high = float(row["high"])
-    low = float(row["low"])
-    close = float(row["close"])
-    acc_high = float(acc["high"])
-    acc_low = float(acc["low"])
-
-    if acc_low <= 0 or acc_high <= 0:
-        return None
-
-    sell_side_sweep_pct = (acc_low - low) / acc_low * 100.0
-    buy_side_sweep_pct = (high - acc_high) / acc_high * 100.0
-
-    if AMD_MIN_SWEEP_PCT <= sell_side_sweep_pct <= AMD_MAX_SWEEP_PCT:
-        if (not AMD_SWEEP_CLOSE_BACK_INSIDE) or close > acc_low:
-            return {
-                "direction": "LONG",
-                "type": "SELL_SIDE_SWEEP",
-                "level": acc_low,
-                "extreme": low,
-                "pos": pos,
-                "time": df.index[pos],
-                "sweep_pct": sell_side_sweep_pct,
-            }
-
-    if AMD_MIN_SWEEP_PCT <= buy_side_sweep_pct <= AMD_MAX_SWEEP_PCT:
-        if (not AMD_SWEEP_CLOSE_BACK_INSIDE) or close < acc_high:
-            return {
-                "direction": "SHORT",
-                "type": "BUY_SIDE_SWEEP",
-                "level": acc_high,
-                "extreme": high,
-                "pos": pos,
-                "time": df.index[pos],
-                "sweep_pct": buy_side_sweep_pct,
-            }
-
-    return None
-
-
-def _find_fvg_after_sweep(df: pd.DataFrame, sweep: dict) -> dict | None:
-    start = max(2, int(sweep["pos"]) + 1)
-    end = min(len(df) - 1, int(sweep["pos"]) + AMD_FVG_LOOKBACK_AFTER_SWEEP)
-    direction = sweep["direction"]
-
-    best = None
-    best_score = -1.0
-
-    for i in range(start, end + 1):
-        row = df.iloc[i]
-        avg_body = _avg_body(df, i, AVG_BODY_PERIOD)
-        avg_vol = _avg_volume(df, i, AVG_VOLUME_PERIOD)
-        volume = float(row.get("volume", 0.0))
-
-        if avg_body <= 0:
-            continue
-
-        body_ratio = _body_size(row) / avg_body
-        vol_ratio = volume / avg_vol if avg_vol > 0 else 1.0
-
-        if body_ratio < AMD_DISTRIBUTION_BODY_MULTIPLIER:
-            continue
-        if vol_ratio < AMD_MIN_VOLUME_MULTIPLIER:
-            continue
-
-        c1 = df.iloc[i - 2]
-        c3 = row
-
-        if direction == "LONG":
-            if not _is_bullish(row):
-                continue
-            if _close_position(row) < AMD_DISTRIBUTION_CLOSE_POSITION:
-                continue
-
-            # Bullish FVG: candle3 low > candle1 high.
-            gap_low = float(c1["high"])
-            gap_high = float(c3["low"])
-            if gap_high <= gap_low:
-                continue
-
-        else:
-            if not _is_bearish(row):
-                continue
-            if _close_position(row) > (1.0 - AMD_DISTRIBUTION_CLOSE_POSITION):
-                continue
-
-            # Bearish FVG: candle3 high < candle1 low.
-            gap_low = float(c3["high"])
-            gap_high = float(c1["low"])
-            if gap_high <= gap_low:
-                continue
-
-        mid = (gap_low + gap_high) / 2.0
-        gap_pct = (gap_high - gap_low) / mid * 100.0 if mid > 0 else 0.0
-        if gap_pct < AMD_MIN_FVG_SIZE_PCT or gap_pct > AMD_MAX_FVG_SIZE_PCT:
-            continue
-
-        score = 60.0 + min(body_ratio * 8.0, 18.0) + min(vol_ratio * 5.0, 12.0) + min(gap_pct * 20.0, 10.0)
-
-        if score > best_score:
-            best_score = score
-            best = {
-                "type": "BULLISH_FVG" if direction == "LONG" else "BEARISH_FVG",
-                "direction": direction,
-                "pos": i,
-                "time": df.index[i],
-                "low": round(gap_low, 8),
-                "high": round(gap_high, 8),
-                "mid": round(mid, 8),
-                "gap_pct": round(gap_pct, 4),
-                "body_ratio": round(body_ratio, 2),
-                "volume_ratio": round(vol_ratio, 2),
-                "score": round(score, 2),
-            }
-
-    return best
-
+# ── Price model ───────────────────────────────────────────────────
 
 def _calculate_fixed_prices(direction: str, entry: float) -> tuple[float, float, float, float] | None:
     if entry <= 0:
@@ -417,37 +315,180 @@ def _calculate_fixed_prices(direction: str, entry: float) -> tuple[float, float,
     return round(tp_price, 8), round(sl_price, 8), round(tp_roi, 1), round(sl_roi, 1)
 
 
-def _score_amd_setup(acc: dict, sweep: dict, fvg: dict, trend_bias: str | None) -> float:
+# ── Sweep detection ───────────────────────────────────────────────
+
+def _prepare_entry_df(df: pd.DataFrame) -> pd.DataFrame:
+    prepared = df.copy()
+    close = prepared["close"].astype(float)
+    prepared["ema_fast_entry"] = _ema(close, ENTRY_EMA_FAST_PERIOD)
+    prepared["ema_slow_entry"] = _ema(close, ENTRY_EMA_SLOW_PERIOD)
+    prepared["vwap"] = _vwap(prepared, VWAP_LOOKBACK_BARS)
+    return prepared
+
+
+def _recent_move_pct(df: pd.DataFrame, pos: int) -> float:
+    start = max(0, pos - RECENT_MOVE_LOOKBACK)
+    window = df.iloc[start:pos + 1]
+    if window.empty:
+        return 0.0
+    high = float(window["high"].astype(float).max())
+    low = float(window["low"].astype(float).min())
+    mid = (high + low) / 2.0
+    if mid <= 0:
+        return 999.0
+    return (high - low) / mid * 100.0
+
+
+def _detect_long_sweep(df: pd.DataFrame, pos: int) -> dict | None:
+    row = df.iloc[pos]
+    start = max(0, pos - LIQUIDITY_LOOKBACK)
+    prev = df.iloc[start:pos]
+
+    if prev.empty:
+        return None
+
+    level = float(prev["low"].astype(float).min())
+    low = float(row["low"])
+    close = float(row["close"])
+
+    if level <= 0 or low >= level:
+        return None
+
+    sweep_pct = (level - low) / level * 100.0
+    if sweep_pct < MIN_SWEEP_PCT or sweep_pct > MAX_SWEEP_PCT:
+        return None
+
+    if SWEEP_CLOSE_BACK_INSIDE and close <= level:
+        return None
+
+    if _lower_wick_ratio(row) < MIN_REJECTION_WICK_RATIO:
+        return None
+
+    avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
+    volume = float(row.get("volume", 0.0))
+    if avg_vol > 0 and volume < avg_vol * MIN_SWEEP_VOLUME_MULTIPLIER:
+        return None
+
+    return {
+        "direction": "LONG",
+        "type": "SELL_SIDE_LIQUIDITY_SWEEP",
+        "level": level,
+        "extreme": low,
+        "pos": pos,
+        "time": df.index[pos],
+        "sweep_pct": sweep_pct,
+        "wick_ratio": _lower_wick_ratio(row),
+    }
+
+
+def _detect_short_sweep(df: pd.DataFrame, pos: int) -> dict | None:
+    row = df.iloc[pos]
+    start = max(0, pos - LIQUIDITY_LOOKBACK)
+    prev = df.iloc[start:pos]
+
+    if prev.empty:
+        return None
+
+    level = float(prev["high"].astype(float).max())
+    high = float(row["high"])
+    close = float(row["close"])
+
+    if level <= 0 or high <= level:
+        return None
+
+    sweep_pct = (high - level) / level * 100.0
+    if sweep_pct < MIN_SWEEP_PCT or sweep_pct > MAX_SWEEP_PCT:
+        return None
+
+    if SWEEP_CLOSE_BACK_INSIDE and close >= level:
+        return None
+
+    if _upper_wick_ratio(row) < MIN_REJECTION_WICK_RATIO:
+        return None
+
+    avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
+    volume = float(row.get("volume", 0.0))
+    if avg_vol > 0 and volume < avg_vol * MIN_SWEEP_VOLUME_MULTIPLIER:
+        return None
+
+    return {
+        "direction": "SHORT",
+        "type": "BUY_SIDE_LIQUIDITY_SWEEP",
+        "level": level,
+        "extreme": high,
+        "pos": pos,
+        "time": df.index[pos],
+        "sweep_pct": sweep_pct,
+        "wick_ratio": _upper_wick_ratio(row),
+    }
+
+
+def _score_setup(df: pd.DataFrame, pos: int, sweep: dict, trend_bias: str | None) -> float:
+    row = df.iloc[pos]
+    direction = sweep["direction"]
+
     score = 45.0
 
-    if acc["range_pct"] <= 0.60:
-        score += 18.0
-    elif acc["range_pct"] <= 0.90:
-        score += 12.0
-    else:
-        score += 6.0
-
-    if acc["length"] >= 18:
+    # Trend alignment is valuable but not the whole strategy.
+    if trend_bias == direction:
+        score += 20.0
+    elif trend_bias == "NEUTRAL":
         score += 8.0
-    elif acc["length"] >= 12:
-        score += 5.0
-
-    if 0.12 <= sweep["sweep_pct"] <= 0.75:
-        score += 12.0
     else:
+        score -= 12.0
+
+    # Sweep quality.
+    sweep_pct = float(sweep.get("sweep_pct", 0.0))
+    if 0.10 <= sweep_pct <= 0.80:
+        score += 14.0
+    else:
+        score += 7.0
+
+    wick_ratio = float(sweep.get("wick_ratio", 0.0))
+    score += min(wick_ratio * 20.0, 12.0)
+
+    # VWAP/EMA quality.
+    close = float(row["close"])
+    vwap = float(row.get("vwap", 0.0))
+    ema_fast = float(row.get("ema_fast_entry", 0.0))
+    ema_slow = float(row.get("ema_slow_entry", 0.0))
+
+    if vwap > 0:
+        dist_vwap = _distance_pct(close, vwap)
+        if dist_vwap <= MAX_ENTRY_DISTANCE_FROM_VWAP_PCT:
+            score += 10.0
+        else:
+            score -= 10.0
+
+        distance_to_vwap = ((vwap - close) / close * 100.0) if direction == "LONG" else ((close - vwap) / close * 100.0)
+        if distance_to_vwap >= MIN_DISTANCE_TO_VWAP_TP_PCT:
+            score += 5.0
+
+    if direction == "LONG" and ema_fast >= ema_slow:
+        score += 5.0
+    if direction == "SHORT" and ema_fast <= ema_slow:
         score += 5.0
 
-    score += min(float(fvg.get("score", 0.0)) - 60.0, 25.0)
+    # Volume.
+    avg_vol = _avg_volume(df, pos, AVG_VOLUME_PERIOD)
+    vol = float(row.get("volume", 0.0))
+    if avg_vol > 0:
+        vol_ratio = vol / avg_vol
+        score += min(max((vol_ratio - 1.0) * 10.0, 0.0), 8.0)
 
-    if trend_bias == sweep["direction"]:
-        score += 7.0
+    # Anti-chase.
+    recent_move = _recent_move_pct(df, pos)
+    if recent_move > MAX_RECENT_MOVE_PCT:
+        score -= 18.0
 
     return round(min(max(score, 0.0), 100.0), 1)
 
 
-# ── Public setup detection ────────────────────────────────────────
-
 def detect_setup(symbol: str) -> dict | None:
+    """
+    Detects a liquidity sweep and saves a pending setup.
+    The actual Telegram signal is fired by evaluate_pending_setup().
+    """
     try:
         trend_df = _ensure_df(get_klines(symbol, TREND_TF, count=TREND_KLINE_COUNT))
         entry_df = _ensure_df(get_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT))
@@ -455,119 +496,174 @@ def detect_setup(symbol: str) -> dict | None:
         if entry_df.empty:
             return None
 
-        trend_bias, trend_details = _get_soft_trend_bias(trend_df) if not trend_df.empty else (None, {})
+        trend_bias, trend_details = _get_trend_bias(trend_df) if not trend_df.empty else ("NEUTRAL", {})
 
         completed = entry_df.iloc[:-1].copy().tail(ENTRY_LOOKBACK)
-        if len(completed) < AMD_ACCUMULATION_MAX_CANDLES + AMD_SWEEP_LOOKBACK + AMD_FVG_LOOKBACK_AFTER_SWEEP + 10:
+        if len(completed) < LIQUIDITY_LOOKBACK + AVG_BODY_PERIOD + 10:
             return None
+
+        completed = _prepare_entry_df(completed)
+
+        scan_start = max(LIQUIDITY_LOOKBACK, len(completed) - SWEEP_SCAN_LOOKBACK)
+        scan_end = len(completed) - 1
 
         best_setup = None
         best_score = -1.0
 
-        scan_start = max(AMD_ACCUMULATION_MAX_CANDLES + 2, len(completed) - AMD_RANGE_END_LOOKBACK)
-        scan_end = len(completed) - 2
+        for pos in range(scan_start, scan_end + 1):
+            long_sweep = _detect_long_sweep(completed, pos)
+            short_sweep = _detect_short_sweep(completed, pos)
 
-        for sweep_pos in range(scan_start, scan_end + 1):
-            acc = _find_best_accumulation_range(completed, sweep_pos)
-            if not acc:
-                continue
-
-            sweep = _detect_sweep(completed, sweep_pos, acc)
-            if not sweep:
-                continue
-
-            fvg = _find_fvg_after_sweep(completed, sweep)
-            if not fvg:
-                continue
-
-            direction = sweep["direction"]
-            score = _score_amd_setup(acc, sweep, fvg, trend_bias)
-
-            if score < MIN_SIGNAL_SCORE or score <= best_score:
-                continue
-
-            preview_entry = float(fvg["mid"])
-            prices = _calculate_fixed_prices(direction, preview_entry)
-            if not prices:
-                continue
-
-            target_price, sl_price, _, _ = prices
-            rr_estimate = TAKE_PROFIT_PRICE_PCT / STOP_LOSS_PRICE_PCT
-
-            if direction == "LONG":
-                range_target = float(acc["high"])
-                if range_target <= preview_entry:
-                    continue
-            else:
-                range_target = float(acc["low"])
-                if range_target >= preview_entry:
+            for sweep in (long_sweep, short_sweep):
+                if not sweep:
                     continue
 
-            expires_at = datetime.now(timezone.utc) + timedelta(minutes=PENDING_SETUP_EXPIRE_CANDLES * CANDLE_MINUTES)
+                direction = sweep["direction"]
 
-            best_score = score
-            best_setup = {
-                "symbol": symbol,
-                "direction": direction,
-                "trend_tf": TREND_TF,
-                "entry_tf": ENTRY_TF,
-                "bias": direction,
-                "bias_break": trend_details.get("ema_fast"),
+                if REQUIRE_TREND_ALIGNMENT and trend_bias not in (direction, "NEUTRAL"):
+                    continue
 
-                "sweep_type": sweep["type"],
-                "sweep_level": float(sweep["level"]),
-                "sweep_extreme": float(sweep["extreme"]),
-                "sweep_time": _to_iso(sweep["time"]),
+                row = completed.iloc[pos]
+                close = float(row["close"])
+                vwap = float(row.get("vwap", 0.0))
+                ema_fast = float(row.get("ema_fast_entry", 0.0))
 
-                "ob_type": fvg["type"],
-                "ob_low": float(fvg["low"]),
-                "ob_high": float(fvg["high"]),
-                "ob_time": _to_iso(fvg["time"]),
+                # Avoid entries after price is too far away from VWAP already.
+                if vwap > 0 and _distance_pct(close, vwap) > MAX_ENTRY_DISTANCE_FROM_VWAP_PCT:
+                    continue
 
-                "target_price": target_price,
-                "sl_price": sl_price,
-                "rr_estimate": round(rr_estimate, 2),
-                "score": score,
-                "setup_time": _to_iso(fvg["time"]),
-                "expires_at": expires_at.isoformat(),
-            }
+                # Basic rejection toward EMA/VWAP.
+                if direction == "LONG":
+                    if ema_fast > 0 and close < ema_fast:
+                        continue
+                else:
+                    if ema_fast > 0 and close > ema_fast:
+                        continue
+
+                score = _score_setup(completed, pos, sweep, trend_bias)
+                if score < MIN_SIGNAL_SCORE or score <= best_score:
+                    continue
+
+                prices = _calculate_fixed_prices(direction, close)
+                if not prices:
+                    continue
+
+                target_price, sl_price, _, _ = prices
+                rr_estimate = TAKE_PROFIT_PRICE_PCT / STOP_LOSS_PRICE_PCT
+
+                # Use the swept liquidity level as a small retest/reclaim zone.
+                level = float(sweep["level"])
+                zone_pad = level * (MAX_CONFIRM_DISTANCE_FROM_SWEEP_LEVEL_PCT / 100.0)
+                zone_low = level - zone_pad
+                zone_high = level + zone_pad
+
+                expires_at = datetime.now(timezone.utc) + timedelta(
+                    minutes=PENDING_SETUP_EXPIRE_CANDLES * CANDLE_MINUTES
+                )
+
+                setup_time = _to_iso(sweep["time"])
+
+                best_score = score
+                best_setup = {
+                    "symbol": symbol,
+                    "direction": direction,
+                    "trend_tf": TREND_TF,
+                    "entry_tf": ENTRY_TF,
+                    "bias": trend_bias or "NEUTRAL",
+                    "bias_break": trend_details.get("ema_fast"),
+
+                    "sweep_type": sweep["type"],
+                    "sweep_level": level,
+                    "sweep_extreme": float(sweep["extreme"]),
+                    "sweep_time": setup_time,
+
+                    # Reusing DB order-block columns for the reclaim/retest zone.
+                    "ob_type": "VWAP_SWEEP_RECLAIM_ZONE",
+                    "ob_low": round(zone_low, 8),
+                    "ob_high": round(zone_high, 8),
+                    "ob_time": setup_time,
+
+                    "target_price": target_price,
+                    "sl_price": sl_price,
+                    "rr_estimate": round(rr_estimate, 2),
+                    "score": score,
+                    "setup_time": setup_time,
+                    "expires_at": expires_at.isoformat(),
+                }
 
         if best_setup:
             logger.info(
                 f"[SETUP] {best_setup['direction']} {symbol} | "
-                f"AMD={best_setup['sweep_type']} + {best_setup['ob_type']} "
-                f"FVG={best_setup['ob_low']:.6g}-{best_setup['ob_high']:.6g} "
-                f"score={best_setup['score']}"
+                f"{best_setup['sweep_type']} level={best_setup['sweep_level']:.6g} "
+                f"zone={best_setup['ob_low']:.6g}-{best_setup['ob_high']:.6g} "
+                f"score={best_setup['score']} strategy=VWAP-Sweep-v3"
             )
 
         return best_setup
 
     except Exception as e:
-        logger.error(f"Error detecting AMD setup for {symbol}: {e}", exc_info=True)
+        logger.error(f"Error detecting VWAP sweep setup for {symbol}: {e}", exc_info=True)
         return None
 
 
 # ── Pending setup monitor ─────────────────────────────────────────
 
-def _is_confirmation(row: pd.Series, prev: pd.Series, direction: str, zone_low: float, zone_high: float, avg_volume: float) -> bool:
+def _is_confirmation(row: pd.Series, prev: pd.Series, setup: dict, avg_volume: float) -> bool:
+    direction = setup["direction"]
+    level = float(setup["sweep_level"])
+    zone_low = float(setup["ob_low"])
+    zone_high = float(setup["ob_high"])
+
+    if _body_pct(row) > MAX_CONFIRM_CANDLE_BODY_PCT:
+        return False
+
     volume = float(row.get("volume", 0.0))
-    volume_ok = avg_volume <= 0 or volume >= avg_volume * AMD_MIN_VOLUME_MULTIPLIER
+    if avg_volume > 0 and volume < avg_volume * CONFIRM_VOLUME_MULTIPLIER:
+        return False
+
+    close = float(row["close"])
+    vwap = float(row.get("vwap", 0.0))
+    ema_fast = float(row.get("ema_fast_entry", 0.0))
 
     if direction == "LONG":
-        candle_ok = _is_bullish(row)
-        close_position_ok = _close_position(row) >= 0.55
-        fvg_ok = float(row["close"]) > zone_high if AMD_CONFIRM_CLOSE_BEYOND_FVG else float(row["close"]) > (zone_low + zone_high) / 2.0
-        break_ok = float(row["close"]) > float(prev["high"]) if AMD_CONFIRM_BREAK_PREVIOUS_CANDLE else True
-        return candle_ok and close_position_ok and fvg_ok and break_ok and volume_ok
+        if not _is_bullish(row):
+            return False
+        if close < level:
+            return False
+        if ema_fast > 0 and close < ema_fast:
+            return False
+        if CONFIRM_BREAK_PREVIOUS_CANDLE and close <= float(prev["high"]):
+            return False
+        if _distance_pct(close, zone_high) > MAX_CONFIRM_DISTANCE_FROM_SWEEP_LEVEL_PCT + 0.25:
+            return False
+        if vwap > 0 and close > vwap * (1.0 + MAX_ENTRY_DISTANCE_FROM_VWAP_PCT / 100.0):
+            return False
+        return True
 
-    candle_ok = _is_bearish(row)
-    close_position_ok = _close_position(row) <= 0.45
-    fvg_ok = float(row["close"]) < zone_low if AMD_CONFIRM_CLOSE_BEYOND_FVG else float(row["close"]) < (zone_low + zone_high) / 2.0
-    break_ok = float(row["close"]) < float(prev["low"]) if AMD_CONFIRM_BREAK_PREVIOUS_CANDLE else True
-    return candle_ok and close_position_ok and fvg_ok and break_ok and volume_ok
+    if not _is_bearish(row):
+        return False
+    if close > level:
+        return False
+    if ema_fast > 0 and close > ema_fast:
+        return False
+    if CONFIRM_BREAK_PREVIOUS_CANDLE and close >= float(prev["low"]):
+        return False
+    if _distance_pct(close, zone_low) > MAX_CONFIRM_DISTANCE_FROM_SWEEP_LEVEL_PCT + 0.25:
+        return False
+    if vwap > 0 and close < vwap * (1.0 - MAX_ENTRY_DISTANCE_FROM_VWAP_PCT / 100.0):
+        return False
+
+    return True
 
 
 def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
+    """
+    Returns:
+        ("WAIT", None)
+        ("EXPIRED", None)
+        ("INVALIDATED", None)
+        ("FIRE", Signal)
+    """
     try:
         now = datetime.now(timezone.utc)
         expires_at = _parse_utc(setup["expires_at"])
@@ -578,8 +674,6 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
 
         symbol = setup["symbol"]
         direction = setup["direction"]
-        zone_low = float(setup["ob_low"])
-        zone_high = float(setup["ob_high"])
         sweep_extreme = float(setup["sweep_extreme"])
 
         df = _ensure_df(get_klines(symbol, ENTRY_TF, count=MONITOR_KLINE_COUNT))
@@ -587,38 +681,34 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             _log_monitor_reason(setup, "WAIT_DATA_NOT_READY")
             return "WAIT", None
 
-        completed = df.iloc[:-1].copy()
-        recent = completed.tail(8)
+        completed = _prepare_entry_df(df.iloc[:-1].copy())
+        recent = completed.tail(6)
 
+        # Invalidation: if the sweep extreme breaks again before entry, the trap likely failed.
         if direction == "LONG":
-            invalid_level = sweep_extreme * (1.0 - AMD_INVALIDATE_BEYOND_SWEEP_BUFFER_PCT / 100.0)
-            if float(recent["low"].astype(float).min()) <= invalid_level:
+            invalid_level = sweep_extreme * (1.0 - INVALIDATE_SWEEP_BUFFER_PCT / 100.0)
+            recent_low = float(recent["low"].astype(float).min())
+            if recent_low <= invalid_level:
                 _log_monitor_reason(
                     setup,
                     "INVALIDATED_SWEEP_EXTREME_BROKEN",
-                    f"low={_fmt(recent['low'].astype(float).min())} invalid={_fmt(invalid_level)}",
+                    f"low={_fmt(recent_low)} invalid={_fmt(invalid_level)}",
                     force=True,
                 )
                 return "INVALIDATED", None
         else:
-            invalid_level = sweep_extreme * (1.0 + AMD_INVALIDATE_BEYOND_SWEEP_BUFFER_PCT / 100.0)
-            if float(recent["high"].astype(float).max()) >= invalid_level:
+            invalid_level = sweep_extreme * (1.0 + INVALIDATE_SWEEP_BUFFER_PCT / 100.0)
+            recent_high = float(recent["high"].astype(float).max())
+            if recent_high >= invalid_level:
                 _log_monitor_reason(
                     setup,
                     "INVALIDATED_SWEEP_EXTREME_BROKEN",
-                    f"high={_fmt(recent['high'].astype(float).max())} invalid={_fmt(invalid_level)}",
+                    f"high={_fmt(recent_high)} invalid={_fmt(invalid_level)}",
                     force=True,
                 )
                 return "INVALIDATED", None
 
-        touched = any(_touches_zone(row, zone_low, zone_high) for _, row in recent.iterrows())
-        if AMD_REQUIRE_FVG_RETEST and not touched:
-            last_close = float(completed["close"].iloc[-1])
-            _log_monitor_reason(
-                setup,
-                "WAIT_FVG_RETEST",
-                f"fvg={_fmt(zone_low)}-{_fmt(zone_high)} close={_fmt(last_close)}",
-            )
+        if len(completed) < 2:
             return "WAIT", None
 
         prev = completed.iloc[-2]
@@ -630,27 +720,15 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             else 0.0
         )
 
-        if not _is_confirmation(trigger, prev, direction, zone_low, zone_high, avg_vol):
+        if not _is_confirmation(trigger, prev, setup, avg_vol):
             _log_monitor_reason(
                 setup,
-                "WAIT_DISTRIBUTION_CONFIRMATION",
-                f"close={_fmt(trigger['close'])} fvg={_fmt(zone_low)}-{_fmt(zone_high)}",
+                "WAIT_VWAP_SWEEP_CONFIRMATION",
+                f"close={_fmt(trigger['close'])} level={_fmt(setup['sweep_level'])}",
             )
             return "WAIT", None
 
         entry = float(trigger["close"])
-
-        if direction == "LONG":
-            max_entry = zone_high * (1.0 + AMD_MAX_CONFIRM_DISTANCE_FROM_FVG_PCT / 100.0)
-            if entry > max_entry:
-                _log_monitor_reason(setup, "WAIT_CONFIRM_TOO_FAR_FROM_FVG", f"entry={_fmt(entry)} max={_fmt(max_entry)}")
-                return "WAIT", None
-        else:
-            min_entry = zone_low * (1.0 - AMD_MAX_CONFIRM_DISTANCE_FROM_FVG_PCT / 100.0)
-            if entry < min_entry:
-                _log_monitor_reason(setup, "WAIT_CONFIRM_TOO_FAR_FROM_FVG", f"entry={_fmt(entry)} min={_fmt(min_entry)}")
-                return "WAIT", None
-
         prices = _calculate_fixed_prices(direction, entry)
         if not prices:
             _log_monitor_reason(setup, "WAIT_PRICE_MODEL_FAILED")
@@ -661,7 +739,7 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
 
         _log_monitor_reason(
             setup,
-            "FIRE_AMD_FVG_ENTRY_CONFIRMED",
+            "FIRE_VWAP_SWEEP_ENTRY_CONFIRMED",
             f"entry={_fmt(entry)} tp={_fmt(tp_price)} sl={_fmt(sl_price)} score={score}",
             force=True,
         )
@@ -676,15 +754,15 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             tp_roi_pct=tp_roi_pct,
             sl_roi_pct=sl_roi_pct,
             timeframe_summary=(
-                f"AMD + FVG Distribution | {ENTRY_TF} accumulation, sweep, FVG retest | "
-                f"{TREND_TF} soft bias"
+                f"VWAP Liquidity Sweep v3 | {TREND_TF} bias {setup['bias']} | "
+                f"{ENTRY_TF} sweep + EMA/VWAP reclaim"
             ),
             generated_at=datetime.now(timezone.utc),
             score=score,
         )
 
     except Exception as e:
-        logger.error(f"Error evaluating AMD setup {setup.get('id')}: {e}", exc_info=True)
+        logger.error(f"Error evaluating VWAP sweep setup {setup.get('id')}: {e}", exc_info=True)
         return "WAIT", None
 
 
