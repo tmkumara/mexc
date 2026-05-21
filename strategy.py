@@ -3,19 +3,15 @@ Strategy — Breakout + Retest + EMA/VWAP Scalper.
 
 Flow:
     1. detect_setup(symbol)
-       - Uses completed 5m candles.
-       - Detects close above previous 20-candle high or below previous 20-candle low.
-       - Requires EMA50 + VWAP direction alignment.
-       - Saves a pending retest setup.
+       - Detect 5m close above previous 20-candle high or below previous 20-candle low.
+       - Require EMA50 + VWAP direction alignment.
+       - Save pending retest setup.
 
     2. evaluate_pending_setup(setup)
-       - Waits max RETEST_MAX_CANDLES / expiry window.
-       - Confirms retest of breakout level.
-       - Uses ATR + structure SL.
-       - Uses TARGET_RR TP.
-       - Returns Signal only when confirmed.
-
-This is not financial advice and does not guarantee profit.
+       - Wait max RETEST_MAX_CANDLES.
+       - Confirm retest and rejection.
+       - Calculate ATR + structure SL.
+       - Use TARGET_RR TP.
 """
 
 import logging
@@ -46,7 +42,6 @@ from config import (
     MIN_VOLUME_MULTIPLIER,
     AVG_VOLUME_PERIOD,
     MIN_SIGNAL_SCORE,
-    PENDING_SETUP_EXPIRE_CANDLES,
     CANDLE_MINUTES,
     LEVERAGE,
     MIN_TP_ROI_PCT,
@@ -64,20 +59,18 @@ _LAST_MONITOR_LOG: dict[str, tuple[str, datetime]] = {}
 
 @dataclass
 class Signal:
-    symbol:            str
-    direction:         str
-    entry_price:       float
-    tp_price:          float
-    sl_price:          float
-    leverage:          int
-    tp_roi_pct:        float
-    sl_roi_pct:        float
+    symbol: str
+    direction: str
+    entry_price: float
+    tp_price: float
+    sl_price: float
+    leverage: int
+    tp_roi_pct: float
+    sl_roi_pct: float
     timeframe_summary: str
-    generated_at:      datetime
-    score:             float = 0.0
+    generated_at: datetime
+    score: float = 0.0
 
-
-# ── logging helpers ───────────────────────────────────────────────
 
 def _setup_id(setup: dict) -> str:
     return str(setup.get("id", "?"))
@@ -112,8 +105,6 @@ def _log_monitor_reason(setup: dict, reason: str, details: str = "", *, force: b
 
     logger.info(msg)
 
-
-# ── candle helpers ────────────────────────────────────────────────
 
 def _ensure_df(df: pd.DataFrame | None) -> pd.DataFrame:
     if df is None or df.empty:
@@ -162,11 +153,12 @@ def _rolling_vwap(df: pd.DataFrame, lookback: int) -> pd.Series:
     volume = df["volume"].clip(lower=0.0)
 
     pv = typical * volume
+    min_periods = max(5, min(lookback, 20))
 
-    rolling_pv = pv.rolling(lookback, min_periods=max(5, min(lookback, 20))).sum()
-    rolling_vol = volume.rolling(lookback, min_periods=max(5, min(lookback, 20))).sum()
+    rolling_pv = pv.rolling(lookback, min_periods=min_periods).sum()
+    rolling_vol = volume.rolling(lookback, min_periods=min_periods).sum()
 
-    return (rolling_pv / rolling_vol.replace(0, pd.NA)).ffill()
+    return (rolling_pv / rolling_vol.replace(0, float("nan"))).ffill()
 
 
 def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -227,8 +219,6 @@ def _parse_utc(ts: str) -> datetime:
 
     return dt
 
-
-# ── scoring / price model ─────────────────────────────────────────
 
 def _score_breakout(df: pd.DataFrame, pos: int, direction: str, level: float) -> float:
     row = df.iloc[pos]
@@ -300,8 +290,7 @@ def _calculate_prices(
     buffer = atr_value * ATR_SL_BUFFER_MULTIPLIER
 
     if direction == "LONG":
-        structure_sl = min(float(trigger_row["low"]), level - buffer)
-        sl_price = structure_sl
+        sl_price = min(float(trigger_row["low"]), level - buffer)
         risk = entry - sl_price
 
         if risk <= 0:
@@ -314,8 +303,7 @@ def _calculate_prices(
         sl_move_pct = (entry - sl_price) / entry * 100.0
 
     else:
-        structure_sl = max(float(trigger_row["high"]), level + buffer)
-        sl_price = structure_sl
+        sl_price = max(float(trigger_row["high"]), level + buffer)
         risk = sl_price - entry
 
         if risk <= 0:
@@ -348,14 +336,7 @@ def _calculate_prices(
     )
 
 
-# ── setup detection ───────────────────────────────────────────────
-
 def detect_setup(symbol: str) -> dict | None:
-    """
-    Detects breakout and returns a pending setup dict.
-
-    This does not fire Telegram signal. It waits for retest.
-    """
     try:
         raw_df = _ensure_df(
             get_market_klines(
@@ -400,20 +381,11 @@ def detect_setup(symbol: str) -> dict | None:
         volume = float(row.get("volume", 0.0))
 
         if avg_vol > 0 and volume < avg_vol * MIN_VOLUME_MULTIPLIER:
-            logger.debug(
-                "[SETUP-REASON] %s rejected | volume_low vol=%s avg=%s",
-                symbol,
-                _fmt(volume),
-                _fmt(avg_vol),
-            )
+            logger.debug("[SETUP-REASON] %s rejected | volume_low", symbol)
             return None
 
         if _body_pct(row) > MAX_BREAKOUT_CANDLE_BODY_PCT:
-            logger.debug(
-                "[SETUP-REASON] %s rejected | breakout_body_too_large body=%s%%",
-                symbol,
-                _fmt(_body_pct(row)),
-            )
+            logger.debug("[SETUP-REASON] %s rejected | breakout_body_too_large", symbol)
             return None
 
         direction = None
@@ -476,8 +448,8 @@ def detect_setup(symbol: str) -> dict | None:
             )
             return None
 
-        # Initial display prices only; final prices are recalculated on retest entry.
         display_prices = _calculate_prices(direction, close, level, atr_value, row)
+
         if not display_prices:
             logger.info(
                 "[SETUP-REASON] %s %s rejected | initial_price_model_failed close=%s atr=%s",
@@ -512,7 +484,6 @@ def detect_setup(symbol: str) -> dict | None:
             "sweep_extreme": low if direction == "LONG" else high,
             "sweep_time": setup_time,
 
-            # Reusing old OB columns for breakout/retest zone.
             "ob_type": "BREAKOUT_RETEST_ZONE",
             "ob_low": round(zone_low, 8),
             "ob_high": round(zone_high, 8),
@@ -544,8 +515,6 @@ def detect_setup(symbol: str) -> dict | None:
         logger.error("Error detecting breakout setup for %s: %s", symbol, e, exc_info=True)
         return None
 
-
-# ── pending retest monitor ────────────────────────────────────────
 
 def _is_valid_retest(trigger: pd.Series, setup: dict) -> tuple[bool, str]:
     direction = setup["direction"]
@@ -599,13 +568,6 @@ def _is_valid_retest(trigger: pd.Series, setup: dict) -> tuple[bool, str]:
 
 
 def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
-    """
-    Returns:
-        ("WAIT", None)
-        ("EXPIRED", None)
-        ("INVALIDATED", None)
-        ("FIRE", Signal)
-    """
     try:
         now = datetime.now(timezone.utc)
         expires_at = _parse_utc(setup["expires_at"])
@@ -639,8 +601,6 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             return "WAIT", None
 
         recent = df.tail(RETEST_MAX_CANDLES + 1)
-
-        # Simple invalidation: after breakout, if price closes back too far beyond level.
         last = recent.iloc[-1]
         atr_value = float(last.get("atr", 0.0))
 
@@ -729,6 +689,5 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         return "WAIT", None
 
 
-# Compatibility wrapper.
 def analyze_coin(symbol: str) -> Signal | None:
     return None

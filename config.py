@@ -5,10 +5,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Timezone ──────────────────────────────────────────────────────
-LKT = timezone(timedelta(hours=5, minutes=30))   # Sri Lanka Time (UTC+5:30)
+LKT = timezone(timedelta(hours=5, minutes=30))
 
 # ── Telegram ──────────────────────────────────────────────────────
-TELEGRAM_TOKEN      = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 
 # ── CoinGlass optional API ────────────────────────────────────────
@@ -24,14 +24,14 @@ REST_FALLBACK_ENABLED: bool = os.getenv("REST_FALLBACK_ENABLED", "true").lower()
 MEXC_WS_URL: str = os.getenv("MEXC_WS_URL", "wss://contract.mexc.com/edge")
 
 MEXC_INTERVAL_MAP: dict[str, str] = {
-    "1m":  "Min1",
-    "3m":  "Min1",     # WS has no Min3; keep REST fallback for 3m if needed
-    "5m":  "Min5",
+    "1m": "Min1",
+    "3m": "Min1",
+    "5m": "Min5",
     "15m": "Min15",
     "30m": "Min30",
-    "1h":  "Min60",
-    "4h":  "Hour4",
-    "1d":  "Day1",
+    "1h": "Min60",
+    "4h": "Hour4",
+    "1d": "Day1",
 }
 
 WS_RECONNECT_DELAY_SECONDS: int = int(os.getenv("WS_RECONNECT_DELAY_SECONDS", "5"))
@@ -39,19 +39,18 @@ WS_PING_INTERVAL_SECONDS: int = int(os.getenv("WS_PING_INTERVAL_SECONDS", "20"))
 WS_PING_TIMEOUT_SECONDS: int = int(os.getenv("WS_PING_TIMEOUT_SECONDS", "10"))
 WS_TEST_SYMBOLS: list[str] = []
 
-# Must be >= ENTRY_KLINE_COUNT so market_data.py can use cache instead of REST.
 CANDLE_CACHE_LIMIT: int = int(os.getenv("CANDLE_CACHE_LIMIT", "180"))
 CANDLE_BOOTSTRAP_WORKERS: int = int(os.getenv("CANDLE_BOOTSTRAP_WORKERS", "6"))
 
 # ── Coin pool ────────────────────────────────────────────────────
 EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
 
-TOP_N_COINS:              int   = 80
+TOP_N_COINS: int = 80
 COIN_POOL_MIN_VOLUME_USD: float = 500_000
-COIN_REFRESH_HOURS:       int   = 6
+COIN_REFRESH_HOURS: int = 6
 
-# Hard futures-only rule.
 FUTURES_ONLY: bool = True
+CRYPTO_FUTURES_ONLY: bool = True
 QUOTE_CURRENCY: str = "USDT"
 REQUIRE_SYMBOL_IN_CONTRACT_DETAIL: bool = True
 REQUIRE_SYMBOL_IN_TICKER: bool = True
@@ -118,7 +117,6 @@ SIGNALS_PER_SCAN: int = 2
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE: int = 20
 
-# Dynamic in the new strategy, but kept for reports/status compatibility.
 TP_ROI_PCT: float = 0.0
 SL_ROI_PCT: float = 0.0
 REWARD_RATIO: float = TARGET_RR
@@ -130,17 +128,20 @@ MAX_SL_ROI_PCT: float = 15.0
 
 # ── Scheduler ────────────────────────────────────────────────────
 SIGNAL_COOLDOWN_MINUTES: int = 25
-SIGNAL_EXPIRE_HOURS:     int = 3
-MAX_CONCURRENT_SIGNALS:  int = 3
+SIGNAL_EXPIRE_HOURS: int = 3
+MAX_CONCURRENT_SIGNALS: int = 3
 
 SETUP_SCAN_CRON_MINUTES: str = "*/1"
 SETUP_MONITOR_MINUTES: int = 1
 OUTCOME_CHECK_MINUTES: int = 1
-CANDLE_MINUTES:        int = 5
+CANDLE_MINUTES: int = 5
+
+# Keep this because old strategy.py versions may import it.
+PENDING_SETUP_EXPIRE_CANDLES: int = RETEST_MAX_CANDLES
 
 SCAN_WORKERS: int = 4
 
-# ── Backward-compatible constants for old UI/imports ──────────────
+# ── Backward-compatible constants for old imports/UI ──────────────
 EMA_FAST_PERIOD: int = EMA_PERIOD
 EMA_SLOW_PERIOD: int = EMA_PERIOD
 MOMENTUM_BODY_MULTIPLIER: float = 1.0
