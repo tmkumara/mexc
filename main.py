@@ -52,6 +52,7 @@ from config import (
     ENABLE_WEBSOCKET,
     CANDLE_CACHE_LIMIT,
     CANDLE_BOOTSTRAP_WORKERS,
+    MEXC_INTERVAL_MAP,
 )
 
 logging.basicConfig(
@@ -81,13 +82,22 @@ _WS_TASK: asyncio.Task | None = None
 # ── candle cache / websocket ──────────────────────────────────────
 
 def _bootstrap_one_symbol(cache: CandleCache, symbol: str) -> tuple[str, bool, str]:
+    """
+    Seed cache from REST.
+
+    Important:
+        CandleCache must be seeded using the MEXC interval key, e.g. Min5,
+        because market_data.py reads cache using MEXC_INTERVAL_MAP.
+    """
     try:
         candles = get_klines(symbol, ENTRY_TF, count=CANDLE_CACHE_LIMIT)
 
         if candles is None or candles.empty:
             return symbol, False, "empty_rest_candles"
 
-        cache.seed(symbol, ENTRY_TF, candles)
+        mexc_interval = MEXC_INTERVAL_MAP.get(ENTRY_TF, ENTRY_TF)
+        cache.seed(symbol, mexc_interval, candles)
+
         return symbol, True, "seeded"
 
     except Exception as e:
@@ -102,7 +112,12 @@ async def bootstrap_candle_cache(symbols: list[str]) -> CandleCache:
         set_candle_cache(cache)
         return cache
 
-    logger.info("[CACHE] Bootstrapping %s symbols x %s candles", len(symbols), CANDLE_CACHE_LIMIT)
+    logger.info(
+        "[CACHE] Bootstrapping %s symbols x %s candles for %s",
+        len(symbols),
+        CANDLE_CACHE_LIMIT,
+        ENTRY_TF,
+    )
 
     loop = asyncio.get_event_loop()
 
@@ -134,7 +149,8 @@ async def start_market_websocket(cache: CandleCache, symbols: list[str]) -> asyn
         return None
 
     async def on_candle_update(result):
-        # Future optimization: scan only closed candle symbol.
+        # Strategy scanning is handled by scheduler.
+        # Later we can optimize to scan only the symbol whose candle closed.
         return None
 
     client = MexcWebSocketClient(
@@ -254,7 +270,11 @@ async def monitor_setups(app: Application) -> None:
     slots = MAX_CONCURRENT_SIGNALS - active
 
     if slots <= 0:
-        logger.info("[RETEST-MONITOR] %s/%s active signals, skipping", active, MAX_CONCURRENT_SIGNALS)
+        logger.info(
+            "[RETEST-MONITOR] %s/%s active signals, skipping",
+            active,
+            MAX_CONCURRENT_SIGNALS,
+        )
         return
 
     now = datetime.now(timezone.utc)
@@ -346,7 +366,13 @@ def _calculate_pnl_roi(
 async def _close_signal(app: Application, sig: dict, outcome: str, pnl: float) -> None:
     db.update_signal_outcome(sig["id"], outcome, pnl)
 
-    logger.info("Signal %s %s (%s) %+.1f%%", sig["id"], outcome.upper(), sig["symbol"], pnl)
+    logger.info(
+        "Signal %s %s (%s) %+.1f%%",
+        sig["id"],
+        outcome.upper(),
+        sig["symbol"],
+        pnl,
+    )
 
     try:
         await tg.notify_outcome(
@@ -517,6 +543,8 @@ async def main():
         CronTrigger(minute=SETUP_SCAN_CRON_MINUTES),
         args=[app],
         id="setup_scanner",
+        max_instances=1,
+        coalesce=True,
     )
 
     scheduler.add_job(
@@ -524,6 +552,8 @@ async def main():
         IntervalTrigger(minutes=SETUP_MONITOR_MINUTES),
         args=[app],
         id="retest_monitor",
+        max_instances=1,
+        coalesce=True,
     )
 
     scheduler.add_job(
@@ -531,12 +561,16 @@ async def main():
         IntervalTrigger(minutes=OUTCOME_CHECK_MINUTES),
         args=[app],
         id="outcome_checker",
+        max_instances=1,
+        coalesce=True,
     )
 
     scheduler.add_job(
         coin_scanner.refresh_coin_list,
         CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
         id="coin_refresh",
+        max_instances=1,
+        coalesce=True,
     )
 
     async def _daily(app=app):
