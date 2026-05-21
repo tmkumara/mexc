@@ -1,5 +1,5 @@
 """
-Telegram bot: handles commands and broadcasts Phase 2 Momentum Pullback signals.
+Telegram bot: handles commands and broadcasts Squeeze Momentum WT Supertrend signals.
 
 Important:
     Signal messages use HTML parse mode, not Markdown.
@@ -66,7 +66,7 @@ def _italic(value) -> str:
 def format_signal(signal, signal_id: int) -> str:
     arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
     coin = signal.symbol.replace("_", "/")
-    stars = "⭐⭐⭐" if signal.score >= 80 else "⭐⭐" if signal.score >= 65 else "⭐"
+    stars = "⭐⭐⭐" if signal.score >= 85 else "⭐⭐" if signal.score >= 72 else "⭐"
 
     return "\n".join([
         f"{escape(arrow)} — {_bold(coin)} Futures",
@@ -162,23 +162,26 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
 
     from config import (
-        TREND_TF,
+        STRATEGY_NAME,
         ENTRY_TF,
-        EMA_FAST_PERIOD,
-        EMA_SLOW_PERIOD,
-        MOMENTUM_BODY_MULTIPLIER,
-        MOMENTUM_VOLUME_MULTIPLIER,
-        TAKE_PROFIT_PRICE_PCT,
-        STOP_LOSS_PRICE_PCT,
-        TP_ROI_PCT,
-        SL_ROI_PCT,
+        ENTRY_KLINE_COUNT,
+        WT_CHANNEL_LENGTH,
+        WT_AVERAGE_LENGTH,
+        WT_SIGNAL_LENGTH,
+        SUPERTREND_ATR_PERIOD,
+        SUPERTREND_FACTOR,
+        SQUEEZE_BB_LENGTH,
+        SQUEEZE_KC_LENGTH,
+        SQUEEZE_UPPER_THRESHOLD,
+        SQUEEZE_LOWER_THRESHOLD,
+        TARGET_ATR_MULTIPLIER,
+        STOP_LOSS_ATR_MULTIPLIER,
         LEVERAGE,
         SIGNAL_COOLDOWN_MINUTES,
         SIGNALS_PER_SCAN,
         MAX_CONCURRENT_SIGNALS,
         SCAN_WORKERS,
         SETUP_SCAN_CRON_MINUTES,
-        SETUP_MONITOR_MINUTES,
         MIN_SIGNAL_SCORE,
         ENABLE_SMART_COIN_RANKING,
         COIN_RANK_TIMEFRAME,
@@ -193,7 +196,6 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     coins = coin_scanner.get_cached_coins()
     scores = coin_scanner.get_cached_coin_scores()
     active = db.count_active_signals()
-    waiting = db.count_waiting_setups()
 
     pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
 
@@ -218,14 +220,18 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📡 <b>Scanner Status</b>",
         "━━━━━━━━━━━━━━━━━━━━",
         f"State:      {_code(state)}",
-        f"Strategy:   {_code('Phase 2 Momentum Pullback + Smart Coin Ranking')}",
-        f"Trend TF:   {_code(TREND_TF)} EMA{EMA_FAST_PERIOD}/EMA{EMA_SLOW_PERIOD} bias",
-        f"Entry TF:   {_code(ENTRY_TF)} momentum + pullback confirmation",
+        f"Strategy:   {_code(STRATEGY_NAME)}",
+        f"Entry TF:   {_code(ENTRY_TF)}",
+        f"Candles:    {_code(ENTRY_KLINE_COUNT)}",
         f"Setup scan: {_code(SETUP_SCAN_CRON_MINUTES)}",
-        f"Monitor:    {_code(f'every {SETUP_MONITOR_MINUTES} min')}",
-        f"Momentum:   {_code(f'body×{MOMENTUM_BODY_MULTIPLIER:g}, volume×{MOMENTUM_VOLUME_MULTIPLIER:g}')}",
-        f"TP/SL:      {_code(f'{TAKE_PROFIT_PRICE_PCT:g}% / {STOP_LOSS_PRICE_PCT:g}% price')}",
-        f"ROI model:  {_code(f'+{TP_ROI_PCT:.1f}% / -{SL_ROI_PCT:.1f}% at {LEVERAGE}x')}",
+        "",
+        f"Supertrend: {_code(f'ATR {SUPERTREND_ATR_PERIOD}, factor {SUPERTREND_FACTOR:g}')}",
+        f"WaveTrend:  {_code(f'n1={WT_CHANNEL_LENGTH}, n2={WT_AVERAGE_LENGTH}, signal={WT_SIGNAL_LENGTH}')}",
+        f"Squeeze:    {_code(f'BB {SQUEEZE_BB_LENGTH}, KC {SQUEEZE_KC_LENGTH}')}",
+        f"Threshold:  {_code(f'up {SQUEEZE_UPPER_THRESHOLD:g}, down {SQUEEZE_LOWER_THRESHOLD:g}')}",
+        "",
+        f"TP/SL ATR:  {_code(f'TP ATR×{TARGET_ATR_MULTIPLIER:g}, SL ATR×{STOP_LOSS_ATR_MULTIPLIER:g}')}",
+        f"Leverage:   {_code(f'{LEVERAGE}x')}",
         f"Min score:  {_code(MIN_SIGNAL_SCORE)}",
         "",
         f"Coin rank:  {_code(ranking_state)}",
@@ -239,7 +245,6 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Workers:    {_code(SCAN_WORKERS)}",
         f"Per scan:   {_code(f'top {SIGNALS_PER_SCAN} entries')}",
         f"Cooldown:   {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
-        f"Waiting:    {_code(f'{waiting} setups')}",
         f"Active:     {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
         f"Pool ({len(coins)}): {_code(pairs_str)}",
         f"Time (LKT): {_code(datetime.now(LKT).strftime('%H:%M'))}",
