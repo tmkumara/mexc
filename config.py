@@ -39,14 +39,32 @@ WS_PING_INTERVAL_SECONDS: int = int(os.getenv("WS_PING_INTERVAL_SECONDS", "20"))
 WS_PING_TIMEOUT_SECONDS: int = int(os.getenv("WS_PING_TIMEOUT_SECONDS", "10"))
 WS_TEST_SYMBOLS: list[str] = []
 
-CANDLE_CACHE_LIMIT: int = int(os.getenv("CANDLE_CACHE_LIMIT", "180"))
+CANDLE_CACHE_LIMIT: int = int(os.getenv("CANDLE_CACHE_LIMIT", "220"))
 CANDLE_BOOTSTRAP_WORKERS: int = int(os.getenv("CANDLE_BOOTSTRAP_WORKERS", "6"))
 
+# ── WebSocket heartbeat / subscription tuning ─────────────────────
+WS_APP_HEARTBEAT_ENABLED: bool = os.getenv("WS_APP_HEARTBEAT_ENABLED", "true").lower() == "true"
+WS_APP_HEARTBEAT_SECONDS: int = int(os.getenv("WS_APP_HEARTBEAT_SECONDS", "15"))
+WS_SUBSCRIBE_DELAY_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_DELAY_SECONDS", "0.12"))
+WS_SUBSCRIBE_BATCH_SIZE: int = int(os.getenv("WS_SUBSCRIBE_BATCH_SIZE", "10"))
+WS_SUBSCRIBE_BATCH_PAUSE_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_BATCH_PAUSE_SECONDS", "0.80"))
+
 # ── Coin pool ────────────────────────────────────────────────────
-EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
+EXCLUDE_COINS: set[str] = {
+    "BTC_USDT",
+    "ETH_USDT",
+    "SOL_USDT",
+    "XAUT_USDT",
+    "XPT_USDT",
+    "XAU_USDT",
+    "XAG_USDT",
+    "XPD_USDT",
+    "XBR_USDT",
+    "WTI_USDT",
+}
 
 TOP_N_COINS: int = 80
-COIN_POOL_MIN_VOLUME_USD: float = 500_000
+COIN_POOL_MIN_VOLUME_USD: float = 750_000
 COIN_REFRESH_HOURS: int = 6
 
 FUTURES_ONLY: bool = True
@@ -61,14 +79,14 @@ ENABLE_SMART_COIN_RANKING: bool = True
 COIN_RANK_CANDIDATE_MULTIPLIER: int = 4
 COIN_RANK_MAX_CANDIDATES: int = 180
 
-COIN_RANK_TIMEFRAME: str = "5m"
-COIN_RANK_KLINE_COUNT: int = 36
+COIN_RANK_TIMEFRAME: str = "15m"
+COIN_RANK_KLINE_COUNT: int = 48
 COIN_RANK_WORKERS: int = 3
 
 COIN_RANK_MIN_LAST_PRICE: float = 0.000001
-COIN_RANK_MIN_RANGE_PCT: float = 0.05
-COIN_RANK_MAX_RANGE_PCT: float = 18.00
-COIN_RANK_MAX_ABS_MOVE_PCT: float = 22.00
+COIN_RANK_MIN_RANGE_PCT: float = 0.08
+COIN_RANK_MAX_RANGE_PCT: float = 20.00
+COIN_RANK_MAX_ABS_MOVE_PCT: float = 24.00
 
 COIN_RANK_VOLUME_WEIGHT: float = 40.0
 COIN_RANK_VOLATILITY_WEIGHT: float = 25.0
@@ -78,65 +96,67 @@ COIN_RANK_LIQUIDITY_WEIGHT: float = 20.0
 COIN_RANK_OVEREXTENSION_PENALTY: float = 25.0
 COIN_RANK_LOW_ACTIVITY_PENALTY: float = 15.0
 
-# ── Strategy: Breakout + Retest + EMA/VWAP Filter ─────────────────
-STRATEGY_NAME: str = "Breakout Retest EMA/VWAP Scalper"
+# ── Strategy: Stable 15m Breakout + Retest + 1h Trend ─────────────
+STRATEGY_NAME: str = "Stable 15m Breakout Retest EMA/VWAP Scalper"
 
-ENTRY_TF: str = "5m"
-TREND_TF: str = ENTRY_TF
+# 1h = direction filter, 15m = entry/retest
+TREND_TF: str = "1h"
+ENTRY_TF: str = "15m"
 
-ENTRY_KLINE_COUNT: int = 150
-TREND_KLINE_COUNT: int = ENTRY_KLINE_COUNT
-MONITOR_KLINE_COUNT: int = 80
+TREND_KLINE_COUNT: int = 160
+ENTRY_KLINE_COUNT: int = 180
+MONITOR_KLINE_COUNT: int = 100
 
 BREAKOUT_LOOKBACK: int = 20
 RETEST_MAX_CANDLES: int = 3
 
 EMA_PERIOD: int = 50
-VWAP_LOOKBACK_BARS: int = 96
+TREND_EMA_PERIOD: int = 50
+VWAP_LOOKBACK_BARS: int = 64
 
 ATR_PERIOD: int = 14
-ATR_SL_BUFFER_MULTIPLIER: float = 0.20
+ATR_SL_BUFFER_MULTIPLIER: float = 0.35
 
 MIN_RR: float = 1.20
-TARGET_RR: float = 1.40
-MAX_RR: float = 1.80
+TARGET_RR: float = 1.30
+MAX_RR: float = 1.60
 
-MAX_BREAKOUT_CANDLE_BODY_PCT: float = 1.20
-MAX_RETEST_CANDLE_BODY_PCT: float = 1.10
+MAX_BREAKOUT_CANDLE_BODY_PCT: float = 1.80
+MAX_RETEST_CANDLE_BODY_PCT: float = 1.30
 
-MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT: float = 0.45
-MAX_DISTANCE_FROM_VWAP_PCT: float = 0.90
+MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT: float = 0.35
+MAX_DISTANCE_FROM_VWAP_PCT: float = 1.20
 
-MIN_VOLUME_MULTIPLIER: float = 0.80
+MIN_VOLUME_MULTIPLIER: float = 1.00
 AVG_VOLUME_PERIOD: int = 20
 
-MIN_SIGNAL_SCORE: float = 68.0
-SETUPS_PER_SCAN: int = 5
-SIGNALS_PER_SCAN: int = 2
+# Stronger score for stable mode
+MIN_SIGNAL_SCORE: float = 78.0
+SETUPS_PER_SCAN: int = 2
+SIGNALS_PER_SCAN: int = 1
 
 # ── Trade params ─────────────────────────────────────────────────
-LEVERAGE: int = 20
+LEVERAGE: int = 10
 
 TP_ROI_PCT: float = 0.0
 SL_ROI_PCT: float = 0.0
 REWARD_RATIO: float = TARGET_RR
 
-MIN_TP_ROI_PCT: float = 2.0
-MAX_TP_ROI_PCT: float = 20.0
+MIN_TP_ROI_PCT: float = 2.5
+MAX_TP_ROI_PCT: float = 18.0
 MIN_SL_ROI_PCT: float = 2.0
-MAX_SL_ROI_PCT: float = 15.0
+MAX_SL_ROI_PCT: float = 12.0
 
 # ── Scheduler ────────────────────────────────────────────────────
-SIGNAL_COOLDOWN_MINUTES: int = 25
-SIGNAL_EXPIRE_HOURS: int = 3
-MAX_CONCURRENT_SIGNALS: int = 3
+SIGNAL_COOLDOWN_MINUTES: int = 90
+SIGNAL_EXPIRE_HOURS: int = 6
+MAX_CONCURRENT_SIGNALS: int = 1
 
-SETUP_SCAN_CRON_MINUTES: str = "*/1"
+SETUP_SCAN_CRON_MINUTES: str = "*/5"
 SETUP_MONITOR_MINUTES: int = 1
 OUTCOME_CHECK_MINUTES: int = 1
-CANDLE_MINUTES: int = 5
+CANDLE_MINUTES: int = 15
 
-# Keep this because old strategy.py versions may import it.
 PENDING_SETUP_EXPIRE_CANDLES: int = RETEST_MAX_CANDLES
 
 SCAN_WORKERS: int = 4
@@ -179,14 +199,6 @@ STOP_LOSS_ATR_MULTIPLIER: float = 3.0
 MAX_SIGNAL_CANDLE_BODY_PCT: float = MAX_BREAKOUT_CANDLE_BODY_PCT
 MAX_RECENT_MOVE_PCT: float = 8.0
 RECENT_MOVE_LOOKBACK: int = 36
-
-
-# ── WebSocket heartbeat / subscription tuning ─────────────────────
-WS_APP_HEARTBEAT_ENABLED: bool = os.getenv("WS_APP_HEARTBEAT_ENABLED", "true").lower() == "true"
-WS_APP_HEARTBEAT_SECONDS: int = int(os.getenv("WS_APP_HEARTBEAT_SECONDS", "15"))
-WS_SUBSCRIBE_DELAY_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_DELAY_SECONDS", "0.12"))
-WS_SUBSCRIBE_BATCH_SIZE: int = int(os.getenv("WS_SUBSCRIBE_BATCH_SIZE", "10"))
-WS_SUBSCRIBE_BATCH_PAUSE_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_BATCH_PAUSE_SECONDS", "0.80"))
 
 # ── Database ──────────────────────────────────────────────────────
 DB_PATH = os.getenv("DB_PATH", "signals.db")

@@ -1,17 +1,19 @@
 """
-Strategy — Breakout + Retest + EMA/VWAP Scalper.
+Strategy — Stable 15m Breakout + Retest + 1h EMA Trend Filter.
 
 Flow:
     1. detect_setup(symbol)
-       - Detect 5m close above previous 20-candle high or below previous 20-candle low.
-       - Require EMA50 + VWAP direction alignment.
-       - Save pending retest setup.
+       - Uses 1h EMA50 as trend direction filter.
+       - Detects 15m close above previous 20-candle high or below previous 20-candle low.
+       - Requires 15m EMA50 + rolling VWAP alignment.
+       - Saves pending retest setup.
 
     2. evaluate_pending_setup(setup)
-       - Wait max RETEST_MAX_CANDLES.
-       - Confirm retest and rejection.
-       - Calculate ATR + structure SL.
-       - Use TARGET_RR TP.
+       - Only evaluates candles AFTER setup_time.
+       - Waits max RETEST_MAX_CANDLES.
+       - Confirms proper retest + rejection candle.
+       - Calculates ATR + structure SL.
+       - Uses TARGET_RR TP.
 """
 
 import logging
@@ -25,10 +27,12 @@ from config import (
     ENTRY_TF,
     TREND_TF,
     ENTRY_KLINE_COUNT,
+    TREND_KLINE_COUNT,
     MONITOR_KLINE_COUNT,
     BREAKOUT_LOOKBACK,
     RETEST_MAX_CANDLES,
     EMA_PERIOD,
+    TREND_EMA_PERIOD,
     VWAP_LOOKBACK_BARS,
     ATR_PERIOD,
     ATR_SL_BUFFER_MULTIPLIER,
@@ -72,6 +76,8 @@ class Signal:
     score: float = 0.0
 
 
+# ── logging helpers ───────────────────────────────────────────────
+
 def _setup_id(setup: dict) -> str:
     return str(setup.get("id", "?"))
 
@@ -105,6 +111,8 @@ def _log_monitor_reason(setup: dict, reason: str, details: str = "", *, force: b
 
     logger.info(msg)
 
+
+# ── candle / indicator helpers ────────────────────────────────────
 
 def _ensure_df(df: pd.DataFrame | None) -> pd.DataFrame:
     if df is None or df.empty:
@@ -158,10 +166,10 @@ def _rolling_vwap(df: pd.DataFrame, lookback: int) -> pd.Series:
     rolling_pv = pv.rolling(lookback, min_periods=min_periods).sum()
     rolling_vol = volume.rolling(lookback, min_periods=min_periods).sum()
 
-    return (rolling_pv / rolling_vol.replace(0, float("nan"))).ffill()
+    return (rolling_pv / rolling_vol.replace(0, float("nan"))).ffill().bfill()
 
 
-def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
+def _prepare_entry_df(df: pd.DataFrame) -> pd.DataFrame:
     out = _ensure_df(df)
 
     if out.empty:
@@ -174,11 +182,33 @@ def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _prepare_trend_df(df: pd.DataFrame) -> pd.DataFrame:
+    out = _ensure_df(df)
+
+    if out.empty:
+        return out
+
+    out["trend_ema"] = _ema(out["close"], TREND_EMA_PERIOD)
+    return out
+
+
 def _body_pct(row: pd.Series) -> float:
     close = float(row["close"])
     if close <= 0:
         return 0.0
     return abs(float(row["close"]) - float(row["open"])) / close * 100.0
+
+
+def _range_position(row: pd.Series) -> float:
+    high = float(row["high"])
+    low = float(row["low"])
+    close = float(row["close"])
+    rng = high - low
+
+    if rng <= 0:
+        return 0.5
+
+    return (close - low) / rng
 
 
 def _distance_pct(price: float, reference: float) -> float:
@@ -217,10 +247,69 @@ def _parse_utc(ts: str) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
 
-    return dt
+    return dt.astimezone(timezone.utc)
 
 
-def _score_breakout(df: pd.DataFrame, pos: int, direction: str, level: float) -> float:
+def _to_naive_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+# ── trend filter ──────────────────────────────────────────────────
+
+def _get_trend_bias(symbol: str) -> tuple[str | None, dict]:
+    trend_df_raw = _ensure_df(
+        get_market_klines(
+            symbol,
+            TREND_TF,
+            count=TREND_KLINE_COUNT,
+            allow_rest_fallback=REST_FALLBACK_ENABLED,
+        )
+    )
+
+    if trend_df_raw.empty or len(trend_df_raw) < TREND_EMA_PERIOD + 5:
+        return None, {"reason": "trend_data_not_ready"}
+
+    completed = trend_df_raw.iloc[:-1].copy()
+    trend_df = _prepare_trend_df(completed)
+
+    if trend_df.empty or len(trend_df) < TREND_EMA_PERIOD + 2:
+        return None, {"reason": "trend_indicator_not_ready"}
+
+    last = trend_df.iloc[-1]
+    close = float(last["close"])
+    ema = float(last["trend_ema"])
+
+    if close <= 0 or ema <= 0:
+        return None, {"reason": "trend_invalid_price"}
+
+    if close > ema:
+        return "LONG", {
+            "trend_close": close,
+            "trend_ema": ema,
+            "trend_time": _to_iso(trend_df.index[-1]),
+        }
+
+    if close < ema:
+        return "SHORT", {
+            "trend_close": close,
+            "trend_ema": ema,
+            "trend_time": _to_iso(trend_df.index[-1]),
+        }
+
+    return None, {"reason": "trend_neutral"}
+
+
+# ── scoring / prices ──────────────────────────────────────────────
+
+def _score_breakout(
+    df: pd.DataFrame,
+    pos: int,
+    direction: str,
+    level: float,
+    trend_details: dict,
+) -> float:
     row = df.iloc[pos]
     close = float(row["close"])
     ema = float(row.get("ema", 0.0))
@@ -228,35 +317,41 @@ def _score_breakout(df: pd.DataFrame, pos: int, direction: str, level: float) ->
 
     score = 45.0
 
+    # 1h trend alignment is mandatory and gets strong weight.
+    score += 16.0
+
     if direction == "LONG" and close > ema:
-        score += 12.0
+        score += 10.0
     if direction == "SHORT" and close < ema:
-        score += 12.0
+        score += 10.0
 
     if direction == "LONG" and close > vwap:
-        score += 12.0
+        score += 10.0
     if direction == "SHORT" and close < vwap:
-        score += 12.0
+        score += 10.0
 
     dist_level = _distance_pct(close, level)
-    if dist_level <= 0.20:
-        score += 12.0
+
+    if dist_level <= 0.15:
+        score += 10.0
     elif dist_level <= MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT:
-        score += 7.0
+        score += 6.0
     else:
-        score -= 10.0
+        score -= 12.0
 
     dist_vwap = _distance_pct(close, vwap)
-    if dist_vwap <= 0.40:
-        score += 8.0
+
+    if dist_vwap <= 0.50:
+        score += 6.0
     elif dist_vwap <= MAX_DISTANCE_FROM_VWAP_PCT:
-        score += 4.0
+        score += 3.0
     else:
         score -= 10.0
 
     body_pct = _body_pct(row)
-    if body_pct <= 0.60:
-        score += 7.0
+
+    if body_pct <= 0.90:
+        score += 6.0
     elif body_pct <= MAX_BREAKOUT_CANDLE_BODY_PCT:
         score += 3.0
     else:
@@ -267,14 +362,26 @@ def _score_breakout(df: pd.DataFrame, pos: int, direction: str, level: float) ->
 
     if avg_vol > 0:
         vol_ratio = volume / avg_vol
-        if vol_ratio >= 1.30:
+
+        if vol_ratio >= 1.40:
             score += 8.0
         elif vol_ratio >= MIN_VOLUME_MULTIPLIER:
             score += 4.0
         else:
             score -= 8.0
 
-    return round(max(0.0, min(score, 100.0)), 1)
+    trend_close = float(trend_details.get("trend_close", 0.0))
+    trend_ema = float(trend_details.get("trend_ema", 0.0))
+
+    if trend_close > 0 and trend_ema > 0:
+        trend_distance = _distance_pct(trend_close, trend_ema)
+
+        if trend_distance >= 0.30:
+            score += 5.0
+        elif trend_distance >= 0.10:
+            score += 2.0
+
+    return round(max(0.0, min(score, 96.0)), 1)
 
 
 def _calculate_prices(
@@ -336,8 +443,20 @@ def _calculate_prices(
     )
 
 
+# ── setup detection ───────────────────────────────────────────────
+
 def detect_setup(symbol: str) -> dict | None:
     try:
+        trend_bias, trend_details = _get_trend_bias(symbol)
+
+        if trend_bias is None:
+            logger.debug(
+                "[SETUP-REASON] %s rejected | trend_filter_failed reason=%s",
+                symbol,
+                trend_details.get("reason"),
+            )
+            return None
+
         raw_df = _ensure_df(
             get_market_klines(
                 symbol,
@@ -348,11 +467,11 @@ def detect_setup(symbol: str) -> dict | None:
         )
 
         if raw_df.empty or len(raw_df) < EMA_PERIOD + BREAKOUT_LOOKBACK + 10:
-            logger.debug("[SETUP-REASON] %s rejected | not_enough_candles", symbol)
+            logger.debug("[SETUP-REASON] %s rejected | not_enough_entry_candles", symbol)
             return None
 
         completed = raw_df.iloc[:-1].copy()
-        df = _prepare_df(completed)
+        df = _prepare_entry_df(completed)
 
         if df.empty or len(df) < EMA_PERIOD + BREAKOUT_LOOKBACK + 5:
             return None
@@ -381,11 +500,20 @@ def detect_setup(symbol: str) -> dict | None:
         volume = float(row.get("volume", 0.0))
 
         if avg_vol > 0 and volume < avg_vol * MIN_VOLUME_MULTIPLIER:
-            logger.debug("[SETUP-REASON] %s rejected | volume_low", symbol)
+            logger.debug(
+                "[SETUP-REASON] %s rejected | volume_low vol=%s avg=%s",
+                symbol,
+                _fmt(volume),
+                _fmt(avg_vol),
+            )
             return None
 
         if _body_pct(row) > MAX_BREAKOUT_CANDLE_BODY_PCT:
-            logger.debug("[SETUP-REASON] %s rejected | breakout_body_too_large", symbol)
+            logger.debug(
+                "[SETUP-REASON] %s rejected | breakout_body_too_large body=%.3f%%",
+                symbol,
+                _body_pct(row),
+            )
             return None
 
         direction = None
@@ -404,13 +532,23 @@ def detect_setup(symbol: str) -> dict | None:
 
         else:
             logger.debug(
-                "[SETUP-REASON] %s rejected | no_breakout close=%s high20=%s low20=%s ema=%s vwap=%s",
+                "[SETUP-REASON] %s rejected | no_breakout close=%s high20=%s low20=%s ema=%s vwap=%s trend=%s",
                 symbol,
                 _fmt(close),
                 _fmt(previous_high),
                 _fmt(previous_low),
                 _fmt(ema),
                 _fmt(vwap),
+                trend_bias,
+            )
+            return None
+
+        if direction != trend_bias:
+            logger.info(
+                "[SETUP-REASON] %s %s rejected | 1h_trend_mismatch trend=%s",
+                symbol,
+                direction,
+                trend_bias,
             )
             return None
 
@@ -436,7 +574,7 @@ def detect_setup(symbol: str) -> dict | None:
             )
             return None
 
-        score = _score_breakout(df, pos, direction, level)
+        score = _score_breakout(df, pos, direction, level, trend_details)
 
         if score < MIN_SIGNAL_SCORE:
             logger.info(
@@ -498,9 +636,10 @@ def detect_setup(symbol: str) -> dict | None:
         }
 
         logger.info(
-            "[SETUP] %s %s | level=%s close=%s ema=%s vwap=%s score=%s expires=%s",
+            "[SETUP] %s %s | 1h_trend=%s level=%s close=%s ema=%s vwap=%s score=%s expires=%s",
             direction,
             symbol,
+            trend_bias,
             _fmt(level),
             _fmt(close),
             _fmt(ema),
@@ -512,9 +651,11 @@ def detect_setup(symbol: str) -> dict | None:
         return setup
 
     except Exception as e:
-        logger.error("Error detecting breakout setup for %s: %s", symbol, e, exc_info=True)
+        logger.error("Error detecting stable breakout setup for %s: %s", symbol, e, exc_info=True)
         return None
 
+
+# ── pending retest monitor ────────────────────────────────────────
 
 def _is_valid_retest(trigger: pd.Series, setup: dict) -> tuple[bool, str]:
     direction = setup["direction"]
@@ -523,6 +664,7 @@ def _is_valid_retest(trigger: pd.Series, setup: dict) -> tuple[bool, str]:
     close = float(trigger["close"])
     ema = float(trigger.get("ema", 0.0))
     vwap = float(trigger.get("vwap", 0.0))
+    range_pos = _range_position(trigger)
 
     if _body_pct(trigger) > MAX_RETEST_CANDLE_BODY_PCT:
         return False, "retest_candle_body_too_large"
@@ -538,6 +680,7 @@ def _is_valid_retest(trigger: pd.Series, setup: dict) -> tuple[bool, str]:
         reclaimed = close >= level
         trend_ok = close > ema and close > vwap
         candle_ok = _is_bullish(trigger)
+        rejection_ok = range_pos >= 0.55
 
         if not touched:
             return False, "price_not_retested_level"
@@ -547,6 +690,8 @@ def _is_valid_retest(trigger: pd.Series, setup: dict) -> tuple[bool, str]:
             return False, "ema_vwap_not_bullish"
         if not candle_ok:
             return False, "retest_candle_not_bullish"
+        if not rejection_ok:
+            return False, "weak_bullish_rejection_close"
 
         return True, "long_retest_confirmed"
 
@@ -554,6 +699,7 @@ def _is_valid_retest(trigger: pd.Series, setup: dict) -> tuple[bool, str]:
     reclaimed = close <= level
     trend_ok = close < ema and close < vwap
     candle_ok = _is_bearish(trigger)
+    rejection_ok = range_pos <= 0.45
 
     if not touched:
         return False, "price_not_retested_level"
@@ -563,6 +709,8 @@ def _is_valid_retest(trigger: pd.Series, setup: dict) -> tuple[bool, str]:
         return False, "ema_vwap_not_bearish"
     if not candle_ok:
         return False, "retest_candle_not_bearish"
+    if not rejection_ok:
+        return False, "weak_bearish_rejection_close"
 
     return True, "short_retest_confirmed"
 
@@ -579,6 +727,19 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         symbol = setup["symbol"]
         direction = setup["direction"]
         level = float(setup["sweep_level"])
+        setup_time = _to_naive_utc(_parse_utc(setup["setup_time"]))
+
+        # Re-check 1h trend before firing.
+        trend_bias, trend_details = _get_trend_bias(symbol)
+
+        if trend_bias != direction:
+            _log_monitor_reason(
+                setup,
+                "INVALIDATED_1H_TREND_CHANGED",
+                f"setup_direction={direction} current_trend={trend_bias}",
+                force=True,
+            )
+            return "INVALIDATED", None
 
         raw_df = _ensure_df(
             get_market_klines(
@@ -594,20 +755,31 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             return "WAIT", None
 
         completed = raw_df.iloc[:-1].copy()
-        df = _prepare_df(completed)
+        df = _prepare_entry_df(completed)
 
         if df.empty or len(df) < EMA_PERIOD + ATR_PERIOD + 5:
             _log_monitor_reason(setup, "WAIT_INDICATORS_NOT_READY")
             return "WAIT", None
 
-        recent = df.tail(RETEST_MAX_CANDLES + 1)
-        last = recent.iloc[-1]
+        # Critical fix:
+        # Only use candles AFTER the breakout setup candle.
+        after_setup = df[df.index > setup_time].copy()
+
+        if after_setup.empty:
+            _log_monitor_reason(setup, "WAIT_NO_CANDLE_AFTER_SETUP")
+            return "WAIT", None
+
+        # Only consider the last RETEST_MAX_CANDLES candles after setup.
+        after_setup = after_setup.tail(RETEST_MAX_CANDLES)
+
+        last = after_setup.iloc[-1]
         atr_value = float(last.get("atr", 0.0))
 
         if atr_value <= 0:
             _log_monitor_reason(setup, "WAIT_ATR_NOT_READY")
             return "WAIT", None
 
+        # Invalidation: close moves too far back through breakout level.
         if direction == "LONG":
             invalid_close = level - atr_value * 0.50
             if float(last["close"]) < invalid_close:
@@ -629,7 +801,8 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 )
                 return "INVALIDATED", None
 
-        trigger = recent.iloc[-1]
+        # Evaluate only the latest completed candle.
+        trigger = after_setup.iloc[-1]
         valid, reason = _is_valid_retest(trigger, setup)
 
         if not valid:
@@ -659,7 +832,7 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             return "WAIT", None
 
         tp_price, sl_price, tp_roi_pct, sl_roi_pct, rr = prices
-        score = min(float(setup["score"]) + 7.0, 100.0)
+        score = min(float(setup["score"]) + 4.0, 99.0)
 
         _log_monitor_reason(
             setup,
@@ -678,7 +851,8 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             tp_roi_pct=tp_roi_pct,
             sl_roi_pct=sl_roi_pct,
             timeframe_summary=(
-                f"Breakout Retest | {ENTRY_TF} | EMA{EMA_PERIOD}+VWAP | RR {rr:g}"
+                f"Stable Breakout Retest | {ENTRY_TF} entry | {TREND_TF} trend | "
+                f"EMA{EMA_PERIOD}+VWAP | RR {rr:g}"
             ),
             generated_at=datetime.now(timezone.utc),
             score=score,

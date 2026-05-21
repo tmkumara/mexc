@@ -1,9 +1,9 @@
 """
-Main entry point — Breakout + Retest + EMA/VWAP Scalper.
+Main entry point — Stable 15m Breakout + Retest + EMA/VWAP Scalper.
 
 Scheduler jobs:
-  Every 1 min     — scan coin pool for breakout setups
-  Every 1 min     — monitor pending retest setups
+  Every 5 min     — scan coin pool for 15m breakout setups
+  Every 1 min     — monitor pending 15m retest setups
   Every 1 min     — check pending signal outcomes
   Every 6h        — refresh futures-only coin pool
   23:55 daily     — daily report
@@ -41,6 +41,7 @@ from config import (
     MAX_CONCURRENT_SIGNALS,
     LEVERAGE,
     ENTRY_TF,
+    TREND_TF,
     SETUP_SCAN_CRON_MINUTES,
     SETUP_MONITOR_MINUTES,
     SIGNALS_PER_SCAN,
@@ -83,10 +84,10 @@ _WS_TASK: asyncio.Task | None = None
 
 def _bootstrap_one_symbol(cache: CandleCache, symbol: str) -> tuple[str, bool, str]:
     """
-    Seed cache from REST.
+    Seed entry timeframe cache from REST.
 
     Important:
-        CandleCache must be seeded using the MEXC interval key, e.g. Min5,
+        CandleCache must be seeded using the MEXC interval key, e.g. Min15,
         because market_data.py reads cache using MEXC_INTERVAL_MAP.
     """
     try:
@@ -202,11 +203,13 @@ async def scan_for_setups(app: Application) -> None:
         to_scan.append(symbol)
 
     logger.info(
-        "[SETUP-SCAN] pool=%s eligible=%s cooldown=%s pending=%s",
+        "[SETUP-SCAN] pool=%s eligible=%s cooldown=%s pending=%s trend_tf=%s entry_tf=%s",
         len(coins),
         len(to_scan),
         filtered_cooldown,
         filtered_pending,
+        TREND_TF,
+        ENTRY_TF,
     )
 
     if not to_scan:
@@ -234,7 +237,7 @@ async def scan_for_setups(app: Application) -> None:
     ]
 
     if not setups:
-        logger.info("[SETUP-SCAN] Done — 0 breakout setups found")
+        logger.info("[SETUP-SCAN] Done — 0 stable 15m breakout setups found")
         return
 
     setups.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
@@ -589,10 +592,11 @@ async def main():
     scheduler.start()
 
     logger.info(
-        "Scheduler started — setup scan='%s', retest monitor=%sm, outcome=%sm, entry_tf=%s",
+        "Scheduler started — setup scan='%s', retest monitor=%sm, outcome=%sm, trend_tf=%s, entry_tf=%s",
         SETUP_SCAN_CRON_MINUTES,
         SETUP_MONITOR_MINUTES,
         OUTCOME_CHECK_MINUTES,
+        TREND_TF,
         ENTRY_TF,
     )
 
