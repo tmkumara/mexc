@@ -933,4 +933,239 @@ function setWsStatus(state) {
   } else if (state === "connecting") {
     el.classList.add("connecting");
     el.innerHTML = `<span class="status-dot"></span>Connecting`;
+  } else {
+    el.classList.add("disconnected");
+    el.innerHTML = `<span class="status-dot"></span>Disconnected`;
   }
+}
+
+function connectSocket() {
+  clearTimeout(reconnectTimer);
+  setWsStatus("connecting");
+
+  try {
+    socket = new WebSocket(wsUrl());
+  } catch (e) {
+    console.error(e);
+    scheduleReconnect();
+    return;
+  }
+
+  socket.onopen = () => {
+    reconnectDelayMs = 2000;
+    setWsStatus("live");
+  };
+
+  socket.onmessage = event => {
+    try {
+      data = JSON.parse(event.data);
+      lastMessageAt = new Date();
+      render();
+      document.getElementById("loading").style.display = "none";
+      document.getElementById("serverTime").textContent = data.server_time;
+      document.getElementById("lastUpdate").textContent = `Updated ${lastMessageAt.toLocaleTimeString()}`;
+      setWsStatus("live");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  socket.onerror = () => {
+    setWsStatus("disconnected");
+  };
+
+  socket.onclose = () => {
+    setWsStatus("disconnected");
+    scheduleReconnect();
+  };
+}
+
+function scheduleReconnect() {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => {
+    reconnectDelayMs = Math.min(reconnectDelayMs * 1.5, 15000);
+    connectSocket();
+  }, reconnectDelayMs);
+}
+
+async function manualRefresh() {
+  try {
+    const base = location.pathname.replace(/\/+$/, "");
+    const res = await fetch(`${base}/api/data?token=${encodeURIComponent(TOKEN)}`);
+
+    if (res.status === 401) {
+      document.body.innerHTML = "<div style='padding:2rem;color:#ff5c6c;font-family:sans-serif'>401 — Invalid token. Add ?token=YOUR_TOKEN to the URL.</div>";
+      return;
+    }
+
+    data = await res.json();
+    lastMessageAt = new Date();
+    render();
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("serverTime").textContent = data.server_time;
+    document.getElementById("lastUpdate").textContent = `Manual ${lastMessageAt.toLocaleTimeString()}`;
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function render() {
+  if (!data) return;
+
+  renderStats();
+  renderRuntime();
+  renderConfig();
+  renderSetups();
+  renderSignals();
+}
+
+function renderStats() {
+  const s = data[period];
+
+  set("c-total", s.total);
+  set("c-wins", s.wins);
+  set("c-losses", s.losses);
+  set("c-pending", s.pending);
+  set("c-winrate", s.win_rate + "%");
+
+  document.getElementById("wr-fill").style.width = s.win_rate + "%";
+
+  const roi = s.net_roi;
+  const roiEl = document.getElementById("c-roi");
+  roiEl.textContent = (roi >= 0 ? "+" : "") + roi + "%";
+  roiEl.className = "card-value " + (roi >= 0 ? "green" : "red");
+
+  set("c-best", "+" + s.best + "%");
+  set("c-worst", s.worst + "%");
+}
+
+function renderRuntime() {
+  const r = data.runtime;
+
+  set("r-waiting", r.waiting_setups);
+  set("r-active", r.active_signals);
+  set("r-expired", r.expired_setups);
+  set("r-invalidated", r.invalidated_setups);
+}
+
+function renderConfig() {
+  const c = data.config;
+
+  set("cfg-tf", `${c.trend_tf} / ${c.entry_tf}`);
+  set("cfg-quality", `${c.min_score} / ${c.setups_per_scan}`);
+  set("cfg-ws", c.websocket_enabled ? "ON" : "OFF");
+  set("cfg-ws-sub", `Cache ${c.candle_cache_limit} candles | Crypto only ${c.crypto_futures_only ? "ON" : "OFF"}`);
+  set("cfg-rr", `${c.target_rr}R`);
+  set("cfg-rr-sub", `ATR${c.atr_period} + EMA${c.ema_period}/VWAP${c.vwap_lookback}`);
+}
+
+function renderSetups() {
+  const rows = data.setups || [];
+  set("setup-count", rows.length + " rows");
+
+  const tbody = document.getElementById("setupRows");
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="9"><div class="empty">No setups recorded yet.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => {
+    const dir = (r.direction || "").toLowerCase();
+    const status = (r.status || "").toLowerCase();
+    const sym = (r.symbol || "").replace("_USDT", "/USDT");
+
+    return `
+      <tr>
+        <td>#${r.id}</td>
+        <td><strong>${sym}</strong><br><span class="muted">${r.trend_tf}/${r.entry_tf}</span></td>
+        <td><span class="badge badge-${dir}">${r.direction}</span></td>
+        <td><span class="badge badge-${status}">${r.status}</span></td>
+        <td><strong>${fmtNum(r.score)}</strong></td>
+        <td>${fmtNum(r.rr_estimate)}</td>
+        <td class="price-stack">
+          <span class="muted">Level</span> ${r.level_display}<br>
+          <span class="muted">Zone</span> ${r.zone_low_display} - ${r.zone_high_display}
+        </td>
+        <td class="price-stack">
+          <span class="green">TP</span> ${r.tp_display}<br>
+          <span class="red">SL</span> ${r.sl_display}
+        </td>
+        <td>${r.expires_display}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderSignals() {
+  const rows = data.recent || [];
+  set("signal-count", rows.length + " rows");
+
+  const tbody = document.getElementById("signalRows");
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No signals recorded yet.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => {
+    const dir = (r.direction || "").toLowerCase();
+    const status = (r.status || "").toLowerCase();
+    const sym = (r.symbol || "").replace("_USDT", "/USDT");
+    const roi = r.pnl_roi != null ? (r.pnl_roi >= 0 ? "+" : "") + Number(r.pnl_roi).toFixed(1) + "%" : "—";
+    const roiCls = r.pnl_roi > 0 ? "green" : r.pnl_roi < 0 ? "red" : "muted";
+
+    return `
+      <tr>
+        <td>#${r.id}</td>
+        <td><strong>${sym}</strong></td>
+        <td><span class="badge badge-${dir}">${r.direction}</span></td>
+        <td><span class="badge badge-${status}">${r.status}</span></td>
+        <td>${r.entry_display}</td>
+        <td class="price-stack">
+          <span class="green">TP</span> ${r.tp_display}<br>
+          <span class="red">SL</span> ${r.sl_display}
+        </td>
+        <td class="${roiCls}"><strong>${roi}</strong></td>
+        <td>${r.display_time}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function fmtNum(value) {
+  if (value === null || value === undefined) return "—";
+  const n = Number(value);
+  if (Number.isNaN(n)) return value;
+  return n.toFixed(1).replace(".0", "");
+}
+
+function set(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+connectSocket();
+manualRefresh();
+</script>
+</body>
+</html>
+"""
+
+
+@app.get("/")
+async def index(token: str = Query("")):
+    if token != WEBUI_TOKEN:
+        return HTMLResponse(
+            "<div style='font-family:monospace;padding:2rem;color:#ff5c6c'>"
+            "401 — Invalid token. Add <code>?token=YOUR_TOKEN</code> to the URL.</div>",
+            status_code=401,
+        )
+
+    return HTMLResponse(HTML)
+
+
+if __name__ == "__main__":
+    print(f"Dashboard → http://0.0.0.0:{PORT}/?token={WEBUI_TOKEN}")
+    print(f"WebSocket → ws://0.0.0.0:{PORT}/ws?token={WEBUI_TOKEN}")
+    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
