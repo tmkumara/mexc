@@ -1,15 +1,15 @@
 """
 MEXC Futures WebSocket client for kline updates.
 
-Current purpose:
+Purpose:
     - Connect to MEXC Futures WebSocket.
     - Subscribe to kline streams.
+    - Send application-level heartbeat.
     - Update CandleCache.
     - Detect closed candles via CandleCache.
     - Provide safe callbacks for future strategy integration.
 
 This file does not directly send Telegram signals.
-Strategy integration will be done in main.py in the next step.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
 from typing import Any
 
 import websockets
@@ -30,6 +31,11 @@ from config import (
     WS_RECONNECT_DELAY_SECONDS,
     WS_PING_INTERVAL_SECONDS,
     WS_PING_TIMEOUT_SECONDS,
+    WS_APP_HEARTBEAT_ENABLED,
+    WS_APP_HEARTBEAT_SECONDS,
+    WS_SUBSCRIBE_DELAY_SECONDS,
+    WS_SUBSCRIBE_BATCH_SIZE,
+    WS_SUBSCRIBE_BATCH_PAUSE_SECONDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +45,7 @@ CandleUpdateCallback = Callable[[CandleUpdateResult], Awaitable[None] | None]
 
 class MexcWebSocketClient:
     """
-    Small WebSocket client for MEXC Futures klines.
+    WebSocket client for MEXC Futures klines.
 
     Subscription format:
         {
@@ -50,8 +56,11 @@ class MexcWebSocketClient:
             }
         }
 
-    Expected push channel:
+    Expected kline channel:
         push.kline
+
+    Heartbeat:
+        Sends {"method": "ping"} every WS_APP_HEARTBEAT_SECONDS.
     """
 
     def __init__(
@@ -70,6 +79,9 @@ class MexcWebSocketClient:
 
         self._running = False
         self._ws = None
+        self._heartbeat_task: asyncio.Task | None = None
+        self._last_message_at: datetime | None = None
+        self._last_pong_at: datetime | None = None
 
         self.mexc_intervals = [
             self._to_mexc_interval(app_interval)
@@ -104,9 +116,9 @@ class MexcWebSocketClient:
 
     async def start(self) -> None:
         """
-        Start the reconnect loop.
+        Start reconnect loop.
 
-        This runs until stop() is called or the task is cancelled.
+        Runs until stop() is called or task is cancelled.
         """
         self._running = True
 
@@ -118,12 +130,16 @@ class MexcWebSocketClient:
             except Exception as e:
                 logger.error("[WS] Client error: %s", e, exc_info=True)
 
+            await self._cancel_heartbeat()
+
             if self._running:
                 logger.info("[WS] Reconnecting in %s seconds", WS_RECONNECT_DELAY_SECONDS)
                 await asyncio.sleep(WS_RECONNECT_DELAY_SECONDS)
 
     async def stop(self) -> None:
         self._running = False
+
+        await self._cancel_heartbeat()
 
         if self._ws is not None:
             try:
@@ -142,13 +158,62 @@ class MexcWebSocketClient:
             max_queue=4096,
         ) as ws:
             self._ws = ws
+            self._last_message_at = datetime.now(timezone.utc)
+            self._last_pong_at = None
+
             logger.info("[WS] Connected")
+
+            if WS_APP_HEARTBEAT_ENABLED:
+                self._heartbeat_task = asyncio.create_task(
+                    self._heartbeat_loop(ws),
+                    name="mexc_ws_heartbeat",
+                )
+                logger.info("[WS] Application heartbeat started every %ss", WS_APP_HEARTBEAT_SECONDS)
 
             await self._subscribe_all(ws)
             await self._listen(ws)
 
+    async def _cancel_heartbeat(self) -> None:
+        task = self._heartbeat_task
+        self._heartbeat_task = None
+
+        if task is None:
+            return
+
+        task.cancel()
+
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.debug("[WS] Heartbeat task cleanup error", exc_info=True)
+
+    async def _heartbeat_loop(self, ws) -> None:
+        while self._running:
+            await asyncio.sleep(WS_APP_HEARTBEAT_SECONDS)
+
+            if not self._running:
+                return
+
+            try:
+                payload = {"method": "ping"}
+                await ws.send(json.dumps(payload))
+                logger.debug("[WS-HB] Ping sent")
+            except ConnectionClosed as e:
+                logger.warning(
+                    "[WS-HB] Ping failed because connection closed code=%s reason=%s",
+                    getattr(e, "code", None),
+                    getattr(e, "reason", None),
+                )
+                return
+            except Exception as e:
+                logger.warning("[WS-HB] Ping failed: %s", e)
+                return
+
     async def _subscribe_all(self, ws) -> None:
         total = 0
+        batch_count = 0
 
         for symbol in self.symbols:
             for interval in self.mexc_intervals:
@@ -161,12 +226,17 @@ class MexcWebSocketClient:
                 }
 
                 await ws.send(json.dumps(payload))
+
                 total += 1
+                batch_count += 1
 
                 logger.info("[WS] Subscribed %s %s", symbol, interval)
 
-                # Small delay avoids sending many subscriptions in the same instant.
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(WS_SUBSCRIBE_DELAY_SECONDS)
+
+                if batch_count >= WS_SUBSCRIBE_BATCH_SIZE:
+                    batch_count = 0
+                    await asyncio.sleep(WS_SUBSCRIBE_BATCH_PAUSE_SECONDS)
 
         logger.info("[WS] Subscription complete. total=%s", total)
 
@@ -174,10 +244,18 @@ class MexcWebSocketClient:
         while self._running:
             try:
                 raw_message = await ws.recv()
-            except ConnectionClosed:
-                logger.warning("[WS] Connection closed")
+            except ConnectionClosed as e:
+                logger.warning(
+                    "[WS] Connection closed code=%s reason=%s",
+                    getattr(e, "code", None),
+                    getattr(e, "reason", None),
+                )
+                break
+            except Exception as e:
+                logger.warning("[WS] Receive error: %s", e, exc_info=True)
                 break
 
+            self._last_message_at = datetime.now(timezone.utc)
             await self._handle_raw_message(raw_message)
 
     async def _handle_raw_message(self, raw_message: Any) -> None:
@@ -194,7 +272,16 @@ class MexcWebSocketClient:
             logger.debug("[WS] Ignoring non-JSON message: %s", raw_message)
             return
 
-        # Subscription acknowledgements and pongs may not contain kline data.
+        if self._is_ping_message(message):
+            await self._respond_to_server_ping(message)
+            return
+
+        if self._is_pong_message(message):
+            self._last_pong_at = datetime.now(timezone.utc)
+            logger.debug("[WS-HB] Pong received: %s", message)
+            return
+
+        # Subscription acknowledgements and other non-kline messages.
         channel = message.get("channel") or message.get("method")
 
         if channel != "push.kline":
@@ -250,6 +337,35 @@ class MexcWebSocketClient:
                 await callback_result
 
     @staticmethod
+    def _is_ping_message(message: dict[str, Any]) -> bool:
+        channel = str(message.get("channel") or "").lower()
+        method = str(message.get("method") or "").lower()
+        msg = str(message.get("msg") or "").lower()
+
+        return channel == "ping" or method == "ping" or msg == "ping"
+
+    @staticmethod
+    def _is_pong_message(message: dict[str, Any]) -> bool:
+        channel = str(message.get("channel") or "").lower()
+        method = str(message.get("method") or "").lower()
+        msg = str(message.get("msg") or "").lower()
+
+        return channel == "pong" or method == "pong" or msg == "pong"
+
+    async def _respond_to_server_ping(self, message: dict[str, Any]) -> None:
+        if self._ws is None:
+            return
+
+        # Keep it simple and compatible with MEXC-style app heartbeat.
+        payload = {"method": "pong"}
+
+        try:
+            await self._ws.send(json.dumps(payload))
+            logger.debug("[WS-HB] Server ping received, pong sent: %s", message)
+        except Exception as e:
+            logger.warning("[WS-HB] Failed to send pong: %s", e)
+
+    @staticmethod
     def _extract_candle(data: dict[str, Any]) -> dict[str, Any]:
         """
         Normalize MEXC Futures kline payload.
@@ -276,8 +392,6 @@ async def run_ws_test() -> None:
 
     Usage:
         python mexc_ws_client.py
-
-    It subscribes to BTC_USDT Min5 + Min30 based on config defaults.
     """
     from config import WS_TEST_SYMBOLS, ENTRY_TF, TREND_TF, CANDLE_CACHE_LIMIT
 
@@ -297,9 +411,11 @@ async def run_ws_test() -> None:
                 result.closed_event.closed_timestamp,
             )
 
+    symbols = WS_TEST_SYMBOLS or ["BTC_USDT"]
+
     client = MexcWebSocketClient(
         candle_cache=cache,
-        symbols=WS_TEST_SYMBOLS,
+        symbols=symbols,
         app_intervals=[ENTRY_TF, TREND_TF],
         on_candle_update=on_update,
     )

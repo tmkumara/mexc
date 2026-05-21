@@ -180,5 +180,13 @@ MAX_SIGNAL_CANDLE_BODY_PCT: float = MAX_BREAKOUT_CANDLE_BODY_PCT
 MAX_RECENT_MOVE_PCT: float = 8.0
 RECENT_MOVE_LOOKBACK: int = 36
 
+
+# ── WebSocket heartbeat / subscription tuning ─────────────────────
+WS_APP_HEARTBEAT_ENABLED: bool = os.getenv("WS_APP_HEARTBEAT_ENABLED", "true").lower() == "true"
+WS_APP_HEARTBEAT_SECONDS: int = int(os.getenv("WS_APP_HEARTBEAT_SECONDS", "15"))
+WS_SUBSCRIBE_DELAY_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_DELAY_SECONDS", "0.12"))
+WS_SUBSCRIBE_BATCH_SIZE: int = int(os.getenv("WS_SUBSCRIBE_BATCH_SIZE", "10"))
+WS_SUBSCRIBE_BATCH_PAUSE_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_BATCH_PAUSE_SECONDS", "0.80"))
+
 # ── Database ──────────────────────────────────────────────────────
 DB_PATH = os.getenv("DB_PATH", "signals.db")
