@@ -14,7 +14,7 @@ Set in .env:
 This dashboard reads from SQLite directly and shows:
     - Signal performance
     - Recent signals
-    - Pending SMC setups
+    - Pending breakout/retest setups
     - Current strategy configuration
     - WebSocket/cache configuration
 
@@ -49,11 +49,6 @@ app = FastAPI(docs_url=None, redoc_url=None)
 # ── optional config loader ────────────────────────────────────────
 
 def _safe_config_value(name: str, default: Any = None) -> Any:
-    """
-    Safely read values from config.py.
-
-    This keeps webui.py usable even if a config value is missing in older branches.
-    """
     try:
         import config
         return getattr(config, name, default)
@@ -237,6 +232,7 @@ def get_pending_setups(limit: int = 30) -> list[dict]:
             trend_tf,
             entry_tf,
             sweep_type,
+            sweep_level,
             ob_type,
             ob_low,
             ob_high,
@@ -259,8 +255,9 @@ def get_pending_setups(limit: int = 30) -> list[dict]:
     for row in rows:
         row["created_display"] = _iso_to_display(row.get("created_at"))
         row["expires_display"] = _iso_to_display(row.get("expires_at"))
-        row["ob_low_display"] = _format_price(row.get("ob_low"))
-        row["ob_high_display"] = _format_price(row.get("ob_high"))
+        row["level_display"] = _format_price(row.get("sweep_level"))
+        row["zone_low_display"] = _format_price(row.get("ob_low"))
+        row["zone_high_display"] = _format_price(row.get("ob_high"))
         row["tp_display"] = _format_price(row.get("target_price"))
         row["sl_display"] = _format_price(row.get("sl_price"))
 
@@ -293,24 +290,21 @@ def get_strategy_config() -> dict:
         ws_mode = str(ws_test_symbols)
 
     return {
-        "strategy": "Stateful SMC Sweep + Micro BOS + OB Retest",
+        "strategy": _safe_config_value("STRATEGY_NAME", "Breakout Retest EMA/VWAP Scalper"),
         "trend_tf": _safe_config_value("TREND_TF", "—"),
         "entry_tf": _safe_config_value("ENTRY_TF", "—"),
-        "trend_kline_count": _safe_config_value("TREND_KLINE_COUNT", "—"),
         "entry_kline_count": _safe_config_value("ENTRY_KLINE_COUNT", "—"),
         "monitor_kline_count": _safe_config_value("MONITOR_KLINE_COUNT", "—"),
         "top_n_coins": _safe_config_value("TOP_N_COINS", "—"),
         "min_volume_usd": _safe_config_value("COIN_POOL_MIN_VOLUME_USD", "—"),
-        "swing_left": _safe_config_value("SWING_LEFT", "—"),
-        "swing_right": _safe_config_value("SWING_RIGHT", "—"),
-        "sweep_lookback": _safe_config_value("SWEEP_LOOKBACK", "—"),
-        "displacement_multiplier": _safe_config_value("DISPLACEMENT_BODY_MULTIPLIER", "—"),
-        "micro_bos_lookback": _safe_config_value("MICRO_BOS_LOOKBACK", "—"),
-        "micro_bos_buffer_pct": _safe_config_value("MICRO_BOS_BUFFER_PCT", "—"),
-        "order_block_lookback": _safe_config_value("ORDER_BLOCK_LOOKBACK", "—"),
-        "pending_expire_candles": _safe_config_value("PENDING_SETUP_EXPIRE_CANDLES", "—"),
-        "min_rr": _safe_config_value("MIN_STRUCTURE_RR", "—"),
-        "max_rr": _safe_config_value("MAX_STRUCTURE_RR", "—"),
+        "breakout_lookback": _safe_config_value("BREAKOUT_LOOKBACK", "—"),
+        "retest_max_candles": _safe_config_value("RETEST_MAX_CANDLES", "—"),
+        "ema_period": _safe_config_value("EMA_PERIOD", "—"),
+        "vwap_lookback": _safe_config_value("VWAP_LOOKBACK_BARS", "—"),
+        "atr_period": _safe_config_value("ATR_PERIOD", "—"),
+        "min_rr": _safe_config_value("MIN_RR", "—"),
+        "target_rr": _safe_config_value("TARGET_RR", "—"),
+        "max_rr": _safe_config_value("MAX_RR", "—"),
         "min_score": _safe_config_value("MIN_SIGNAL_SCORE", "—"),
         "setups_per_scan": _safe_config_value("SETUPS_PER_SCAN", "—"),
         "signals_per_scan": _safe_config_value("SIGNALS_PER_SCAN", "—"),
@@ -796,7 +790,7 @@ tr:hover td {
   <div class="header-inner">
     <div>
       <div class="logo"><span>📡</span> MEXC Signal Bot</div>
-      <div class="logo-sub">SMC Sweep + Micro BOS + Order Block Retest</div>
+      <div class="logo-sub">Breakout Retest + EMA/VWAP + ATR RR</div>
     </div>
     <div class="meta">
       <span class="status-pill connecting" id="wsStatus"><span class="status-dot"></span>Connecting</span>
@@ -835,10 +829,10 @@ tr:hover td {
 
   <div class="section-title">Runtime State</div>
   <div class="grid runtime-grid">
-    <div class="card"><div class="card-label">Waiting Setups</div><div class="card-value blue" id="r-waiting">—</div><div class="card-small">Pending OB retests</div></div>
+    <div class="card"><div class="card-label">Waiting Retests</div><div class="card-value blue" id="r-waiting">—</div><div class="card-small">Breakouts waiting for retest</div></div>
     <div class="card"><div class="card-label">Active Signals</div><div class="card-value yellow" id="r-active">—</div><div class="card-small">Open signal outcomes</div></div>
-    <div class="card"><div class="card-label">Expired Setups</div><div class="card-value muted" id="r-expired">—</div><div class="card-small">Setups timed out</div></div>
-    <div class="card"><div class="card-label">Invalidated Setups</div><div class="card-value red" id="r-invalidated">—</div><div class="card-small">SL touched before entry</div></div>
+    <div class="card"><div class="card-label">Expired Setups</div><div class="card-value muted" id="r-expired">—</div><div class="card-small">Retests timed out</div></div>
+    <div class="card"><div class="card-label">Invalidated Setups</div><div class="card-value red" id="r-invalidated">—</div><div class="card-small">Breakout failed before entry</div></div>
   </div>
 
   <div class="section-title">Current Strategy Setup</div>
@@ -846,14 +840,14 @@ tr:hover td {
     <div class="card"><div class="card-label">Timeframes</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">Trend / Entry</div></div>
     <div class="card"><div class="card-label">Quality Filter</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">Min score / setups per scan</div></div>
     <div class="card"><div class="card-label">Market WebSocket</div><div class="card-value green" id="cfg-ws">—</div><div class="card-small" id="cfg-ws-sub">—</div></div>
-    <div class="card"><div class="card-label">Cache</div><div class="card-value orange" id="cfg-cache">—</div><div class="card-small">Candles per symbol + TF</div></div>
+    <div class="card"><div class="card-label">RR Model</div><div class="card-value orange" id="cfg-rr">—</div><div class="card-small" id="cfg-rr-sub">—</div></div>
   </div>
 
   <section class="panel">
     <div class="panel-head">
       <div>
-        <div class="panel-title">Pending / Recent Setups</div>
-        <div class="panel-subtitle">SMC setups waiting, fired, expired, or invalidated</div>
+        <div class="panel-title">Pending / Recent Breakout Setups</div>
+        <div class="panel-subtitle">Breakout setups waiting, fired, expired, or invalidated</div>
       </div>
       <span class="badge badge-config" id="setup-count">—</span>
     </div>
@@ -867,7 +861,7 @@ tr:hover td {
             <th>Status</th>
             <th>Score</th>
             <th>RR</th>
-            <th>OB Zone</th>
+            <th>Level / Zone</th>
             <th>TP / SL</th>
             <th>Expires</th>
           </tr>
@@ -1059,8 +1053,9 @@ function renderConfig() {
   set("cfg-tf", `${c.trend_tf} / ${c.entry_tf}`);
   set("cfg-quality", `${c.min_score} / ${c.setups_per_scan}`);
   set("cfg-ws", c.websocket_enabled ? "ON" : "OFF");
-  set("cfg-ws-sub", c.websocket_symbols);
-  set("cfg-cache", c.candle_cache_limit);
+  set("cfg-ws-sub", `Cache ${c.candle_cache_limit} candles`);
+  set("cfg-rr", `${c.target_rr}R`);
+  set("cfg-rr-sub", `ATR${c.atr_period} + EMA${c.ema_period}/VWAP${c.vwap_lookback}`);
 }
 
 function renderSetups() {
@@ -1088,8 +1083,8 @@ function renderSetups() {
         <td><strong>${fmtNum(r.score)}</strong></td>
         <td>${fmtNum(r.rr_estimate)}</td>
         <td class="price-stack">
-          <span class="muted">Low</span> ${r.ob_low_display}<br>
-          <span class="muted">High</span> ${r.ob_high_display}
+          <span class="muted">Level</span> ${r.level_display}<br>
+          <span class="muted">Zone</span> ${r.zone_low_display} - ${r.zone_high_display}
         </td>
         <td class="price-stack">
           <span class="green">TP</span> ${r.tp_display}<br>

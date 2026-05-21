@@ -1,5 +1,5 @@
 """
-Telegram bot: handles commands and broadcasts Squeeze Momentum WT Supertrend signals.
+Telegram bot: handles commands and broadcasts Breakout Retest EMA/VWAP signals.
 
 Important:
     Signal messages use HTML parse mode, not Markdown.
@@ -165,25 +165,26 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         STRATEGY_NAME,
         ENTRY_TF,
         ENTRY_KLINE_COUNT,
-        WT_CHANNEL_LENGTH,
-        WT_AVERAGE_LENGTH,
-        WT_SIGNAL_LENGTH,
-        SUPERTREND_ATR_PERIOD,
-        SUPERTREND_FACTOR,
-        SQUEEZE_BB_LENGTH,
-        SQUEEZE_KC_LENGTH,
-        SQUEEZE_UPPER_THRESHOLD,
-        SQUEEZE_LOWER_THRESHOLD,
-        TARGET_ATR_MULTIPLIER,
-        STOP_LOSS_ATR_MULTIPLIER,
+        BREAKOUT_LOOKBACK,
+        RETEST_MAX_CANDLES,
+        EMA_PERIOD,
+        VWAP_LOOKBACK_BARS,
+        ATR_PERIOD,
+        TARGET_RR,
+        MIN_RR,
+        MAX_RR,
         LEVERAGE,
         SIGNAL_COOLDOWN_MINUTES,
         SIGNALS_PER_SCAN,
+        SETUPS_PER_SCAN,
         MAX_CONCURRENT_SIGNALS,
         SCAN_WORKERS,
         SETUP_SCAN_CRON_MINUTES,
+        SETUP_MONITOR_MINUTES,
         MIN_SIGNAL_SCORE,
         ENABLE_SMART_COIN_RANKING,
+        ENABLE_WEBSOCKET,
+        CANDLE_CACHE_LIMIT,
         COIN_RANK_TIMEFRAME,
         COIN_RANK_KLINE_COUNT,
         COIN_RANK_WORKERS,
@@ -196,6 +197,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     coins = coin_scanner.get_cached_coins()
     scores = coin_scanner.get_cached_coin_scores()
     active = db.count_active_signals()
+    waiting = db.count_waiting_setups()
 
     pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
 
@@ -215,6 +217,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     ranking_state = "ON" if ENABLE_SMART_COIN_RANKING else "OFF"
+    ws_state = "ON" if ENABLE_WEBSOCKET else "OFF"
 
     msg = "\n".join([
         "📡 <b>Scanner Status</b>",
@@ -224,15 +227,18 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Entry TF:   {_code(ENTRY_TF)}",
         f"Candles:    {_code(ENTRY_KLINE_COUNT)}",
         f"Setup scan: {_code(SETUP_SCAN_CRON_MINUTES)}",
+        f"Monitor:    {_code(f'every {SETUP_MONITOR_MINUTES} min')}",
         "",
-        f"Supertrend: {_code(f'ATR {SUPERTREND_ATR_PERIOD}, factor {SUPERTREND_FACTOR:g}')}",
-        f"WaveTrend:  {_code(f'n1={WT_CHANNEL_LENGTH}, n2={WT_AVERAGE_LENGTH}, signal={WT_SIGNAL_LENGTH}')}",
-        f"Squeeze:    {_code(f'BB {SQUEEZE_BB_LENGTH}, KC {SQUEEZE_KC_LENGTH}')}",
-        f"Threshold:  {_code(f'up {SQUEEZE_UPPER_THRESHOLD:g}, down {SQUEEZE_LOWER_THRESHOLD:g}')}",
-        "",
-        f"TP/SL ATR:  {_code(f'TP ATR×{TARGET_ATR_MULTIPLIER:g}, SL ATR×{STOP_LOSS_ATR_MULTIPLIER:g}')}",
+        f"Breakout:   {_code(f'{BREAKOUT_LOOKBACK}-candle high/low')}",
+        f"Retest:     {_code(f'within {RETEST_MAX_CANDLES} candles')}",
+        f"Trend:      {_code(f'EMA{EMA_PERIOD} + VWAP{VWAP_LOOKBACK_BARS}')}",
+        f"ATR:        {_code(f'ATR{ATR_PERIOD}')}",
+        f"RR:         {_code(f'{MIN_RR:g} min / {TARGET_RR:g} target / {MAX_RR:g} max')}",
         f"Leverage:   {_code(f'{LEVERAGE}x')}",
         f"Min score:  {_code(MIN_SIGNAL_SCORE)}",
+        "",
+        f"WebSocket:  {_code(ws_state)}",
+        f"Cache:      {_code(f'{CANDLE_CACHE_LIMIT} candles')}",
         "",
         f"Coin rank:  {_code(ranking_state)}",
         f"Rank TF:    {_code(f'{COIN_RANK_KLINE_COUNT} x {COIN_RANK_TIMEFRAME}')}",
@@ -243,8 +249,10 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Top ranked: {_code(top_ranked)}",
         "",
         f"Workers:    {_code(SCAN_WORKERS)}",
-        f"Per scan:   {_code(f'top {SIGNALS_PER_SCAN} entries')}",
+        f"Setups/scan:{_code(SETUPS_PER_SCAN)}",
+        f"Signals/scan:{_code(SIGNALS_PER_SCAN)}",
         f"Cooldown:   {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
+        f"Waiting:    {_code(f'{waiting} retests')}",
         f"Active:     {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
         f"Pool ({len(coins)}): {_code(pairs_str)}",
         f"Time (LKT): {_code(datetime.now(LKT).strftime('%H:%M'))}",

@@ -1,16 +1,10 @@
 """
-Phase 2 Smart Coin Scanner.
+Smart MEXC Futures-only coin scanner.
 
 Purpose:
-    - Build the coin pool using liquidity + recent movement quality.
-    - Avoid very flat coins.
-    - Avoid coins already over-pumped / over-dumped.
-    - Reduce API waste by scanning better-ranked symbols first.
-
-Sources:
-    1. CoinGlass OI candidates when COINGLASS_API_KEY exists.
-    2. MEXC 24h volume fallback.
-    3. MEXC 5m candles for Phase 2 activity ranking.
+    - Build the coin pool using MEXC futures contract symbols only.
+    - Avoid symbols not listed on MEXC futures.
+    - Rank futures symbols using liquidity + recent activity.
 """
 
 import logging
@@ -42,6 +36,7 @@ from config import (
     COIN_RANK_LIQUIDITY_WEIGHT,
     COIN_RANK_OVEREXTENSION_PENALTY,
     COIN_RANK_LOW_ACTIVITY_PENALTY,
+    QUOTE_CURRENCY,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,6 +46,7 @@ COINGLASS_BASE = "https://open-api.coinglass.com/public/v2"
 _cached_coins: list[str] = []
 _cached_scores: list[dict] = []
 _last_refresh_at: datetime | None = None
+_cached_valid_futures: set[str] = set()
 
 
 # ── safe conversion helpers ───────────────────────────────────────
@@ -65,9 +61,6 @@ def _to_float(value, default: float = 0.0) -> float:
 
 
 def _ticker_volume_usd(ticker: dict) -> float:
-    """
-    MEXC ticker fields can differ. Try common quote-volume fields first.
-    """
     for key in (
         "amount24",
         "amount",
@@ -78,8 +71,7 @@ def _ticker_volume_usd(ticker: dict) -> float:
         "quoteVolume",
         "volume",
     ):
-        v = ticker.get(key)
-        vol = _to_float(v, 0.0)
+        vol = _to_float(ticker.get(key), 0.0)
         if vol > 0:
             return vol
     return 0.0
@@ -99,27 +91,133 @@ def _normalize_score(value: float, min_value: float, max_value: float) -> float:
     return max(0.0, min(1.0, (value - min_value) / (max_value - min_value)))
 
 
+# ── futures contract filtering ────────────────────────────────────
+
+def _is_contract_active(contract: dict) -> bool:
+    symbol = str(contract.get("symbol") or "").upper().strip()
+
+    if not symbol:
+        return False
+
+    if not symbol.endswith(f"_{QUOTE_CURRENCY}"):
+        return False
+
+    if symbol in EXCLUDE_COINS:
+        return False
+
+    # MEXC futures usually uses state=0 for active contracts.
+    # Be defensive because fields can vary.
+    state = contract.get("state")
+    if state is not None:
+        try:
+            if int(state) != 0:
+                return False
+        except Exception:
+            state_text = str(state).lower()
+            if state_text not in ("0", "online", "enabled", "normal", "trading"):
+                return False
+
+    status = contract.get("status")
+    if status is not None:
+        status_text = str(status).lower()
+        if status_text in {"offline", "delisted", "suspend", "suspended", "disabled", "false"}:
+            return False
+
+    return True
+
+
+def _fetch_valid_futures_symbols(tickers: dict[str, dict]) -> set[str]:
+    global _cached_valid_futures
+
+    try:
+        contracts = get_all_contracts()
+    except Exception as e:
+        logger.error("[COIN-FILTER] failed to fetch futures contracts: %s", e)
+        return _cached_valid_futures
+
+    contract_symbols = {
+        str(contract.get("symbol")).upper().strip()
+        for contract in contracts
+        if _is_contract_active(contract)
+    }
+
+    ticker_symbols = {
+        str(symbol).upper().strip()
+        for symbol in tickers.keys()
+        if str(symbol).upper().strip().endswith(f"_{QUOTE_CURRENCY}")
+    }
+
+    if ticker_symbols:
+        valid = contract_symbols & ticker_symbols
+    else:
+        valid = contract_symbols
+
+    valid = {
+        symbol
+        for symbol in valid
+        if symbol and symbol not in EXCLUDE_COINS
+    }
+
+    _cached_valid_futures = valid
+
+    logger.info(
+        "[COIN-FILTER] contracts=%s active_%s_futures=%s tickers=%s valid=%s excluded=%s",
+        len(contracts),
+        QUOTE_CURRENCY,
+        len(contract_symbols),
+        len(ticker_symbols),
+        len(valid),
+        len(EXCLUDE_COINS),
+    )
+
+    return valid
+
+
+def _filter_valid_futures(symbols: list[str], valid_futures: set[str]) -> list[str]:
+    filtered = []
+    seen = set()
+
+    for symbol in symbols:
+        symbol = str(symbol).upper().strip()
+
+        if not symbol:
+            continue
+
+        if symbol in seen:
+            continue
+
+        seen.add(symbol)
+
+        if symbol not in valid_futures:
+            continue
+
+        filtered.append(symbol)
+
+    removed = len(seen) - len(filtered)
+
+    if removed:
+        logger.info("[COIN-FILTER] removed non-futures/invalid symbols=%s", removed)
+
+    return filtered
+
+
 # ── candidate fetchers ────────────────────────────────────────────
 
-def _fetch_coinglass_candidates() -> list[tuple[str, float]]:
-    """
-    Returns:
-        [(symbol, oi_score_raw), ...]
-    """
+def _fetch_coinglass_candidates(valid_futures: set[str]) -> list[tuple[str, float]]:
     if not COINGLASS_API_KEY:
         return []
 
     try:
-        r = requests.get(
+        response = requests.get(
             f"{COINGLASS_BASE}/open_interest",
             headers={"coinglassSecret": COINGLASS_API_KEY},
             timeout=15,
         )
-        r.raise_for_status()
-        data = r.json()
+        response.raise_for_status()
+        data = response.json()
 
         if str(data.get("code")) != "0":
-            logger.warning(f"CoinGlass API: {data.get('msg', 'unknown error')}")
+            logger.warning("[COIN-RANK] CoinGlass API: %s", data.get("msg", "unknown error"))
             return []
 
         items = data.get("data", [])
@@ -143,8 +241,9 @@ def _fetch_coinglass_candidates() -> list[tuple[str, float]]:
             if not coin:
                 continue
 
-            symbol = f"{coin}_USDT"
-            if symbol in EXCLUDE_COINS:
+            symbol = f"{coin}_{QUOTE_CURRENCY}"
+
+            if symbol not in valid_futures:
                 continue
 
             rows.append((symbol, _oi(item)))
@@ -152,20 +251,22 @@ def _fetch_coinglass_candidates() -> list[tuple[str, float]]:
             if len(rows) >= max_candidates:
                 break
 
-        logger.info(f"[COIN-RANK] CoinGlass candidates={len(rows)}")
+        logger.info("[COIN-RANK] CoinGlass futures candidates=%s", len(rows))
         return rows
 
     except Exception as e:
-        logger.error(f"CoinGlass fetch error: {e}")
+        logger.error("[COIN-RANK] CoinGlass fetch error: %s", e)
         return []
 
 
-def _fetch_mexc_volume_candidates(tickers: dict[str, dict]) -> list[tuple[str, float]]:
+def _fetch_mexc_volume_candidates(tickers: dict[str, dict], valid_futures: set[str]) -> list[tuple[str, float]]:
     max_candidates = min(TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER, COIN_RANK_MAX_CANDIDATES)
     rows: list[tuple[str, float]] = []
 
     for symbol, ticker in tickers.items():
-        if not symbol.endswith("_USDT") or symbol in EXCLUDE_COINS:
+        symbol = str(symbol).upper().strip()
+
+        if symbol not in valid_futures:
             continue
 
         last_price = _ticker_last_price(ticker)
@@ -182,27 +283,11 @@ def _fetch_mexc_volume_candidates(tickers: dict[str, dict]) -> list[tuple[str, f
     rows = rows[:max_candidates]
 
     logger.info(
-        f"[COIN-RANK] MEXC volume candidates={len(rows)} "
-        f"(min volume ${COIN_POOL_MIN_VOLUME_USD / 1_000_000:.0f}M)"
+        "[COIN-RANK] MEXC futures volume candidates=%s min_volume=$%.2f",
+        len(rows),
+        COIN_POOL_MIN_VOLUME_USD,
     )
     return rows
-
-
-def _validate_active_contracts(symbols: list[str]) -> list[str]:
-    try:
-        contracts = get_all_contracts()
-        active = {c["symbol"] for c in contracts if c.get("state") in (0, None)}
-        validated = [symbol for symbol in symbols if symbol in active]
-
-        removed = len(symbols) - len(validated)
-        if removed:
-            logger.info(f"[COIN-RANK] filtered inactive contracts={removed}")
-
-        return validated
-
-    except Exception as e:
-        logger.warning(f"[COIN-RANK] contract validation skipped: {e}")
-        return symbols
 
 
 # ── ranking model ─────────────────────────────────────────────────
@@ -224,6 +309,7 @@ def _rank_one_symbol(symbol: str, ticker: dict, raw_priority: float, max_raw_pri
             return None
 
         completed = df.iloc[:-1].copy()
+
         if completed.empty or len(completed) < 10:
             return None
 
@@ -252,20 +338,16 @@ def _rank_one_symbol(symbol: str, ticker: dict, raw_priority: float, max_raw_pri
         )
         avg_candle_range_pct = float(candle_ranges.mean())
 
-        # Volume score uses log scale so giant coins do not dominate everything.
         volume_score = min(math.log10(max(volume_usd, 1.0)) / 10.0, 1.0)
 
-        # Volatility score prefers active-but-not-insane movement.
         volatility_score = _normalize_score(
             avg_candle_range_pct,
             COIN_RANK_MIN_RANGE_PCT / 2.0,
             1.25,
         )
 
-        # Trend activity score rewards directional movement, but overextension gets penalized below.
         trend_score = _normalize_score(abs_move_pct, 0.30, 4.50)
 
-        # Liquidity / OI priority score. If MEXC fallback is used, raw priority is volume.
         priority_score = raw_priority / max_raw_priority if max_raw_priority > 0 else 0.0
         priority_score = max(0.0, min(1.0, priority_score))
 
@@ -278,11 +360,9 @@ def _rank_one_symbol(symbol: str, ticker: dict, raw_priority: float, max_raw_pri
 
         penalty = 0.0
 
-        # Avoid symbols that already made a large one-way move over the ranking window.
         if abs_move_pct > COIN_RANK_MAX_ABS_MOVE_PCT:
             penalty += COIN_RANK_OVEREXTENSION_PENALTY
 
-        # Very low candle activity usually creates fake/noisy signals.
         if avg_candle_range_pct < COIN_RANK_MIN_RANGE_PCT:
             penalty += COIN_RANK_LOW_ACTIVITY_PENALTY
 
@@ -304,23 +384,30 @@ def _rank_one_symbol(symbol: str, ticker: dict, raw_priority: float, max_raw_pri
         }
 
     except Exception as e:
-        logger.debug(f"[COIN-RANK] {symbol} ranking failed: {e}")
+        logger.debug("[COIN-RANK] %s ranking failed: %s", symbol, e)
         return None
 
 
-def _smart_rank_candidates(candidates: list[tuple[str, float]], tickers: dict[str, dict]) -> list[dict]:
+def _smart_rank_candidates(
+    candidates: list[tuple[str, float]],
+    tickers: dict[str, dict],
+    valid_futures: set[str],
+) -> list[dict]:
     if not candidates:
         return []
 
-    # Deduplicate while preserving highest raw priority.
     priority_by_symbol: dict[str, float] = {}
+
     for symbol, raw_priority in candidates:
-        if symbol in EXCLUDE_COINS:
+        symbol = str(symbol).upper().strip()
+
+        if symbol not in valid_futures:
             continue
+
         priority_by_symbol[symbol] = max(priority_by_symbol.get(symbol, 0.0), raw_priority)
 
     symbols = list(priority_by_symbol.keys())
-    symbols = _validate_active_contracts(symbols)
+    symbols = _filter_valid_futures(symbols, valid_futures)
 
     max_candidates = min(TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER, COIN_RANK_MAX_CANDIDATES)
     symbols = symbols[:max_candidates]
@@ -329,12 +416,13 @@ def _smart_rank_candidates(candidates: list[tuple[str, float]], tickers: dict[st
         return []
 
     max_raw_priority = max((priority_by_symbol.get(symbol, 0.0) for symbol in symbols), default=1.0)
-
     ranked: list[dict] = []
 
     logger.info(
-        f"[COIN-RANK] ranking {len(symbols)} candidates "
-        f"using {COIN_RANK_KLINE_COUNT}x {COIN_RANK_TIMEFRAME} candles"
+        "[COIN-RANK] ranking %s futures candidates using %sx %s candles",
+        len(symbols),
+        COIN_RANK_KLINE_COUNT,
+        COIN_RANK_TIMEFRAME,
     )
 
     with ThreadPoolExecutor(max_workers=COIN_RANK_WORKERS) as executor:
@@ -355,7 +443,6 @@ def _smart_rank_candidates(candidates: list[tuple[str, float]], tickers: dict[st
                 ranked.append(result)
 
     ranked.sort(key=lambda row: row["score"], reverse=True)
-
     return ranked
 
 
@@ -367,31 +454,39 @@ def refresh_coin_list() -> list[str]:
     try:
         tickers = get_tickers()
     except Exception as e:
-        logger.error(f"[COIN-RANK] ticker fetch failed: {e}")
+        logger.error("[COIN-RANK] ticker fetch failed: %s", e)
         tickers = {}
 
-    raw_candidates = _fetch_coinglass_candidates()
+    valid_futures = _fetch_valid_futures_symbols(tickers)
+
+    if not valid_futures:
+        logger.warning("[COIN-RANK] no valid futures symbols found — keeping previous cache")
+        return _cached_coins
+
+    raw_candidates = _fetch_coinglass_candidates(valid_futures)
+
     if not raw_candidates:
-        logger.info("[COIN-RANK] no CoinGlass data — using MEXC volume candidates")
-        raw_candidates = _fetch_mexc_volume_candidates(tickers)
+        logger.info("[COIN-RANK] no CoinGlass futures data — using MEXC futures volume candidates")
+        raw_candidates = _fetch_mexc_volume_candidates(tickers, valid_futures)
 
     if not raw_candidates:
         logger.warning("[COIN-RANK] no candidates fetched — keeping previous cache")
         return _cached_coins
 
     if ENABLE_SMART_COIN_RANKING and tickers:
-        ranked = _smart_rank_candidates(raw_candidates, tickers)
+        ranked = _smart_rank_candidates(raw_candidates, tickers, valid_futures)
+
         if ranked:
             selected = ranked[:TOP_N_COINS]
             _cached_scores = selected
             _cached_coins = [row["symbol"] for row in selected]
         else:
-            logger.warning("[COIN-RANK] smart ranking returned empty — using raw fallback")
-            symbols = _validate_active_contracts([symbol for symbol, _ in raw_candidates])
+            logger.warning("[COIN-RANK] smart ranking returned empty — using raw futures fallback")
+            symbols = _filter_valid_futures([symbol for symbol, _ in raw_candidates], valid_futures)
             _cached_scores = [{"symbol": s, "score": 0.0} for s in symbols[:TOP_N_COINS]]
             _cached_coins = symbols[:TOP_N_COINS]
     else:
-        symbols = _validate_active_contracts([symbol for symbol, _ in raw_candidates])
+        symbols = _filter_valid_futures([symbol for symbol, _ in raw_candidates], valid_futures)
         _cached_scores = [{"symbol": s, "score": 0.0} for s in symbols[:TOP_N_COINS]]
         _cached_coins = symbols[:TOP_N_COINS]
 
@@ -402,7 +497,11 @@ def refresh_coin_list() -> list[str]:
             f"{row['symbol'].replace('_USDT', '')}:{row.get('score', 0)}"
             for row in _cached_scores[:10]
         ]
-        logger.info(f"[COIN-RANK] selected {len(_cached_coins)} coins | top={top_preview}")
+        logger.info(
+            "[COIN-RANK] selected %s futures coins | top=%s",
+            len(_cached_coins),
+            top_preview,
+        )
     else:
         logger.warning("[COIN-RANK] no coins selected — keeping previous cache")
 
@@ -412,7 +511,7 @@ def refresh_coin_list() -> list[str]:
 def get_cached_coins() -> list[str]:
     if not _cached_coins:
         return refresh_coin_list()
-    return _cached_coins
+    return list(_cached_coins)
 
 
 def get_cached_coin_scores() -> list[dict]:
@@ -421,3 +520,7 @@ def get_cached_coin_scores() -> list[dict]:
 
 def get_last_refresh_at() -> datetime | None:
     return _last_refresh_at
+
+
+def get_cached_valid_futures() -> set[str]:
+    return set(_cached_valid_futures)
