@@ -1,5 +1,5 @@
 """
-Telegram bot: handles commands and broadcasts Breakout Retest EMA/VWAP signals.
+Telegram bot: handles commands and broadcasts HTF SMC scalping signals.
 
 Important:
     Signal messages use HTML parse mode, not Markdown.
@@ -66,7 +66,7 @@ def _italic(value) -> str:
 def format_signal(signal, signal_id: int) -> str:
     arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
     coin = signal.symbol.replace("_", "/")
-    stars = "⭐⭐⭐" if signal.score >= 85 else "⭐⭐" if signal.score >= 72 else "⭐"
+    stars = "⭐⭐⭐" if signal.score >= 90 else "⭐⭐" if signal.score >= 82 else "⭐"
 
     return "\n".join([
         f"{escape(arrow)} — {_bold(coin)} Futures",
@@ -85,8 +85,7 @@ def format_signal(signal, signal_id: int) -> str:
 
 
 async def broadcast_signal(app: Application, signal, signal_id: int) -> None:
-    msg = format_signal(signal, signal_id)
-    await _send_html(app, msg)
+    await _send_html(app, format_signal(signal, signal_id))
 
 
 async def notify_outcome(app: Application, signal_db: dict) -> None:
@@ -163,16 +162,30 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     from config import (
         STRATEGY_NAME,
-        ENTRY_TF,
-        ENTRY_KLINE_COUNT,
-        BREAKOUT_LOOKBACK,
-        RETEST_MAX_CANDLES,
+        REGIME_TF,
+        SETUP_TF,
+        EXECUTION_TF,
+        REGIME_EMA_FAST,
+        REGIME_EMA_SLOW,
         EMA_PERIOD,
         VWAP_LOOKBACK_BARS,
         ATR_PERIOD,
+        ATR_SL_BUFFER_MULTIPLIER,
+        SWEEP_LOOKBACK,
+        DISPLACEMENT_BODY_MULTIPLIER,
+        DISPLACEMENT_CLOSE_POSITION,
+        ORDER_BLOCK_LOOKBACK,
+        REQUIRE_FVG_CONFIRMATION,
+        REQUIRE_VOLUME_CONFIRMATION,
+        REQUIRE_MINOR_BOS_AFTER_RETEST,
+        MIN_VOLUME_MULTIPLIER,
+        MAX_WICK_TO_BODY_RATIO,
+        RETEST_MAX_CANDLES,
         TARGET_RR,
         MIN_RR,
         MAX_RR,
+        MIN_SL_PCT,
+        MAX_SL_PCT,
         LEVERAGE,
         SIGNAL_COOLDOWN_MINUTES,
         SIGNALS_PER_SCAN,
@@ -220,22 +233,35 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ranking_state = "ON" if ENABLE_SMART_COIN_RANKING else "OFF"
     ws_state = "ON" if ENABLE_WEBSOCKET else "OFF"
     crypto_only_state = "ON" if CRYPTO_FUTURES_ONLY else "OFF"
+    fvg_state = "ON" if REQUIRE_FVG_CONFIRMATION else "OFF"
+    vol_state = "ON" if REQUIRE_VOLUME_CONFIRMATION else "OFF"
+    bos_state = "ON" if REQUIRE_MINOR_BOS_AFTER_RETEST else "OFF"
 
     msg = "\n".join([
         "📡 <b>Scanner Status</b>",
         "━━━━━━━━━━━━━━━━━━━━",
         f"State:       {_code(state)}",
         f"Strategy:    {_code(STRATEGY_NAME)}",
-        f"Entry TF:    {_code(ENTRY_TF)}",
-        f"Candles:     {_code(ENTRY_KLINE_COUNT)}",
+        "",
+        f"Regime TF:   {_code(f'{REGIME_TF} EMA{REGIME_EMA_FAST}/EMA{REGIME_EMA_SLOW}')}",
+        f"Setup TF:    {_code(f'{SETUP_TF} sweep + displacement + FVG/OB')}",
+        f"Entry TF:    {_code(f'{EXECUTION_TF} retest + rejection + minor BOS')}",
         f"Setup scan:  {_code(SETUP_SCAN_CRON_MINUTES)}",
         f"Monitor:     {_code(f'every {SETUP_MONITOR_MINUTES} min')}",
         "",
-        f"Breakout:    {_code(f'{BREAKOUT_LOOKBACK}-candle high/low')}",
-        f"Retest:      {_code(f'within {RETEST_MAX_CANDLES} candles')}",
-        f"Trend:       {_code(f'EMA{EMA_PERIOD} + VWAP{VWAP_LOOKBACK_BARS}')}",
-        f"ATR:         {_code(f'ATR{ATR_PERIOD}')}",
+        f"Sweep:       {_code(f'lookback={SWEEP_LOOKBACK}')}",
+        f"Displace:    {_code(f'body×{DISPLACEMENT_BODY_MULTIPLIER:g}, closePos={DISPLACEMENT_CLOSE_POSITION:g}')}",
+        f"OB lookback: {_code(ORDER_BLOCK_LOOKBACK)}",
+        f"FVG confirm: {_code(fvg_state)}",
+        f"Vol confirm: {_code(f'{vol_state} ≥ {MIN_VOLUME_MULTIPLIER:g}x')}",
+        f"Minor BOS:   {_code(bos_state)}",
+        f"Wick filter: {_code(f'≤ {MAX_WICK_TO_BODY_RATIO:g}x body')}",
+        "",
+        f"Execution:   {_code(f'EMA{EMA_PERIOD} + VWAP{VWAP_LOOKBACK_BARS} + ATR{ATR_PERIOD}')}",
+        f"ATR buffer:  {_code(f'{ATR_SL_BUFFER_MULTIPLIER:g}x ATR')}",
+        f"SL range:    {_code(f'{MIN_SL_PCT:g}%–{MAX_SL_PCT:g}% price')}",
         f"RR:          {_code(f'{MIN_RR:g} min / {TARGET_RR:g} target / {MAX_RR:g} max')}",
+        f"Retest exp:  {_code(f'{RETEST_MAX_CANDLES} x {EXECUTION_TF} candles')}",
         f"Leverage:    {_code(f'{LEVERAGE}x')}",
         f"Min score:   {_code(MIN_SIGNAL_SCORE)}",
         "",
@@ -255,7 +281,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Setups/scan: {_code(SETUPS_PER_SCAN)}",
         f"Signals/scan:{_code(SIGNALS_PER_SCAN)}",
         f"Cooldown:    {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
-        f"Waiting:     {_code(f'{waiting} retests')}",
+        f"Waiting:     {_code(f'{waiting} setups')}",
         f"Active:      {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
         f"Pool ({len(coins)}): {_code(pairs_str)}",
         f"Time (LKT):  {_code(datetime.now(LKT).strftime('%H:%M'))}",

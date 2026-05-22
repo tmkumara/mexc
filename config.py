@@ -39,10 +39,9 @@ WS_PING_INTERVAL_SECONDS: int = int(os.getenv("WS_PING_INTERVAL_SECONDS", "20"))
 WS_PING_TIMEOUT_SECONDS: int = int(os.getenv("WS_PING_TIMEOUT_SECONDS", "10"))
 WS_TEST_SYMBOLS: list[str] = []
 
-CANDLE_CACHE_LIMIT: int = int(os.getenv("CANDLE_CACHE_LIMIT", "220"))
+CANDLE_CACHE_LIMIT: int = int(os.getenv("CANDLE_CACHE_LIMIT", "260"))
 CANDLE_BOOTSTRAP_WORKERS: int = int(os.getenv("CANDLE_BOOTSTRAP_WORKERS", "6"))
 
-# ── WebSocket heartbeat / subscription tuning ─────────────────────
 WS_APP_HEARTBEAT_ENABLED: bool = os.getenv("WS_APP_HEARTBEAT_ENABLED", "true").lower() == "true"
 WS_APP_HEARTBEAT_SECONDS: int = int(os.getenv("WS_APP_HEARTBEAT_SECONDS", "15"))
 WS_SUBSCRIBE_DELAY_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_DELAY_SECONDS", "0.12"))
@@ -51,21 +50,14 @@ WS_SUBSCRIBE_BATCH_PAUSE_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_BATCH_PA
 
 # ── Coin pool ────────────────────────────────────────────────────
 EXCLUDE_COINS: set[str] = {
-    "BTC_USDT",
-    "ETH_USDT",
-    "SOL_USDT",
-    "XAUT_USDT",
-    "XPT_USDT",
-    "XAU_USDT",
-    "XAG_USDT",
-    "XPD_USDT",
-    "XBR_USDT",
-    "WTI_USDT",
+    "BTC_USDT", "ETH_USDT", "SOL_USDT",
+    "XAUT_USDT", "XPT_USDT", "XAU_USDT", "XAG_USDT", "XPD_USDT",
+    "XBR_USDT", "WTI_USDT",
 }
 
-TOP_N_COINS: int = 80
-COIN_POOL_MIN_VOLUME_USD: float = 750_000
-COIN_REFRESH_HOURS: int = 6
+TOP_N_COINS: int = int(os.getenv("TOP_N_COINS", "80"))
+COIN_POOL_MIN_VOLUME_USD: float = float(os.getenv("COIN_POOL_MIN_VOLUME_USD", "1000000"))
+COIN_REFRESH_HOURS: int = int(os.getenv("COIN_REFRESH_HOURS", "6"))
 
 FUTURES_ONLY: bool = True
 CRYPTO_FUTURES_ONLY: bool = True
@@ -74,102 +66,121 @@ REQUIRE_SYMBOL_IN_CONTRACT_DETAIL: bool = True
 REQUIRE_SYMBOL_IN_TICKER: bool = True
 
 # ── Smart Coin Ranking ────────────────────────────────────────────
-ENABLE_SMART_COIN_RANKING: bool = True
-
+ENABLE_SMART_COIN_RANKING: bool = os.getenv("ENABLE_SMART_COIN_RANKING", "true").lower() == "true"
 COIN_RANK_CANDIDATE_MULTIPLIER: int = 4
 COIN_RANK_MAX_CANDIDATES: int = 180
-
 COIN_RANK_TIMEFRAME: str = "15m"
 COIN_RANK_KLINE_COUNT: int = 48
 COIN_RANK_WORKERS: int = 3
-
 COIN_RANK_MIN_LAST_PRICE: float = 0.000001
-COIN_RANK_MIN_RANGE_PCT: float = 0.08
-COIN_RANK_MAX_RANGE_PCT: float = 20.00
-COIN_RANK_MAX_ABS_MOVE_PCT: float = 24.00
-
+COIN_RANK_MIN_RANGE_PCT: float = 0.10
+COIN_RANK_MAX_RANGE_PCT: float = 16.00
+COIN_RANK_MAX_ABS_MOVE_PCT: float = 18.00
 COIN_RANK_VOLUME_WEIGHT: float = 40.0
 COIN_RANK_VOLATILITY_WEIGHT: float = 25.0
 COIN_RANK_TREND_WEIGHT: float = 15.0
 COIN_RANK_LIQUIDITY_WEIGHT: float = 20.0
-
 COIN_RANK_OVEREXTENSION_PENALTY: float = 25.0
 COIN_RANK_LOW_ACTIVITY_PENALTY: float = 15.0
 
-# ── Strategy: Stable 15m Breakout + Retest + 1h Trend ─────────────
-STRATEGY_NAME: str = "Stable 15m Breakout Retest EMA/VWAP Scalper"
+# ── Strategy: HTF SMC Sweep + FVG/OB Retest Scalper ───────────────
+STRATEGY_NAME: str = "HTF SMC Sweep + FVG/OB Retest Scalper"
 
-# 1h = direction filter, 15m = entry/retest
-TREND_TF: str = "1h"
-ENTRY_TF: str = "15m"
+# 1h = regime filter, 15m = setup, 5m = execution
+REGIME_TF: str = "1h"
+SETUP_TF: str = "15m"
+EXECUTION_TF: str = "5m"
 
-TREND_KLINE_COUNT: int = 160
-ENTRY_KLINE_COUNT: int = 180
-MONITOR_KLINE_COUNT: int = 100
+# Backward compatible names used by main/bot/market_data.
+TREND_TF: str = REGIME_TF
+ENTRY_TF: str = EXECUTION_TF
 
-BREAKOUT_LOOKBACK: int = 20
-RETEST_MAX_CANDLES: int = 3
+REGIME_KLINE_COUNT: int = 180
+SETUP_KLINE_COUNT: int = 220
+EXECUTION_KLINE_COUNT: int = 180
+TREND_KLINE_COUNT: int = REGIME_KLINE_COUNT
+ENTRY_KLINE_COUNT: int = EXECUTION_KLINE_COUNT
+MONITOR_KLINE_COUNT: int = 140
 
+REGIME_EMA_FAST: int = 50
+REGIME_EMA_SLOW: int = 200
 EMA_PERIOD: int = 50
-TREND_EMA_PERIOD: int = 50
+TREND_EMA_PERIOD: int = REGIME_EMA_FAST
+
+SWING_LEFT: int = 3
+SWING_RIGHT: int = 2
+SETUP_LOOKBACK: int = 160
+SWEEP_LOOKBACK: int = 34
+DISPLACEMENT_BODY_MULTIPLIER: float = 1.55
+DISPLACEMENT_CLOSE_POSITION: float = 0.68
+ORDER_BLOCK_LOOKBACK: int = 12
+
+FVG_LOOKBACK_AFTER_SWEEP: int = 8
+REQUIRE_FVG_CONFIRMATION: bool = True
+REQUIRE_VOLUME_CONFIRMATION: bool = True
+REQUIRE_MINOR_BOS_AFTER_RETEST: bool = True
+
 VWAP_LOOKBACK_BARS: int = 64
-
 ATR_PERIOD: int = 14
-ATR_SL_BUFFER_MULTIPLIER: float = 0.35
+ATR_SL_BUFFER_MULTIPLIER: float = 0.55
 
-MIN_RR: float = 1.20
-TARGET_RR: float = 1.30
-MAX_RR: float = 1.60
-
-MAX_BREAKOUT_CANDLE_BODY_PCT: float = 1.80
-MAX_RETEST_CANDLE_BODY_PCT: float = 1.30
-
-MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT: float = 0.35
-MAX_DISTANCE_FROM_VWAP_PCT: float = 1.20
-
-MIN_VOLUME_MULTIPLIER: float = 1.00
 AVG_VOLUME_PERIOD: int = 20
+MIN_VOLUME_MULTIPLIER: float = 1.15
+MAX_WICK_TO_BODY_RATIO: float = 2.8
+MAX_ENTRY_DISTANCE_FROM_ZONE_PCT: float = 0.45
+MAX_DISTANCE_FROM_VWAP_PCT: float = 1.35
+MIN_RETEST_REJECTION_POSITION: float = 0.58
 
-# Stronger score for stable mode
-MIN_SIGNAL_SCORE: float = 78.0
+MIN_RR: float = 1.50
+TARGET_RR: float = 1.80
+MAX_RR: float = 2.40
+
+MIN_SL_PCT: float = 0.28
+MAX_SL_PCT: float = 1.35
+MIN_SIGNAL_SCORE: float = 82.0
 SETUPS_PER_SCAN: int = 2
 SIGNALS_PER_SCAN: int = 1
 
+RETEST_MAX_CANDLES: int = 18
+PENDING_SETUP_EXPIRE_CANDLES: int = RETEST_MAX_CANDLES
+
 # ── Trade params ─────────────────────────────────────────────────
-LEVERAGE: int = 10
+LEVERAGE: int = int(os.getenv("LEVERAGE", "10"))
 
 TP_ROI_PCT: float = 0.0
 SL_ROI_PCT: float = 0.0
 REWARD_RATIO: float = TARGET_RR
 
-MIN_TP_ROI_PCT: float = 2.5
-MAX_TP_ROI_PCT: float = 18.0
+MIN_TP_ROI_PCT: float = 3.0
+MAX_TP_ROI_PCT: float = 24.0
 MIN_SL_ROI_PCT: float = 2.0
-MAX_SL_ROI_PCT: float = 12.0
+MAX_SL_ROI_PCT: float = 14.0
 
 # ── Scheduler ────────────────────────────────────────────────────
-SIGNAL_COOLDOWN_MINUTES: int = 90
-SIGNAL_EXPIRE_HOURS: int = 6
+SIGNAL_COOLDOWN_MINUTES: int = 120
+SIGNAL_EXPIRE_HOURS: int = 5
 MAX_CONCURRENT_SIGNALS: int = 1
-
 SETUP_SCAN_CRON_MINUTES: str = "*/5"
 SETUP_MONITOR_MINUTES: int = 1
 OUTCOME_CHECK_MINUTES: int = 1
-CANDLE_MINUTES: int = 15
-
-PENDING_SETUP_EXPIRE_CANDLES: int = RETEST_MAX_CANDLES
-
+CANDLE_MINUTES: int = 5
 SCAN_WORKERS: int = 4
 
 # ── Backward-compatible constants for old imports/UI ──────────────
+BREAKOUT_LOOKBACK: int = 20
+MAX_BREAKOUT_CANDLE_BODY_PCT: float = 1.60
+MAX_RETEST_CANDLE_BODY_PCT: float = 1.20
+MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT: float = MAX_ENTRY_DISTANCE_FROM_ZONE_PCT
 EMA_FAST_PERIOD: int = EMA_PERIOD
 EMA_SLOW_PERIOD: int = EMA_PERIOD
-MOMENTUM_BODY_MULTIPLIER: float = 1.0
+MOMENTUM_BODY_MULTIPLIER: float = DISPLACEMENT_BODY_MULTIPLIER
 MOMENTUM_VOLUME_MULTIPLIER: float = MIN_VOLUME_MULTIPLIER
 TAKE_PROFIT_PRICE_PCT: float = 0.0
 STOP_LOSS_PRICE_PCT: float = 0.0
+MAX_SIGNAL_CANDLE_BODY_PCT: float = MAX_RETEST_CANDLE_BODY_PCT
+MAX_RECENT_MOVE_PCT: float = 8.0
+RECENT_MOVE_LOOKBACK: int = 36
 
-# Old Squeeze/WaveTrend compatibility values.
 WT_CHANNEL_LENGTH: int = 10
 WT_AVERAGE_LENGTH: int = 21
 WT_SIGNAL_LENGTH: int = 4
@@ -194,11 +205,22 @@ RECENT_WT_CROSS_BARS: int = 3
 REQUIRE_SUPERTREND_ALIGNMENT: bool = True
 REQUIRE_SQUEEZE_RELEASE: bool = True
 REQUIRE_WAVETREND_ALIGNMENT: bool = True
-TARGET_ATR_MULTIPLIER: float = 2.0
-STOP_LOSS_ATR_MULTIPLIER: float = 3.0
-MAX_SIGNAL_CANDLE_BODY_PCT: float = MAX_BREAKOUT_CANDLE_BODY_PCT
-MAX_RECENT_MOVE_PCT: float = 8.0
-RECENT_MOVE_LOOKBACK: int = 36
+TARGET_ATR_MULTIPLIER: float = TARGET_RR
+STOP_LOSS_ATR_MULTIPLIER: float = ATR_SL_BUFFER_MULTIPLIER
+
+# ── Trend scanner legacy settings ─────────────────────────────────
+TREND_N_COINS: int = 150
+TREND_SCAN_WORKERS: int = 4
+TREND_PIVOT_LOOKBACK: int = 3
+TREND_MIN_IMPULSE_PCT: float = 4.0
+TREND_MIN_IMPULSE_1D: float = 7.0
+TREND_ADX_MIN: float = 18.0
+TREND_ADX_PERIOD: int = 14
+TREND_KLINE_COUNT_4H: int = 180
+TREND_KLINE_COUNT_1D: int = 180
+TREND_IMPULSE_WINDOW: int = 8
+TREND_MIN_MOMENTUM_RATIO: float = 0.55
+TREND_MIN_BODY_RATIO: float = 0.45
 
 # ── Database ──────────────────────────────────────────────────────
 DB_PATH = os.getenv("DB_PATH", "signals.db")
