@@ -15,14 +15,23 @@ TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 COINGLASS_API_KEY: str = os.getenv("COINGLASS_API_KEY", "")
 
 # ── Coin pool ────────────────────────────────────────────────────
-EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
+QUOTE_CURRENCY: str = os.getenv("QUOTE_CURRENCY", "USDT")
+CRYPTO_FUTURES_ONLY: bool = os.getenv("CRYPTO_FUTURES_ONLY", "true").lower() == "true"
+
+EXCLUDE_COINS: set[str] = {
+    coin.strip().upper()
+    for coin in os.getenv(
+        "EXCLUDE_COINS",
+        "BTC_USDT,ETH_USDT,SOL_USDT,XAUT_USDT",
+    ).split(",")
+    if coin.strip()
+}
 
 TOP_N_COINS: int = int(os.getenv("TOP_N_COINS", "80"))
 COIN_POOL_MIN_VOLUME_USD: float = float(os.getenv("COIN_POOL_MIN_VOLUME_USD", "5000000"))
 COIN_REFRESH_HOURS: int = int(os.getenv("COIN_REFRESH_HOURS", "6"))
 
-# ── Backward compatibility for existing coin_scanner.py ───────────
-# Keep these because coin_scanner.py imports them directly.
+# ── Smart coin ranking / coin_scanner.py compatibility ────────────
 ENABLE_SMART_COIN_RANKING: bool = (
     os.getenv("ENABLE_SMART_COIN_RANKING", "true").lower() == "true"
 )
@@ -31,6 +40,58 @@ COIN_RANK_CANDIDATE_MULTIPLIER: int = int(
     os.getenv("COIN_RANK_CANDIDATE_MULTIPLIER", "4")
 )
 
+COIN_RANK_MAX_CANDIDATES: int = int(
+    os.getenv(
+        "COIN_RANK_MAX_CANDIDATES",
+        str(TOP_N_COINS * COIN_RANK_CANDIDATE_MULTIPLIER),
+    )
+)
+
+COIN_RANK_TIMEFRAME: str = os.getenv("COIN_RANK_TIMEFRAME", "15m")
+COIN_RANK_KLINE_COUNT: int = int(os.getenv("COIN_RANK_KLINE_COUNT", "80"))
+COIN_RANK_WORKERS: int = int(os.getenv("COIN_RANK_WORKERS", "4"))
+
+COIN_RANK_MIN_LAST_PRICE: float = float(
+    os.getenv("COIN_RANK_MIN_LAST_PRICE", "0.000001")
+)
+
+COIN_RANK_MIN_RANGE_PCT: float = float(
+    os.getenv("COIN_RANK_MIN_RANGE_PCT", "0.20")
+)
+
+COIN_RANK_MAX_RANGE_PCT: float = float(
+    os.getenv("COIN_RANK_MAX_RANGE_PCT", "18.0")
+)
+
+COIN_RANK_MAX_ABS_MOVE_PCT: float = float(
+    os.getenv("COIN_RANK_MAX_ABS_MOVE_PCT", "12.0")
+)
+
+COIN_RANK_VOLUME_WEIGHT: float = float(
+    os.getenv("COIN_RANK_VOLUME_WEIGHT", "0.35")
+)
+
+COIN_RANK_VOLATILITY_WEIGHT: float = float(
+    os.getenv("COIN_RANK_VOLATILITY_WEIGHT", "0.30")
+)
+
+COIN_RANK_TREND_WEIGHT: float = float(
+    os.getenv("COIN_RANK_TREND_WEIGHT", "0.20")
+)
+
+COIN_RANK_LIQUIDITY_WEIGHT: float = float(
+    os.getenv("COIN_RANK_LIQUIDITY_WEIGHT", "0.15")
+)
+
+COIN_RANK_OVEREXTENSION_PENALTY: float = float(
+    os.getenv("COIN_RANK_OVEREXTENSION_PENALTY", "0.25")
+)
+
+COIN_RANK_LOW_ACTIVITY_PENALTY: float = float(
+    os.getenv("COIN_RANK_LOW_ACTIVITY_PENALTY", "0.20")
+)
+
+# Older compatibility names.
 SMART_RANKING_LOOKBACK_MINUTES: int = int(
     os.getenv("SMART_RANKING_LOOKBACK_MINUTES", "240")
 )
@@ -43,7 +104,6 @@ SMART_RANKING_TOP_N: int = int(
     os.getenv("SMART_RANKING_TOP_N", str(TOP_N_COINS))
 )
 
-# Optional compatibility names used by older scanner versions.
 MIN_24H_VOLUME_USD: float = float(
     os.getenv("MIN_24H_VOLUME_USD", str(COIN_POOL_MIN_VOLUME_USD))
 )
@@ -100,33 +160,24 @@ MIN_ABS_MTM_AFTER_CROSS: float = float(
 )
 
 # ── Choppy market avoidance filters ───────────────────────────────
-# ADX filter: avoid weak/sideways trends.
 MIN_ADX: float = float(os.getenv("MIN_ADX", "22.0"))
 ADX_PERIOD: int = int(os.getenv("ADX_PERIOD", "14"))
 
-# EMA spread filter: avoid compressed/choppy EMA structure.
-# Defaults are selected based on strategy timeframe.
 _DEFAULT_MIN_EMA_SPREAD = "0.25" if STRATEGY_TF == "1h" else "0.40"
 MIN_EMA_SPREAD_PCT: float = float(
     os.getenv("MIN_EMA_SPREAD_PCT", _DEFAULT_MIN_EMA_SPREAD)
 )
 
-# ATR volatility filter: avoid very flat markets.
 MIN_ATR_PCT: float = float(os.getenv("MIN_ATR_PCT", "0.45"))
 
-# Trigger candle quality filter: avoid doji/wick-only candles.
 MIN_TRIGGER_BODY_RATIO: float = float(
     os.getenv("MIN_TRIGGER_BODY_RATIO", "0.35")
 )
 
-# Avoid abnormal big candle entries after movement already happened.
 MAX_TRIGGER_RANGE_ATR_MULTIPLIER: float = float(
     os.getenv("MAX_TRIGGER_RANGE_ATR_MULTIPLIER", "2.2")
 )
 
-# Higher timeframe confirmation.
-# For 1h signals, 4h must not be opposite.
-# For 4h signals, 1d must not be opposite.
 ENABLE_HTF_CONFIRMATION: bool = (
     os.getenv("ENABLE_HTF_CONFIRMATION", "true").lower() == "true"
 )
@@ -183,16 +234,12 @@ MAX_CONCURRENT_SIGNALS: int = int(
     os.getenv("MAX_CONCURRENT_SIGNALS", "10")
 )
 
-# Direct signal scan. For 1h, every 5 min is fine because strategy uses only
-# completed candles and cooldown prevents duplicates.
 SETUP_SCAN_CRON_MINUTES: str = os.getenv("SETUP_SCAN_CRON_MINUTES", "*/5")
 
 SIGNALS_PER_SCAN: int = int(os.getenv("SIGNALS_PER_SCAN", "3"))
 
-# Keep modest to avoid MEXC rate limits.
 SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "4"))
 
-# Outcome checker.
 OUTCOME_CHECK_MINUTES: int = int(
     os.getenv("OUTCOME_CHECK_MINUTES", "1")
 )
