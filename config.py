@@ -5,222 +5,84 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Timezone ──────────────────────────────────────────────────────
-LKT = timezone(timedelta(hours=5, minutes=30))
+LKT = timezone(timedelta(hours=5, minutes=30))   # Sri Lanka Time (UTC+5:30)
 
 # ── Telegram ──────────────────────────────────────────────────────
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN      = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 
 # ── CoinGlass optional API ────────────────────────────────────────
 COINGLASS_API_KEY: str = os.getenv("COINGLASS_API_KEY", "")
 
-# ── MEXC Futures REST API ─────────────────────────────────────────
-MEXC_BASE_URL = "https://contract.mexc.com/api/v1"
-
-# ── MEXC Futures WebSocket ────────────────────────────────────────
-ENABLE_WEBSOCKET: bool = os.getenv("ENABLE_WEBSOCKET", "true").lower() == "true"
-REST_FALLBACK_ENABLED: bool = os.getenv("REST_FALLBACK_ENABLED", "true").lower() == "true"
-
-MEXC_WS_URL: str = os.getenv("MEXC_WS_URL", "wss://contract.mexc.com/edge")
-
-MEXC_INTERVAL_MAP: dict[str, str] = {
-    "1m": "Min1",
-    "3m": "Min1",
-    "5m": "Min5",
-    "15m": "Min15",
-    "30m": "Min30",
-    "1h": "Min60",
-    "4h": "Hour4",
-    "1d": "Day1",
-}
-
-WS_RECONNECT_DELAY_SECONDS: int = int(os.getenv("WS_RECONNECT_DELAY_SECONDS", "5"))
-WS_PING_INTERVAL_SECONDS: int = int(os.getenv("WS_PING_INTERVAL_SECONDS", "20"))
-WS_PING_TIMEOUT_SECONDS: int = int(os.getenv("WS_PING_TIMEOUT_SECONDS", "10"))
-WS_TEST_SYMBOLS: list[str] = []
-
-CANDLE_CACHE_LIMIT: int = int(os.getenv("CANDLE_CACHE_LIMIT", "260"))
-CANDLE_BOOTSTRAP_WORKERS: int = int(os.getenv("CANDLE_BOOTSTRAP_WORKERS", "6"))
-
-WS_APP_HEARTBEAT_ENABLED: bool = os.getenv("WS_APP_HEARTBEAT_ENABLED", "true").lower() == "true"
-WS_APP_HEARTBEAT_SECONDS: int = int(os.getenv("WS_APP_HEARTBEAT_SECONDS", "15"))
-WS_SUBSCRIBE_DELAY_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_DELAY_SECONDS", "0.12"))
-WS_SUBSCRIBE_BATCH_SIZE: int = int(os.getenv("WS_SUBSCRIBE_BATCH_SIZE", "10"))
-WS_SUBSCRIBE_BATCH_PAUSE_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_BATCH_PAUSE_SECONDS", "0.80"))
-
 # ── Coin pool ────────────────────────────────────────────────────
-EXCLUDE_COINS: set[str] = {
-    "BTC_USDT", "ETH_USDT", "SOL_USDT",
-    "XAUT_USDT", "XPT_USDT", "XAU_USDT", "XAG_USDT", "XPD_USDT",
-    "XBR_USDT", "WTI_USDT",
-}
+EXCLUDE_COINS: set[str] = {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XAUT_USDT"}
+TOP_N_COINS:              int   = 80
+COIN_POOL_MIN_VOLUME_USD: float = 5_000_000
+COIN_REFRESH_HOURS:       int   = 6
 
-TOP_N_COINS: int = int(os.getenv("TOP_N_COINS", "80"))
-COIN_POOL_MIN_VOLUME_USD: float = float(os.getenv("COIN_POOL_MIN_VOLUME_USD", "1000000"))
-COIN_REFRESH_HOURS: int = int(os.getenv("COIN_REFRESH_HOURS", "6"))
+# ── Fresh Trend Meter + Stoch MTM Strategy ────────────────────────
+# Use "1h" for more signals, "4h" for fewer but more stable signals.
+STRATEGY_TF: str = os.getenv("STRATEGY_TF", "1h")
+TREND_TF:    str = STRATEGY_TF
+ENTRY_TF:    str = STRATEGY_TF
 
-FUTURES_ONLY: bool = True
-CRYPTO_FUTURES_ONLY: bool = True
-QUOTE_CURRENCY: str = "USDT"
-REQUIRE_SYMBOL_IN_CONTRACT_DETAIL: bool = True
-REQUIRE_SYMBOL_IN_TICKER: bool = True
+STRATEGY_KLINE_COUNT: int = 260
 
-# ── Smart Coin Ranking ────────────────────────────────────────────
-ENABLE_SMART_COIN_RANKING: bool = os.getenv("ENABLE_SMART_COIN_RANKING", "true").lower() == "true"
-COIN_RANK_CANDIDATE_MULTIPLIER: int = 4
-COIN_RANK_MAX_CANDIDATES: int = 180
-COIN_RANK_TIMEFRAME: str = "15m"
-COIN_RANK_KLINE_COUNT: int = 48
-COIN_RANK_WORKERS: int = 3
-COIN_RANK_MIN_LAST_PRICE: float = 0.000001
-COIN_RANK_MIN_RANGE_PCT: float = 0.10
-COIN_RANK_MAX_RANGE_PCT: float = 16.00
-COIN_RANK_MAX_ABS_MOVE_PCT: float = 18.00
-COIN_RANK_VOLUME_WEIGHT: float = 40.0
-COIN_RANK_VOLATILITY_WEIGHT: float = 25.0
-COIN_RANK_TREND_WEIGHT: float = 15.0
-COIN_RANK_LIQUIDITY_WEIGHT: float = 20.0
-COIN_RANK_OVEREXTENSION_PENALTY: float = 25.0
-COIN_RANK_LOW_ACTIVITY_PENALTY: float = 15.0
+# Trend Meter approximation:
+# Line 1 = EMA13/EMA21
+# Line 2 = EMA34/EMA55
+# Line 3 = close vs EMA200
+TREND_EMA_FAST_1: int = 13
+TREND_EMA_SLOW_1: int = 21
+TREND_EMA_FAST_2: int = 34
+TREND_EMA_SLOW_2: int = 55
+TREND_EMA_FILTER: int = 200
 
-# ── Strategy: HTF SMC Sweep + FVG/OB Retest Scalper ───────────────
-STRATEGY_NAME: str = "HTF SMC Sweep + FVG/OB Retest Scalper"
+# Stoch MTM / SMI settings.
+STOCH_MTM_LENGTH: int = 10
+STOCH_MTM_SMOOTH_1: int = 3
+STOCH_MTM_SMOOTH_2: int = 10
+STOCH_MTM_SIGNAL: int = 5
+STOCH_MTM_UPPER: float = 40.0
+STOCH_MTM_LOWER: float = -40.0
 
-# 1h = regime filter, 15m = setup, 5m = execution
-REGIME_TF: str = "1h"
-SETUP_TF: str = "15m"
-EXECUTION_TF: str = "5m"
+# Entry quality filters.
+REQUIRE_CLOSED_CROSS: bool = True
+MAX_CROSS_LOOKBACK_CANDLES: int = 1
+MIN_ABS_MTM_AFTER_CROSS: float = 35.0
 
-# Backward compatible names used by main/bot/market_data.
-TREND_TF: str = REGIME_TF
-ENTRY_TF: str = EXECUTION_TF
-
-REGIME_KLINE_COUNT: int = 180
-SETUP_KLINE_COUNT: int = 220
-EXECUTION_KLINE_COUNT: int = 180
-TREND_KLINE_COUNT: int = REGIME_KLINE_COUNT
-ENTRY_KLINE_COUNT: int = EXECUTION_KLINE_COUNT
-MONITOR_KLINE_COUNT: int = 140
-
-REGIME_EMA_FAST: int = 50
-REGIME_EMA_SLOW: int = 200
-EMA_PERIOD: int = 50
-TREND_EMA_PERIOD: int = REGIME_EMA_FAST
-
-SWING_LEFT: int = 3
-SWING_RIGHT: int = 2
-SETUP_LOOKBACK: int = 160
-SWEEP_LOOKBACK: int = 34
-DISPLACEMENT_BODY_MULTIPLIER: float = 1.55
-DISPLACEMENT_CLOSE_POSITION: float = 0.68
-ORDER_BLOCK_LOOKBACK: int = 12
-
-FVG_LOOKBACK_AFTER_SWEEP: int = 8
-REQUIRE_FVG_CONFIRMATION: bool = True
-REQUIRE_VOLUME_CONFIRMATION: bool = True
-REQUIRE_MINOR_BOS_AFTER_RETEST: bool = True
-
-VWAP_LOOKBACK_BARS: int = 64
+# Risk management.
 ATR_PERIOD: int = 14
-ATR_SL_BUFFER_MULTIPLIER: float = 0.55
-
-AVG_VOLUME_PERIOD: int = 20
-MIN_VOLUME_MULTIPLIER: float = 1.15
-MAX_WICK_TO_BODY_RATIO: float = 2.8
-MAX_ENTRY_DISTANCE_FROM_ZONE_PCT: float = 0.45
-MAX_DISTANCE_FROM_VWAP_PCT: float = 1.35
-MIN_RETEST_REJECTION_POSITION: float = 0.58
-
-MIN_RR: float = 1.50
-TARGET_RR: float = 1.80
-MAX_RR: float = 2.40
-
-MIN_SL_PCT: float = 0.28
-MAX_SL_PCT: float = 1.35
-MIN_SIGNAL_SCORE: float = 82.0
-SETUPS_PER_SCAN: int = 2
-SIGNALS_PER_SCAN: int = 1
-
-RETEST_MAX_CANDLES: int = 18
-PENDING_SETUP_EXPIRE_CANDLES: int = RETEST_MAX_CANDLES
+ATR_SL_MULTIPLIER: float = 1.25
+REWARD_RATIO: float = 1.6
+MIN_SL_PCT: float = 0.25
+MAX_SL_PCT: float = 2.50
 
 # ── Trade params ─────────────────────────────────────────────────
-LEVERAGE: int = int(os.getenv("LEVERAGE", "10"))
-
+LEVERAGE: int = 20
 TP_ROI_PCT: float = 0.0
 SL_ROI_PCT: float = 0.0
-REWARD_RATIO: float = TARGET_RR
-
-MIN_TP_ROI_PCT: float = 3.0
-MAX_TP_ROI_PCT: float = 24.0
-MIN_SL_ROI_PCT: float = 2.0
-MAX_SL_ROI_PCT: float = 14.0
 
 # ── Scheduler ────────────────────────────────────────────────────
-SIGNAL_COOLDOWN_MINUTES: int = 120
-SIGNAL_EXPIRE_HOURS: int = 5
-MAX_CONCURRENT_SIGNALS: int = 1
+SIGNAL_COOLDOWN_MINUTES: int = 180 if STRATEGY_TF == "1h" else 480
+SIGNAL_EXPIRE_HOURS:     int = 10 if STRATEGY_TF == "1h" else 24
+MAX_CONCURRENT_SIGNALS:  int = 10
+
+# Direct signal scan. For 1h, every 5 min is fine because strategy uses only
+# completed candles and cooldown prevents duplicates.
 SETUP_SCAN_CRON_MINUTES: str = "*/5"
-SETUP_MONITOR_MINUTES: int = 1
-OUTCOME_CHECK_MINUTES: int = 1
-CANDLE_MINUTES: int = 5
+SIGNALS_PER_SCAN: int = 3
 SCAN_WORKERS: int = 4
 
-# ── Backward-compatible constants for old imports/UI ──────────────
-BREAKOUT_LOOKBACK: int = 20
-MAX_BREAKOUT_CANDLE_BODY_PCT: float = 1.60
-MAX_RETEST_CANDLE_BODY_PCT: float = 1.20
-MAX_ENTRY_DISTANCE_FROM_BREAKOUT_PCT: float = MAX_ENTRY_DISTANCE_FROM_ZONE_PCT
-EMA_FAST_PERIOD: int = EMA_PERIOD
-EMA_SLOW_PERIOD: int = EMA_PERIOD
-MOMENTUM_BODY_MULTIPLIER: float = DISPLACEMENT_BODY_MULTIPLIER
-MOMENTUM_VOLUME_MULTIPLIER: float = MIN_VOLUME_MULTIPLIER
-TAKE_PROFIT_PRICE_PCT: float = 0.0
-STOP_LOSS_PRICE_PCT: float = 0.0
-MAX_SIGNAL_CANDLE_BODY_PCT: float = MAX_RETEST_CANDLE_BODY_PCT
-MAX_RECENT_MOVE_PCT: float = 8.0
-RECENT_MOVE_LOOKBACK: int = 36
+# Outcome checker.
+OUTCOME_CHECK_MINUTES: int = 1
+CANDLE_MINUTES: int = 60 if STRATEGY_TF == "1h" else 240
 
-WT_CHANNEL_LENGTH: int = 10
-WT_AVERAGE_LENGTH: int = 21
-WT_SIGNAL_LENGTH: int = 4
-WT_OVERBOUGHT_LEVEL_1: float = 60.0
-WT_OVERBOUGHT_LEVEL_2: float = 53.0
-WT_OVERSOLD_LEVEL_1: float = -60.0
-WT_OVERSOLD_LEVEL_2: float = -53.0
-SUPERTREND_ATR_PERIOD: int = 10
-SUPERTREND_FACTOR: float = 2.5
-SQUEEZE_BB_LENGTH: int = 20
-SQUEEZE_BB_MULT: float = 2.0
-SQUEEZE_KC_LENGTH: int = 20
-SQUEEZE_KC_MULT: float = 1.5
-SQUEEZE_USE_TRUE_RANGE: bool = True
-SQUEEZE_SIGNAL_LENGTH: int = 5
-SQUEEZE_LOWER_THRESHOLD: float = -1.0
-SQUEEZE_UPPER_THRESHOLD: float = 1.0
-USE_RECENT_SQUEEZE_RELEASE: bool = True
-RECENT_SQUEEZE_RELEASE_BARS: int = 3
-USE_WAVETREND_CROSS_CONFIRMATION: bool = True
-RECENT_WT_CROSS_BARS: int = 3
-REQUIRE_SUPERTREND_ALIGNMENT: bool = True
-REQUIRE_SQUEEZE_RELEASE: bool = True
-REQUIRE_WAVETREND_ALIGNMENT: bool = True
-TARGET_ATR_MULTIPLIER: float = TARGET_RR
-STOP_LOSS_ATR_MULTIPLIER: float = ATR_SL_BUFFER_MULTIPLIER
+# Kept for compatibility with older DB/status references.
+SETUP_MONITOR_MINUTES: int = 1
 
-# ── Trend scanner legacy settings ─────────────────────────────────
-TREND_N_COINS: int = 150
-TREND_SCAN_WORKERS: int = 4
-TREND_PIVOT_LOOKBACK: int = 3
-TREND_MIN_IMPULSE_PCT: float = 4.0
-TREND_MIN_IMPULSE_1D: float = 7.0
-TREND_ADX_MIN: float = 18.0
-TREND_ADX_PERIOD: int = 14
-TREND_KLINE_COUNT_4H: int = 180
-TREND_KLINE_COUNT_1D: int = 180
-TREND_IMPULSE_WINDOW: int = 8
-TREND_MIN_MOMENTUM_RATIO: float = 0.55
-TREND_MIN_BODY_RATIO: float = 0.45
+# ── MEXC Futures REST API ─────────────────────────────────────────
+MEXC_BASE_URL = "https://contract.mexc.com/api/v1"
 
 # ── Database ──────────────────────────────────────────────────────
 DB_PATH = os.getenv("DB_PATH", "signals.db")

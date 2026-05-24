@@ -1,11 +1,10 @@
 """
-Main entry point — Stable 15m Breakout + Retest + EMA/VWAP Scalper.
+Main entry point — Fresh Trend Meter + Stoch MTM strategy.
 
 Scheduler jobs:
-  Every 5 min     — scan coin pool for 15m breakout setups
-  Every 1 min     — monitor pending 15m retest setups
+  Every 5 min     — scan top coins for direct Trend Meter + Stoch MTM signals
   Every 1 min     — check pending signal outcomes
-  Every 6h        — refresh futures-only coin pool
+  Every 6h        — refresh coin pool
   23:55 daily     — daily report
   Mon 07:00       — weekly report
   1st 07:00       — monthly report
@@ -27,33 +26,21 @@ import strategy
 import bot as tg
 import coin_scanner
 
-from candle_cache import CandleCache
-from market_data import set_candle_cache
-from mexc_client import get_klines, get_current_price
-from mexc_ws_client import MexcWebSocketClient
-
+from mexc_client import get_klines
 from config import (
     LKT,
-    STRATEGY_NAME,
     SIGNAL_COOLDOWN_MINUTES,
     SIGNAL_EXPIRE_HOURS,
     COIN_REFRESH_HOURS,
     MAX_CONCURRENT_SIGNALS,
     LEVERAGE,
     ENTRY_TF,
-    TREND_TF,
+    STRATEGY_TF,
     SETUP_SCAN_CRON_MINUTES,
-    SETUP_MONITOR_MINUTES,
     SIGNALS_PER_SCAN,
     OUTCOME_CHECK_MINUTES,
     CANDLE_MINUTES,
     SCAN_WORKERS,
-    MIN_SIGNAL_SCORE,
-    SETUPS_PER_SCAN,
-    ENABLE_WEBSOCKET,
-    CANDLE_CACHE_LIMIT,
-    CANDLE_BOOTSTRAP_WORKERS,
-    MEXC_INTERVAL_MAP,
 )
 
 logging.basicConfig(
@@ -71,155 +58,46 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
-logging.getLogger("websockets").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
-_RUNTIME_CACHE: CandleCache | None = None
-_WS_CLIENT: MexcWebSocketClient | None = None
-_WS_TASK: asyncio.Task | None = None
 
+# ── direct signal scan ────────────────────────────────────────────
 
-# ── candle cache / websocket ──────────────────────────────────────
-
-def _bootstrap_one_symbol(cache: CandleCache, symbol: str) -> tuple[str, bool, str]:
-    """
-    Seed entry timeframe cache from REST.
-
-    Important:
-        CandleCache must be seeded using the MEXC interval key, e.g. Min15,
-        because market_data.py reads cache using MEXC_INTERVAL_MAP.
-    """
-    try:
-        candles = get_klines(symbol, ENTRY_TF, count=CANDLE_CACHE_LIMIT)
-
-        if candles is None or candles.empty:
-            return symbol, False, "empty_rest_candles"
-
-        mexc_interval = MEXC_INTERVAL_MAP.get(ENTRY_TF, ENTRY_TF)
-        cache.seed(symbol, mexc_interval, candles)
-
-        return symbol, True, "seeded"
-
-    except Exception as e:
-        return symbol, False, str(e)
-
-
-async def bootstrap_candle_cache(symbols: list[str]) -> CandleCache:
-    cache = CandleCache(limit=CANDLE_CACHE_LIMIT)
-
-    if not symbols:
-        logger.warning("[CACHE] No symbols to bootstrap")
-        set_candle_cache(cache)
-        return cache
-
-    logger.info(
-        "[CACHE] Bootstrapping %s symbols x %s candles for %s",
-        len(symbols),
-        CANDLE_CACHE_LIMIT,
-        ENTRY_TF,
-    )
-
-    loop = asyncio.get_event_loop()
-
-    with ThreadPoolExecutor(max_workers=CANDLE_BOOTSTRAP_WORKERS) as executor:
-        results = await loop.run_in_executor(
-            None,
-            lambda: list(executor.map(lambda s: _bootstrap_one_symbol(cache, s), symbols)),
-        )
-
-    ok = sum(1 for _, success, _ in results if success)
-    failed = [f"{symbol}:{reason}" for symbol, success, reason in results if not success]
-
-    logger.info("[CACHE] Bootstrap complete ok=%s failed=%s", ok, len(failed))
-
-    if failed:
-        logger.warning("[CACHE] Bootstrap failed preview=%s", failed[:10])
-
-    set_candle_cache(cache)
-    return cache
-
-
-async def start_market_websocket(cache: CandleCache, symbols: list[str]) -> asyncio.Task | None:
-    if not ENABLE_WEBSOCKET:
-        logger.info("[WS] Disabled by config")
-        return None
-
-    if not symbols:
-        logger.warning("[WS] No symbols to subscribe")
-        return None
-
-    async def on_candle_update(result):
-        # Strategy scanning is handled by scheduler.
-        # Later we can optimize to scan only the symbol whose candle closed.
-        return None
-
-    client = MexcWebSocketClient(
-        candle_cache=cache,
-        symbols=symbols,
-        app_intervals=[ENTRY_TF],
-        on_candle_update=on_candle_update,
-    )
-
-    task = asyncio.create_task(client.start(), name="mexc_ws_client")
-
-    global _WS_CLIENT
-    _WS_CLIENT = client
-
-    logger.info("[WS] Started client for %s symbols on %s", len(symbols), ENTRY_TF)
-    return task
-
-
-# ── setup detection scan ──────────────────────────────────────────
-
-async def scan_for_setups(app: Application) -> None:
+async def scan_for_signals(app: Application) -> None:
     if tg.paused:
-        logger.info("[SETUP-SCAN] Paused, skipping")
+        logger.info("[SCAN] Paused, skipping")
+        return
+
+    active = db.count_active_signals()
+    slots = MAX_CONCURRENT_SIGNALS - active
+
+    if slots <= 0:
+        logger.info(f"[SCAN] {active}/{MAX_CONCURRENT_SIGNALS} active signals, skipping")
         return
 
     coins = coin_scanner.get_cached_coins()
 
     if not coins:
-        logger.warning("[SETUP-SCAN] Empty coin pool, skipping")
+        logger.warning("[SCAN] Empty coin pool, skipping")
         return
 
     now = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
 
-    filtered_cooldown = 0
-    filtered_pending = 0
+    to_scan = [
+        symbol
+        for symbol in coins
+        if not db.signal_exists_for_coin(symbol, cooldown_since)
+    ]
 
-    to_scan = []
+    logger.info(f"[SCAN] {len(to_scan)}/{len(coins)} coins after cooldown filter")
 
-    for symbol in coins:
-        if db.signal_exists_for_coin(symbol, cooldown_since):
-            filtered_cooldown += 1
-            continue
-
-        if db.pending_setup_exists(symbol):
-            filtered_pending += 1
-            continue
-
-        to_scan.append(symbol)
-
-    logger.info(
-        "[SETUP-SCAN] pool=%s eligible=%s cooldown=%s pending=%s trend_tf=%s entry_tf=%s",
-        len(coins),
-        len(to_scan),
-        filtered_cooldown,
-        filtered_pending,
-        TREND_TF,
-        ENTRY_TF,
-    )
-
-    if not to_scan:
-        return
-
-    def _detect(symbol: str):
+    def _analyze(symbol: str):
         try:
-            return strategy.detect_setup(symbol)
+            return strategy.analyze_coin(symbol)
         except Exception as e:
-            logger.error("[SETUP-SCAN] %s setup error: %s", symbol, e, exc_info=True)
+            logger.error(f"[SCAN] {symbol} analyze error: {e}", exc_info=True)
             return None
 
     loop = asyncio.get_event_loop()
@@ -227,96 +105,21 @@ async def scan_for_setups(app: Application) -> None:
     with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as executor:
         results = await loop.run_in_executor(
             None,
-            lambda: list(executor.map(_detect, to_scan)),
+            lambda: list(executor.map(_analyze, to_scan)),
         )
 
-    setups = [
-        setup
-        for setup in results
-        if setup is not None and float(setup.get("score", 0.0)) >= MIN_SIGNAL_SCORE
-    ]
+    signals = [sig for sig in results if sig is not None]
 
-    if not setups:
-        logger.info("[SETUP-SCAN] Done — 0 stable 15m breakout setups found")
+    if not signals:
+        logger.info("[SCAN] Done — 0 signals found")
         return
 
-    setups.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
-    setups = setups[:SETUPS_PER_SCAN]
+    signals.sort(key=lambda sig: sig.score, reverse=True)
+    to_send = signals[:min(SIGNALS_PER_SCAN, slots)]
 
-    saved = 0
+    logger.info(f"[SCAN] {len(signals)} signal(s), sending {len(to_send)}")
 
-    for setup in setups:
-        setup_id = db.save_pending_setup(setup)
-
-        if setup_id:
-            saved += 1
-            logger.info(
-                "[SETUP-SCAN] Saved setup #%s %s %s level=%s score=%s",
-                setup_id,
-                setup["symbol"],
-                setup["direction"],
-                f"{setup['sweep_level']:.6g}",
-                setup["score"],
-            )
-
-    logger.info("[SETUP-SCAN] Done — saved=%s candidates=%s", saved, len(setups))
-
-
-# ── pending retest monitor ────────────────────────────────────────
-
-async def monitor_setups(app: Application) -> None:
-    if tg.paused:
-        logger.info("[RETEST-MONITOR] Paused, skipping")
-        return
-
-    active = db.count_active_signals()
-    slots = MAX_CONCURRENT_SIGNALS - active
-
-    if slots <= 0:
-        logger.info(
-            "[RETEST-MONITOR] %s/%s active signals, skipping",
-            active,
-            MAX_CONCURRENT_SIGNALS,
-        )
-        return
-
-    now = datetime.now(timezone.utc)
-    db.expire_old_waiting_setups(now)
-
-    setups = db.get_waiting_setups(limit=100)
-
-    if not setups:
-        logger.info("[RETEST-MONITOR] No waiting retest setups")
-        return
-
-    logger.info("[RETEST-MONITOR] Checking %s waiting setups", len(setups))
-
-    fired_signals = []
-
-    for setup in setups:
-        status, sig = strategy.evaluate_pending_setup(setup)
-
-        if status == "EXPIRED":
-            db.mark_setup_expired(setup["id"])
-            logger.info("[RETEST-MONITOR] Expired setup #%s %s", setup["id"], setup["symbol"])
-
-        elif status == "INVALIDATED":
-            db.mark_setup_invalidated(setup["id"])
-            logger.info("[RETEST-MONITOR] Invalidated setup #%s %s", setup["id"], setup["symbol"])
-
-        elif status == "FIRE" and sig is not None:
-            fired_signals.append((setup, sig))
-
-    if not fired_signals:
-        logger.info("[RETEST-MONITOR] Done — 0 retest entries fired")
-        return
-
-    fired_signals.sort(key=lambda item: item[1].score, reverse=True)
-    to_send = fired_signals[:min(SIGNALS_PER_SCAN, slots)]
-
-    logger.info("[RETEST-MONITOR] fired=%s sending=%s", len(fired_signals), len(to_send))
-
-    for setup, sig in to_send:
+    for sig in to_send:
         signal_id = db.save_signal(
             symbol=sig.symbol,
             direction=sig.direction,
@@ -327,20 +130,14 @@ async def monitor_setups(app: Application) -> None:
             generated_at=sig.generated_at,
         )
 
-        db.mark_setup_fired(setup["id"], signal_id)
-
         try:
             await tg.broadcast_signal(app, sig, signal_id)
             logger.info(
-                "[RETEST-MONITOR] Sent signal #%s from setup #%s %s %s score=%s",
-                signal_id,
-                setup["id"],
-                sig.symbol,
-                sig.direction,
-                sig.score,
+                f"[SCAN] Sent signal #{signal_id} "
+                f"{sig.symbol} {sig.direction} score={sig.score}"
             )
         except Exception as e:
-            logger.error("Failed to broadcast %s: %s", sig.symbol, e, exc_info=True)
+            logger.error(f"Failed to broadcast {sig.symbol}: {e}", exc_info=True)
 
 
 # ── outcome checker ───────────────────────────────────────────────
@@ -366,30 +163,6 @@ def _calculate_pnl_roi(
     return price_move_pct * LEVERAGE
 
 
-async def _close_signal(app: Application, sig: dict, outcome: str, pnl: float) -> None:
-    db.update_signal_outcome(sig["id"], outcome, pnl)
-
-    logger.info(
-        "Signal %s %s (%s) %+.1f%%",
-        sig["id"],
-        outcome.upper(),
-        sig["symbol"],
-        pnl,
-    )
-
-    try:
-        await tg.notify_outcome(
-            app,
-            {
-                **sig,
-                "status": outcome,
-                "pnl_roi": pnl,
-            },
-        )
-    except Exception as e:
-        logger.error("Failed to notify %s for %s: %s", outcome, sig["symbol"], e, exc_info=True)
-
-
 async def check_outcomes(app: Application) -> None:
     pending = db.get_pending_signals()
     now = datetime.now(timezone.utc)
@@ -407,39 +180,21 @@ async def check_outcomes(app: Application) -> None:
             generated = generated.replace(tzinfo=timezone.utc)
 
         if (now - generated).total_seconds() > SIGNAL_EXPIRE_HOURS * 3600:
-            await _close_signal(app, sig, "expired", 0.0)
-            continue
+            db.update_signal_outcome(sig["id"], "expired", 0.0)
+            logger.info(f"Signal {sig['id']} expired ({symbol})")
 
-        try:
-            current_price = get_current_price(symbol)
-        except Exception as e:
-            logger.warning("Could not fetch current price for %s: %s", symbol, e)
-            current_price = None
+            try:
+                await tg.notify_outcome(
+                    app,
+                    {
+                        **sig,
+                        "status": "expired",
+                        "pnl_roi": 0.0,
+                    },
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify expiry for {symbol}: {e}", exc_info=True)
 
-        instant_outcome = None
-
-        if current_price is not None:
-            if direction == "LONG":
-                if current_price >= tp_price:
-                    instant_outcome = "win"
-                elif current_price <= sl_price:
-                    instant_outcome = "loss"
-            else:
-                if current_price <= tp_price:
-                    instant_outcome = "win"
-                elif current_price >= sl_price:
-                    instant_outcome = "loss"
-
-        if instant_outcome is not None:
-            pnl = _calculate_pnl_roi(
-                direction=direction,
-                outcome=instant_outcome,
-                entry_price=entry_price,
-                tp_price=tp_price,
-                sl_price=sl_price,
-            )
-
-            await _close_signal(app, sig, instant_outcome, pnl)
             continue
 
         elapsed_min = max(
@@ -447,7 +202,7 @@ async def check_outcomes(app: Application) -> None:
             CANDLE_MINUTES,
         )
 
-        fetch_count = int(elapsed_min / CANDLE_MINUTES) + 3
+        fetch_count = int(elapsed_min / CANDLE_MINUTES) + 5
 
         try:
             df = get_klines(symbol, ENTRY_TF, count=fetch_count)
@@ -456,7 +211,7 @@ async def check_outcomes(app: Application) -> None:
                 continue
 
         except Exception as e:
-            logger.warning("Could not fetch candles for %s: %s", symbol, e)
+            logger.warning(f"Could not fetch candles for {symbol}: {e}")
             continue
 
         entry_candle_cutoff = (
@@ -507,56 +262,45 @@ async def check_outcomes(app: Application) -> None:
             sl_price=sl_price,
         )
 
-        await _close_signal(app, sig, outcome, pnl)
+        db.update_signal_outcome(sig["id"], outcome, pnl)
+
+        logger.info(f"Signal {sig['id']} {outcome.upper()} ({symbol}) {pnl:+.1f}%")
+
+        try:
+            await tg.notify_outcome(
+                app,
+                {
+                    **sig,
+                    "status": outcome,
+                    "pnl_roi": pnl,
+                },
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify {outcome} for {symbol}: {e}", exc_info=True)
 
 
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    global _RUNTIME_CACHE, _WS_TASK, _WS_CLIENT
-
-    logger.info("Starting MEXC Signal Bot — %s", STRATEGY_NAME)
+    logger.info(
+        f"Starting MEXC Signal Bot — Fresh Trend Meter + Stoch MTM ({STRATEGY_TF})"
+    )
 
     db.init_db()
 
-    logger.info("Loading futures-only ranked coin pool...")
+    logger.info("Loading coin pool...")
     coins = coin_scanner.refresh_coin_list()
-    ranked_preview = coin_scanner.get_cached_coin_scores()[:10]
-
-    logger.info("Signal pool: %s ranked futures coins", len(coins))
-
-    if ranked_preview:
-        logger.info(
-            "[COIN-RANK] startup top ranked: "
-            + ", ".join(
-                f"{row.get('symbol', '').replace('_USDT', '')}:{row.get('score', 0)}"
-                for row in ranked_preview
-            )
-        )
-
-    _RUNTIME_CACHE = await bootstrap_candle_cache(coins)
-    _WS_TASK = await start_market_websocket(_RUNTIME_CACHE, coins)
+    logger.info(f"Signal pool: {len(coins)} coins")
 
     app = tg.build_app()
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
     scheduler.add_job(
-        scan_for_setups,
+        scan_for_signals,
         CronTrigger(minute=SETUP_SCAN_CRON_MINUTES),
         args=[app],
-        id="setup_scanner",
-        max_instances=1,
-        coalesce=True,
-    )
-
-    scheduler.add_job(
-        monitor_setups,
-        IntervalTrigger(minutes=SETUP_MONITOR_MINUTES),
-        args=[app],
-        id="retest_monitor",
-        max_instances=1,
-        coalesce=True,
+        id="trend_stoch_scanner",
     )
 
     scheduler.add_job(
@@ -564,16 +308,12 @@ async def main():
         IntervalTrigger(minutes=OUTCOME_CHECK_MINUTES),
         args=[app],
         id="outcome_checker",
-        max_instances=1,
-        coalesce=True,
     )
 
     scheduler.add_job(
         coin_scanner.refresh_coin_list,
         CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
         id="coin_refresh",
-        max_instances=1,
-        coalesce=True,
     )
 
     async def _daily(app=app):
@@ -592,12 +332,8 @@ async def main():
     scheduler.start()
 
     logger.info(
-        "Scheduler started — setup scan='%s', retest monitor=%sm, outcome=%sm, trend_tf=%s, entry_tf=%s",
-        SETUP_SCAN_CRON_MINUTES,
-        SETUP_MONITOR_MINUTES,
-        OUTCOME_CHECK_MINUTES,
-        TREND_TF,
-        ENTRY_TF,
+        f"Scheduler started — scan='{SETUP_SCAN_CRON_MINUTES}', strategy_tf={STRATEGY_TF}, "
+        f"outcome_check={OUTCOME_CHECK_MINUTES}m"
     )
 
     async with app:
@@ -613,17 +349,6 @@ async def main():
             pass
         finally:
             scheduler.shutdown(wait=False)
-
-            if _WS_CLIENT is not None:
-                await _WS_CLIENT.stop()
-
-            if _WS_TASK is not None:
-                _WS_TASK.cancel()
-                try:
-                    await _WS_TASK
-                except asyncio.CancelledError:
-                    pass
-
             await app.updater.stop()
             await app.stop()
             await app.shutdown()
