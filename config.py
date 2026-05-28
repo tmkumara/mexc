@@ -116,8 +116,7 @@ MIN_PRICE_CHANGE_24H_PCT: float = float(
     os.getenv("MIN_PRICE_CHANGE_24H_PCT", "0.0")
 )
 
-# ── Fresh Trend Meter + Stoch MTM Strategy ────────────────────────
-# Use "1h" for more signals, "4h" for fewer but more stable signals.
+# ── EMA + CCI Strategy ────────────────────────────────────────────
 STRATEGY_TF: str = os.getenv("STRATEGY_TF", "1h")
 
 TREND_TF: str = STRATEGY_TF
@@ -125,88 +124,16 @@ ENTRY_TF: str = STRATEGY_TF
 
 STRATEGY_KLINE_COUNT: int = int(os.getenv("STRATEGY_KLINE_COUNT", "260"))
 
-# Trend Meter approximation:
-# Line 1 = EMA13/EMA21
-# Line 2 = EMA34/EMA55
-# Line 3 = close vs EMA200
-TREND_EMA_FAST_1: int = int(os.getenv("TREND_EMA_FAST_1", "13"))
-TREND_EMA_SLOW_1: int = int(os.getenv("TREND_EMA_SLOW_1", "21"))
-
-TREND_EMA_FAST_2: int = int(os.getenv("TREND_EMA_FAST_2", "34"))
-TREND_EMA_SLOW_2: int = int(os.getenv("TREND_EMA_SLOW_2", "55"))
-
-TREND_EMA_FILTER: int = int(os.getenv("TREND_EMA_FILTER", "200"))
-
-# Stoch MTM / SMI settings.
-STOCH_MTM_LENGTH: int = int(os.getenv("STOCH_MTM_LENGTH", "10"))
-STOCH_MTM_SMOOTH_1: int = int(os.getenv("STOCH_MTM_SMOOTH_1", "3"))
-STOCH_MTM_SMOOTH_2: int = int(os.getenv("STOCH_MTM_SMOOTH_2", "10"))
-STOCH_MTM_SIGNAL: int = int(os.getenv("STOCH_MTM_SIGNAL", "5"))
-
-STOCH_MTM_UPPER: float = float(os.getenv("STOCH_MTM_UPPER", "40.0"))
-STOCH_MTM_LOWER: float = float(os.getenv("STOCH_MTM_LOWER", "-40.0"))
-
-# Entry quality filters.
-REQUIRE_CLOSED_CROSS: bool = (
-    os.getenv("REQUIRE_CLOSED_CROSS", "true").lower() == "true"
-)
-
-MAX_CROSS_LOOKBACK_CANDLES: int = int(
-    os.getenv("MAX_CROSS_LOOKBACK_CANDLES", "1")
-)
-
-MIN_ABS_MTM_AFTER_CROSS: float = float(
-    os.getenv("MIN_ABS_MTM_AFTER_CROSS", "35.0")
-)
-
-# ── Choppy market avoidance filters ───────────────────────────────
-MIN_ADX: float = float(os.getenv("MIN_ADX", "22.0"))
-ADX_PERIOD: int = int(os.getenv("ADX_PERIOD", "14"))
-
-_DEFAULT_MIN_EMA_SPREAD = "0.25" if STRATEGY_TF == "1h" else "0.40"
-MIN_EMA_SPREAD_PCT: float = float(
-    os.getenv("MIN_EMA_SPREAD_PCT", _DEFAULT_MIN_EMA_SPREAD)
-)
-
-MIN_ATR_PCT: float = float(os.getenv("MIN_ATR_PCT", "0.45"))
-
-MIN_TRIGGER_BODY_RATIO: float = float(
-    os.getenv("MIN_TRIGGER_BODY_RATIO", "0.35")
-)
-
-MAX_TRIGGER_RANGE_ATR_MULTIPLIER: float = float(
-    os.getenv("MAX_TRIGGER_RANGE_ATR_MULTIPLIER", "2.2")
-)
-
-ENABLE_HTF_CONFIRMATION: bool = (
-    os.getenv("ENABLE_HTF_CONFIRMATION", "true").lower() == "true"
-)
-
-HTF_TF: str = os.getenv(
-    "HTF_TF",
-    "4h" if STRATEGY_TF == "1h" else "1d"
-)
-
-HTF_KLINE_COUNT: int = int(os.getenv("HTF_KLINE_COUNT", "260"))
+EMA_FAST: int = int(os.getenv("EMA_FAST", "10"))
+EMA_SLOW: int = int(os.getenv("EMA_SLOW", "20"))
+CCI_LENGTH: int = int(os.getenv("CCI_LENGTH", "20"))
+# bars to look back for recent lowest low / highest high (SL placement)
+SL_LOOKBACK: int = int(os.getenv("SL_LOOKBACK", "20"))
 
 # ── Risk management ───────────────────────────────────────────────
-ATR_PERIOD: int = int(os.getenv("ATR_PERIOD", "14"))
+REWARD_RATIO: float = float(os.getenv("REWARD_RATIO", "1.6"))
 
-ATR_SL_MULTIPLIER: float = float(
-    os.getenv("ATR_SL_MULTIPLIER", "1.25")
-)
-
-REWARD_RATIO: float = float(
-    os.getenv("REWARD_RATIO", "1.6")
-)
-
-MIN_SL_PCT: float = float(
-    os.getenv("MIN_SL_PCT", "0.25")
-)
-
-MAX_SL_PCT: float = float(
-    os.getenv("MAX_SL_PCT", "2.50")
-)
+MIN_TP_ROI_PCT: float = float(os.getenv("MIN_TP_ROI_PCT", "20.0"))
 
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE: int = int(os.getenv("LEVERAGE", "20"))
