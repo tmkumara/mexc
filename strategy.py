@@ -9,7 +9,7 @@ TP:    entry ± REWARD_RATIO × |entry − SL|
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import pandas as pd
 
@@ -24,6 +24,7 @@ from config import (
     REWARD_RATIO,
     LEVERAGE,
     MIN_TP_ROI_PCT,
+    CANDLE_MINUTES,
 )
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,17 @@ def analyze_coin(symbol: str) -> Signal | None:
             logger.info(
                 f"[NO-SIGNAL] {symbol} cross_up={ema_cross_up} cross_down={ema_cross_down} "
                 f"CCI={cci_now:.2f}"
+            )
+            return None
+
+        # Reject stale crosses: candle must have closed within the last CANDLE_MINUTES
+        candle_open = completed.iloc[last_idx].name.to_pydatetime().replace(tzinfo=timezone.utc)
+        candle_close = candle_open + timedelta(minutes=CANDLE_MINUTES)
+        age = datetime.now(timezone.utc) - candle_close
+        if age > timedelta(minutes=CANDLE_MINUTES):
+            logger.info(
+                f"[NO-SIGNAL] {symbol} {direction} cross is stale "
+                f"(candle closed {int(age.total_seconds() / 60)}m ago)"
             )
             return None
 
