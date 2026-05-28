@@ -27,7 +27,7 @@ EXCLUDE_COINS: set[str] = {
     if coin.strip()
 }
 
-TOP_N_COINS: int = int(os.getenv("TOP_N_COINS", "80"))
+TOP_N_COINS: int = int(os.getenv("TOP_N_COINS", "150"))
 COIN_POOL_MIN_VOLUME_USD: float = float(os.getenv("COIN_POOL_MIN_VOLUME_USD", "5000000"))
 COIN_REFRESH_HOURS: int = int(os.getenv("COIN_REFRESH_HOURS", "6"))
 
@@ -146,7 +146,7 @@ SL_ROI_PCT: float = 0.0
 SIGNAL_COOLDOWN_MINUTES: int = int(
     os.getenv(
         "SIGNAL_COOLDOWN_MINUTES",
-        "180" if STRATEGY_TF == "1h" else "480",
+        "60" if STRATEGY_TF == "1h" else "240",
     )
 )
 
@@ -158,14 +158,14 @@ SIGNAL_EXPIRE_HOURS: int = int(
 )
 
 MAX_CONCURRENT_SIGNALS: int = int(
-    os.getenv("MAX_CONCURRENT_SIGNALS", "10")
+    os.getenv("MAX_CONCURRENT_SIGNALS", "20")
 )
 
 SETUP_SCAN_CRON_MINUTES: str = os.getenv("SETUP_SCAN_CRON_MINUTES", "*/5")
 
-SIGNALS_PER_SCAN: int = int(os.getenv("SIGNALS_PER_SCAN", "3"))
+SIGNALS_PER_SCAN: int = int(os.getenv("SIGNALS_PER_SCAN", "10"))
 
-SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "4"))
+SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "8"))
 
 OUTCOME_CHECK_MINUTES: int = int(
     os.getenv("OUTCOME_CHECK_MINUTES", "1")
