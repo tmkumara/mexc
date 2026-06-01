@@ -130,10 +130,26 @@ CCI_LENGTH: int = int(os.getenv("CCI_LENGTH", "20"))
 # bars to look back for recent lowest low / highest high (SL placement)
 SL_LOOKBACK: int = int(os.getenv("SL_LOOKBACK", "20"))
 
-# ── Risk management ───────────────────────────────────────────────
-REWARD_RATIO: float = float(os.getenv("REWARD_RATIO", "1.6"))
+# ── Pattern confirmation ───────────────────────────────────────────
+# BOS: signal candle close must break above/below structure from this many bars back
+BOS_LOOKBACK: int = int(os.getenv("BOS_LOOKBACK", "20"))
 
-MIN_TP_ROI_PCT: float = float(os.getenv("MIN_TP_ROI_PCT", "20.0"))
+# Double/Triple Top/Bottom: lookback window and tolerance for matching swing points
+DOUBLE_LOOKBACK: int = int(os.getenv("DOUBLE_LOOKBACK", "40"))
+DOUBLE_TOLERANCE_PCT: float = float(os.getenv("DOUBLE_TOLERANCE_PCT", "1.5"))
+
+# Minimum pattern score required to fire a signal
+# BOS=1, Flag=1, InsideBar=1, Double=2, Triple=3
+PATTERN_MIN_SCORE: int = int(os.getenv("PATTERN_MIN_SCORE", "2"))
+
+# ── Risk management ───────────────────────────────────────────────
+REWARD_RATIO: float = float(os.getenv("REWARD_RATIO", "1.5"))
+
+# Minimum absolute CCI value required to confirm momentum (filters near-zero crosses)
+CCI_MIN_ABS: float = float(os.getenv("CCI_MIN_ABS", "50.0"))
+
+# Maximum SL distance as % of entry (filters micro-caps with huge wicks)
+MAX_SL_PCT: float = float(os.getenv("MAX_SL_PCT", "5.0"))
 
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE: int = int(os.getenv("LEVERAGE", "20"))
