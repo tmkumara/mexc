@@ -116,40 +116,64 @@ MIN_PRICE_CHANGE_24H_PCT: float = float(
     os.getenv("MIN_PRICE_CHANGE_24H_PCT", "0.0")
 )
 
-# ── EMA + CCI Strategy ────────────────────────────────────────────
-STRATEGY_TF: str = os.getenv("STRATEGY_TF", "1h")
-
-TREND_TF: str = STRATEGY_TF
-ENTRY_TF: str = STRATEGY_TF
+# ── SMC Strategy timeframes ───────────────────────────────────────
+STRATEGY_TF: str = os.getenv("STRATEGY_TF", "1h")   # kept for compatibility
+TREND_TF:    str = os.getenv("TREND_TF", "15m")      # market structure bias
+ENTRY_TF:    str = os.getenv("ENTRY_TF", "5m")       # sweep + OB detection
+HTF_TREND_TF: str = os.getenv("HTF_TREND_TF", "1h") # higher timeframe confirmation
 
 STRATEGY_KLINE_COUNT: int = int(os.getenv("STRATEGY_KLINE_COUNT", "260"))
 
+# ── EMA + CCI Strategy (legacy analyze_coin wrapper) ─────────────
 EMA_FAST: int = int(os.getenv("EMA_FAST", "10"))
 EMA_SLOW: int = int(os.getenv("EMA_SLOW", "20"))
 CCI_LENGTH: int = int(os.getenv("CCI_LENGTH", "20"))
-# bars to look back for recent lowest low / highest high (SL placement)
 SL_LOOKBACK: int = int(os.getenv("SL_LOOKBACK", "20"))
 
-# ── Pattern confirmation ───────────────────────────────────────────
-# BOS: signal candle close must break above/below structure from this many bars back
 BOS_LOOKBACK: int = int(os.getenv("BOS_LOOKBACK", "20"))
-
-# Double/Triple Top/Bottom: lookback window and tolerance for matching swing points
 DOUBLE_LOOKBACK: int = int(os.getenv("DOUBLE_LOOKBACK", "40"))
 DOUBLE_TOLERANCE_PCT: float = float(os.getenv("DOUBLE_TOLERANCE_PCT", "1.5"))
-
-# Minimum pattern score required to fire a signal
-# BOS=1, Flag=1, InsideBar=1, Double=2, Triple=3
 PATTERN_MIN_SCORE: int = int(os.getenv("PATTERN_MIN_SCORE", "2"))
+
+# ── HTF Trend Filter ──────────────────────────────────────────────
+ENABLE_HTF_FILTER: bool = os.getenv("ENABLE_HTF_FILTER", "true").lower() == "true"
+HTF_EMA_FAST: int = int(os.getenv("HTF_EMA_FAST", "50"))
+HTF_EMA_SLOW: int = int(os.getenv("HTF_EMA_SLOW", "200"))
+HTF_KLINE_COUNT: int = int(os.getenv("HTF_KLINE_COUNT", "250"))
+
+# ── Entry EMA Alignment Filter ────────────────────────────────────
+ENABLE_ENTRY_EMA_FILTER: bool = os.getenv("ENABLE_ENTRY_EMA_FILTER", "true").lower() == "true"
+EMA_FAST_FILTER: int = int(os.getenv("EMA_FAST_FILTER", "20"))
+EMA_SLOW_FILTER: int = int(os.getenv("EMA_SLOW_FILTER", "50"))
+ENTRY_EMA_KLINE_COUNT: int = int(os.getenv("ENTRY_EMA_KLINE_COUNT", "100"))
+
+# ── ATR Filter ────────────────────────────────────────────────────
+ENABLE_ATR_FILTER: bool = os.getenv("ENABLE_ATR_FILTER", "true").lower() == "true"
+ATR_PERIOD: int = int(os.getenv("ATR_PERIOD", "14"))
+MIN_ATR_PCT: float = float(os.getenv("MIN_ATR_PCT", "0.25"))
+MAX_ATR_PCT: float = float(os.getenv("MAX_ATR_PCT", "3.00"))
+ATR_SL_MULTIPLIER: float = float(os.getenv("ATR_SL_MULTIPLIER", "0.25"))
+
+# ── Volume Confirmation ───────────────────────────────────────────
+ENABLE_VOLUME_FILTER: bool = os.getenv("ENABLE_VOLUME_FILTER", "true").lower() == "true"
+VOLUME_LOOKBACK: int = int(os.getenv("VOLUME_LOOKBACK", "20"))
+MIN_VOLUME_MULTIPLIER: float = float(os.getenv("MIN_VOLUME_MULTIPLIER", "1.10"))
+
+# ── BTC Market Regime Filter ──────────────────────────────────────
+ENABLE_BTC_FILTER: bool = os.getenv("ENABLE_BTC_FILTER", "true").lower() == "true"
+BTC_SYMBOL: str = os.getenv("BTC_SYMBOL", "BTC_USDT")
+BTC_TF: str = os.getenv("BTC_TF", "15m")
+BTC_EMA_PERIOD: int = int(os.getenv("BTC_EMA_PERIOD", "50"))
+BTC_KLINE_COUNT: int = int(os.getenv("BTC_KLINE_COUNT", "80"))
+
+# ── Setup scoring ─────────────────────────────────────────────────
+MIN_SETUP_SCORE: int = int(os.getenv("MIN_SETUP_SCORE", "75"))
 
 # ── Risk management ───────────────────────────────────────────────
 REWARD_RATIO: float = float(os.getenv("REWARD_RATIO", "1.5"))
-
-# Minimum absolute CCI value required to confirm momentum (filters near-zero crosses)
 CCI_MIN_ABS: float = float(os.getenv("CCI_MIN_ABS", "50.0"))
-
-# Maximum SL distance as % of entry (filters micro-caps with huge wicks)
 MAX_SL_PCT: float = float(os.getenv("MAX_SL_PCT", "5.0"))
+MIN_SL_PCT: float = float(os.getenv("MIN_SL_PCT", "0.10"))
 
 # ── Trade params ─────────────────────────────────────────────────
 LEVERAGE: int = int(os.getenv("LEVERAGE", "20"))
@@ -194,7 +218,6 @@ CANDLE_MINUTES: int = int(
     )
 )
 
-# Kept for compatibility with older DB/status references.
 SETUP_MONITOR_MINUTES: int = int(
     os.getenv("SETUP_MONITOR_MINUTES", "1")
 )
