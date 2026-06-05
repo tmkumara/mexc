@@ -199,17 +199,11 @@ def get_all_signals() -> list[dict]:
 
 
 def signal_exists_for_coin(symbol: str, since: datetime) -> bool:
-    """
-    Cooldown helper.
-
-    Important:
-        This checks ANY signal generated after `since`, not only pending signals.
-        Otherwise a coin can fire again immediately after a quick win/loss.
-    """
     with _conn() as con:
         row = con.execute("""
             SELECT id FROM signals
             WHERE symbol = ?
+              AND status = 'pending'
               AND generated_at >= ?
             LIMIT 1
         """, (symbol, since.isoformat())).fetchone()
@@ -302,11 +296,18 @@ def save_pending_setup(setup: dict) -> int | None:
 
 
 def get_waiting_setups(limit: int = 200) -> list[dict]:
+    """
+    Return waiting setups prioritized by quality and freshness.
+
+    Previous behavior returned the oldest rows first. That kept monitoring stale,
+    far-away setups and delayed better fresh setups. For the optimized strategy,
+    we monitor highest-score + newest setups first.
+    """
     with _conn() as con:
         rows = con.execute("""
             SELECT * FROM pending_setups
             WHERE status = 'waiting'
-            ORDER BY created_at ASC
+            ORDER BY score DESC, created_at DESC
             LIMIT ?
         """, (limit,)).fetchall()
 
@@ -321,6 +322,19 @@ def count_waiting_setups() -> int:
         """).fetchone()
 
         return row[0]
+
+
+def count_waiting_setups_by_direction() -> dict[str, int]:
+    """Return waiting setup counts grouped by direction."""
+    with _conn() as con:
+        rows = con.execute("""
+            SELECT direction, COUNT(*) AS cnt
+            FROM pending_setups
+            WHERE status = 'waiting'
+            GROUP BY direction
+        """).fetchall()
+
+        return {str(r["direction"]): int(r["cnt"]) for r in rows}
 
 
 def mark_setup_fired(setup_id: int, signal_id: int):
