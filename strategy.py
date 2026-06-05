@@ -79,9 +79,21 @@ from config import (
     MIN_SETUP_SCORE,
     LEVERAGE,
     CANDLE_MINUTES,
+    SETUP_MONITOR_LOG_DETAILS,
 )
 
 logger = logging.getLogger(__name__)
+
+_BTC_REGIME_CACHE: dict[str, object] = {
+    "expires_at": datetime.min.replace(tzinfo=timezone.utc),
+    "strongly_bullish": False,
+    "strongly_bearish": False,
+}
+
+
+def _debug_wait(symbol: str, message: str) -> None:
+    if SETUP_MONITOR_LOG_DETAILS:
+        logger.info("[SETUP-WAIT] %s | %s", symbol, message)
 
 
 @dataclass
@@ -351,34 +363,54 @@ def _volume_ok(df: pd.DataFrame, pos: int) -> bool:
 
 
 def _btc_regime_ok(direction: str) -> bool:
+    """
+    BTC market-regime guard with short in-process cache.
+
+    Without this cache, one full scan may fetch BTC candles once per coin,
+    which can slow the scheduler and cause missed outcome-check runs.
+    """
     if not ENABLE_BTC_FILTER:
         return True
 
+    now = datetime.now(timezone.utc)
+
     try:
-        df = get_klines(BTC_SYMBOL, BTC_TF, count=BTC_KLINE_COUNT)
-        if df is None or df.empty or len(df) < BTC_EMA_PERIOD + 5:
-            logger.warning("[BTC-REGIME] insufficient data — filter skipped")
-            return True
+        if now >= _BTC_REGIME_CACHE["expires_at"]:
+            df = get_klines(BTC_SYMBOL, BTC_TF, count=BTC_KLINE_COUNT)
 
-        close = df["close"].astype(float)
-        ema = _ema(close, BTC_EMA_PERIOD)
-        last_close = float(close.iloc[-1])
-        last_ema = float(ema.iloc[-1])
-        slope = _ema_slope(ema)
+            if df is None or df.empty or len(df) < BTC_EMA_PERIOD + 5:
+                logger.warning("[BTC-REGIME] insufficient data — filter skipped")
+                _BTC_REGIME_CACHE.update({
+                    "expires_at": now + timedelta(seconds=60),
+                    "strongly_bullish": False,
+                    "strongly_bearish": False,
+                })
+            else:
+                close = df["close"].astype(float)
+                ema = _ema(close, BTC_EMA_PERIOD)
+                last_close = float(close.iloc[-1])
+                last_ema = float(ema.iloc[-1])
+                slope = _ema_slope(ema)
 
-        strongly_bullish = last_close > last_ema and slope > 0
-        strongly_bearish = last_close < last_ema and slope < 0
+                strongly_bullish = last_close > last_ema and slope > 0
+                strongly_bearish = last_close < last_ema and slope < 0
 
-        if direction == "LONG" and strongly_bearish:
+                _BTC_REGIME_CACHE.update({
+                    "expires_at": now + timedelta(seconds=60),
+                    "strongly_bullish": strongly_bullish,
+                    "strongly_bearish": strongly_bearish,
+                })
+
+        if direction == "LONG" and bool(_BTC_REGIME_CACHE["strongly_bearish"]):
             return False
-        if direction == "SHORT" and strongly_bullish:
+        if direction == "SHORT" and bool(_BTC_REGIME_CACHE["strongly_bullish"]):
             return False
 
         return True
+
     except Exception as e:
         logger.warning("[BTC-REGIME] fetch error: %s — filter skipped", e)
         return True
-
 
 # ── sweep / displacement / OB ─────────────────────────────────────
 
@@ -760,6 +792,7 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
 
         df = get_klines(symbol, ENTRY_TF, count=MONITOR_KLINE_COUNT)
         if df is None or df.empty or len(df) < 3:
+            _debug_wait(symbol, "not enough monitor candles")
             return "WAIT", None
 
         completed = df.iloc[:-1].copy()
@@ -768,11 +801,15 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         # Invalidation before entry.
         for _, row in recent.iterrows():
             if direction == "LONG" and float(row["low"]) <= sl_price:
+                logger.info("[SETUP-INVALID] %s LONG | low %.6g <= SL %.6g before entry", symbol, float(row["low"]), sl_price)
                 return "INVALIDATED", None
             if direction == "SHORT" and float(row["high"]) >= sl_price:
+                logger.info("[SETUP-INVALID] %s SHORT | high %.6g >= SL %.6g before entry", symbol, float(row["high"]), sl_price)
                 return "INVALIDATED", None
 
         midpoint = (zone_low + zone_high) / 2.0
+        touched_zone = False
+        rejected_after_touch = False
 
         for _, row in recent.iterrows():
             high = float(row["high"])
@@ -783,7 +820,15 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             if not touches_zone:
                 continue
 
-            if _body_pct(row) > MAX_SIGNAL_CANDLE_BODY_PCT:
+            touched_zone = True
+
+            body_pct = _body_pct(row)
+            if body_pct > MAX_SIGNAL_CANDLE_BODY_PCT:
+                rejected_after_touch = True
+                _debug_wait(
+                    symbol,
+                    f"touched OB but candle body {body_pct:.2f}% > max {MAX_SIGNAL_CANDLE_BODY_PCT:.2f}%",
+                )
                 continue
 
             if direction == "LONG":
@@ -792,11 +837,18 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 valid_retest = _is_bearish(row) and close < midpoint
 
             if not valid_retest:
+                rejected_after_touch = True
+                _debug_wait(
+                    symbol,
+                    f"touched OB but confirmation failed close={close:.6g} midpoint={midpoint:.6g}",
+                )
                 continue
 
             entry = close
             prices = _calculate_final_prices(direction, entry, setup)
             if not prices:
+                rejected_after_touch = True
+                _debug_wait(symbol, "touched OB but final RR/SL validation failed")
                 return "WAIT", None
 
             tp_price, final_sl_price, tp_roi_pct, sl_roi_pct, rr = prices
@@ -831,6 +883,15 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 generated_at=datetime.now(timezone.utc),
                 score=score,
             )
+
+        if not touched_zone:
+            last_close = float(completed["close"].astype(float).iloc[-1])
+            _debug_wait(
+                symbol,
+                f"price not in OB yet close={last_close:.6g} OB={zone_low:.6g}-{zone_high:.6g}",
+            )
+        elif not rejected_after_touch:
+            _debug_wait(symbol, "touched OB but no valid entry condition matched")
 
         return "WAIT", None
 

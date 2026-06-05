@@ -42,6 +42,11 @@ from config import (
     OUTCOME_CHECK_MINUTES,
     CANDLE_MINUTES,
     SCAN_WORKERS,
+    MAX_NEW_SETUPS_PER_SCAN,
+    MAX_SETUPS_SAME_DIRECTION_PER_SCAN,
+    MAX_WAITING_SETUPS_TOTAL,
+    SCHEDULER_MISFIRE_GRACE_SECONDS,
+    SCHEDULER_MAX_INSTANCES,
 )
 
 logging.basicConfig(
@@ -111,12 +116,40 @@ async def scan_for_setups(app: Application) -> None:
 
     setups.sort(key=lambda setup: float(setup.get("score", 0.0)), reverse=True)
 
+    waiting_total = db.count_waiting_setups()
+    waiting_slots = max(MAX_WAITING_SETUPS_TOTAL - waiting_total, 0)
+    scan_limit = min(MAX_NEW_SETUPS_PER_SCAN, waiting_slots)
+
+    if scan_limit <= 0:
+        logger.info(
+            "[SETUP-SCAN] Waiting setup limit reached (%d/%d), skipping save",
+            waiting_total,
+            MAX_WAITING_SETUPS_TOTAL,
+        )
+        return
+
     saved = 0
+    direction_counts: dict[str, int] = {}
+
     for setup in setups:
+        if saved >= scan_limit:
+            break
+
+        direction = setup["direction"]
+        if direction_counts.get(direction, 0) >= MAX_SETUPS_SAME_DIRECTION_PER_SCAN:
+            logger.info(
+                "[SETUP-SCAN] Skip %s %s — same-direction scan limit %d reached",
+                setup["symbol"],
+                direction,
+                MAX_SETUPS_SAME_DIRECTION_PER_SCAN,
+            )
+            continue
+
         setup_id = db.save_pending_setup(setup)
 
         if setup_id:
             saved += 1
+            direction_counts[direction] = direction_counts.get(direction, 0) + 1
             logger.info(
                 "[SETUP-SCAN] Saved setup #%s %s %s OB=%.6g-%.6g score=%.1f",
                 setup_id,
@@ -127,7 +160,15 @@ async def scan_for_setups(app: Application) -> None:
                 float(setup["score"]),
             )
 
-    logger.info("[SETUP-SCAN] Done — %d/%d setups saved", saved, len(setups))
+    logger.info(
+        "[SETUP-SCAN] Done — %d/%d setups saved (scan_limit=%d, waiting_before=%d/%d, dir_counts=%s)",
+        saved,
+        len(setups),
+        scan_limit,
+        waiting_total,
+        MAX_WAITING_SETUPS_TOTAL,
+        direction_counts,
+    )
 
 
 # ── pending setup monitor ─────────────────────────────────────────
@@ -359,7 +400,14 @@ async def main():
 
     app = tg.build_app()
 
-    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler = AsyncIOScheduler(
+        timezone="UTC",
+        job_defaults={
+            "coalesce": True,
+            "max_instances": SCHEDULER_MAX_INSTANCES,
+            "misfire_grace_time": SCHEDULER_MISFIRE_GRACE_SECONDS,
+        },
+    )
 
     scheduler.add_job(
         scan_for_setups,
@@ -404,11 +452,16 @@ async def main():
     scheduler.start()
 
     logger.info(
-        "Scheduler started — setup scan='%s', monitor=%dm, entry_tf=%s, outcome_check=%dm",
+        "Scheduler started — setup scan='%s', monitor=%dm, entry_tf=%s, outcome_check=%dm, "
+        "setup_limit=%d, same_dir_limit=%d, waiting_limit=%d, misfire_grace=%ds",
         SETUP_SCAN_CRON_MINUTES,
         SETUP_MONITOR_MINUTES,
         ENTRY_TF,
         OUTCOME_CHECK_MINUTES,
+        MAX_NEW_SETUPS_PER_SCAN,
+        MAX_SETUPS_SAME_DIRECTION_PER_SCAN,
+        MAX_WAITING_SETUPS_TOTAL,
+        SCHEDULER_MISFIRE_GRACE_SECONDS,
     )
 
     async with app:

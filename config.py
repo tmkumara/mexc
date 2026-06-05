@@ -157,6 +157,19 @@ OUTCOME_CHECK_MINUTES: int = int(os.getenv("OUTCOME_CHECK_MINUTES", "1"))
 SIGNALS_PER_SCAN: int = int(os.getenv("SIGNALS_PER_SCAN", "3"))
 SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "4"))
 
+# Setup saving limits / correlation guard
+# Prevent one broad market condition from saving too many correlated waiting setups in a single scan.
+MAX_NEW_SETUPS_PER_SCAN: int = int(os.getenv("MAX_NEW_SETUPS_PER_SCAN", "6"))
+MAX_SETUPS_SAME_DIRECTION_PER_SCAN: int = int(os.getenv("MAX_SETUPS_SAME_DIRECTION_PER_SCAN", "4"))
+MAX_WAITING_SETUPS_TOTAL: int = int(os.getenv("MAX_WAITING_SETUPS_TOTAL", "30"))
+
+# Debug monitor logs
+SETUP_MONITOR_LOG_DETAILS: bool = os.getenv("SETUP_MONITOR_LOG_DETAILS", "true").lower() == "true"
+
+# APScheduler controls
+SCHEDULER_MISFIRE_GRACE_SECONDS: int = int(os.getenv("SCHEDULER_MISFIRE_GRACE_SECONDS", "30"))
+SCHEDULER_MAX_INSTANCES: int = int(os.getenv("SCHEDULER_MAX_INSTANCES", "1"))
+
 # Important: outcome checking uses ENTRY_TF 5m candles, so this must stay 5 by default.
 CANDLE_MINUTES: int = int(os.getenv("CANDLE_MINUTES", "5"))
 

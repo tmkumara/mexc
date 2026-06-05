@@ -182,6 +182,11 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SCAN_WORKERS,
         SETUP_SCAN_CRON_MINUTES,
         SETUP_MONITOR_MINUTES,
+        MAX_NEW_SETUPS_PER_SCAN,
+        MAX_SETUPS_SAME_DIRECTION_PER_SCAN,
+        MAX_WAITING_SETUPS_TOTAL,
+        SETUP_MONITOR_LOG_DETAILS,
+        SCHEDULER_MISFIRE_GRACE_SECONDS,
     )
 
     state = "⏸ PAUSED" if paused else "▶️ RUNNING"
@@ -221,9 +226,12 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Monitor:    {_code(f'every {SETUP_MONITOR_MINUTES} min')}",
         f"Workers:    {_code(SCAN_WORKERS)}",
         f"Leverage:   {_code(f'{LEVERAGE}x')}",
-        f"Per scan:   {_code(f'top {SIGNALS_PER_SCAN} entries')}",
+        f"Entries:    {_code(f'top {SIGNALS_PER_SCAN} fires/monitor')}",
+        f"Save limit: {_code(f'{MAX_NEW_SETUPS_PER_SCAN}/scan, {MAX_SETUPS_SAME_DIRECTION_PER_SCAN}/direction')}",
+        f"Wait cap:   {_code(f'{waiting}/{MAX_WAITING_SETUPS_TOTAL} setups')}",
         f"Cooldown:   {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
-        f"Waiting:    {_code(f'{waiting} setups')}",
+        f"Monitor log:{_code('on' if SETUP_MONITOR_LOG_DETAILS else 'off')}",
+        f"Misfire:    {_code(f'{SCHEDULER_MISFIRE_GRACE_SECONDS}s grace')}",
         f"Active:     {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
         f"Pool ({len(coins)}): {_code(pairs_str)}",
         f"Time (LKT): {_code(datetime.now(LKT).strftime('%H:%M'))}",
