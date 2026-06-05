@@ -58,14 +58,11 @@ MAX_SPREAD_PCT: float = float(os.getenv("MAX_SPREAD_PCT", "0.35"))
 MIN_PRICE_CHANGE_24H_PCT: float = float(os.getenv("MIN_PRICE_CHANGE_24H_PCT", "0.0"))
 
 # ── Hybrid SMC Pro Strategy ───────────────────────────────────────
-# Strategy flow:
-#   15m market-structure bias → 5m liquidity sweep/displacement/OB
-#   → save waiting setup → 5m OB retest confirmation → signal.
 STRATEGY_NAME: str = os.getenv("STRATEGY_NAME", "Hybrid SMC Pro")
-STRATEGY_TF: str = os.getenv("STRATEGY_TF", "5m")          # compatibility only; active entry TF is ENTRY_TF
-TREND_TF: str = os.getenv("TREND_TF", "15m")               # market-structure bias
-ENTRY_TF: str = os.getenv("ENTRY_TF", "5m")                # sweep + displacement + OB + retest
-HTF_TREND_TF: str = os.getenv("HTF_TREND_TF", "1h")        # higher-timeframe trend confirmation
+STRATEGY_TF: str = os.getenv("STRATEGY_TF", "5m")
+TREND_TF: str = os.getenv("TREND_TF", "15m")
+ENTRY_TF: str = os.getenv("ENTRY_TF", "5m")
+HTF_TREND_TF: str = os.getenv("HTF_TREND_TF", "1h")
 
 TREND_KLINE_COUNT: int = int(os.getenv("TREND_KLINE_COUNT", "220"))
 ENTRY_KLINE_COUNT: int = int(os.getenv("ENTRY_KLINE_COUNT", "220"))
@@ -111,7 +108,7 @@ ATR_SL_MULTIPLIER: float = float(os.getenv("ATR_SL_MULTIPLIER", "0.25"))
 # Volume confirmation
 ENABLE_VOLUME_FILTER: bool = os.getenv("ENABLE_VOLUME_FILTER", "true").lower() == "true"
 VOLUME_LOOKBACK: int = int(os.getenv("VOLUME_LOOKBACK", "20"))
-MIN_VOLUME_MULTIPLIER: float = float(os.getenv("MIN_VOLUME_MULTIPLIER", "1.10"))
+MIN_VOLUME_MULTIPLIER: float = float(os.getenv("MIN_VOLUME_MULTIPLIER", "1.05"))
 
 # BTC market regime filter
 ENABLE_BTC_FILTER: bool = os.getenv("ENABLE_BTC_FILTER", "true").lower() == "true"
@@ -128,24 +125,28 @@ SL_BUFFER_PCT: float = float(os.getenv("SL_BUFFER_PCT", "0.05"))
 TP_BUFFER_PCT: float = float(os.getenv("TP_BUFFER_PCT", "0.02"))
 MIN_SL_PCT: float = float(os.getenv("MIN_SL_PCT", "0.20"))
 MAX_SL_PCT: float = float(os.getenv("MAX_SL_PCT", "1.25"))
-MIN_SETUP_SCORE: int = int(os.getenv("MIN_SETUP_SCORE", "75"))
+MIN_SETUP_SCORE: int = int(os.getenv("MIN_SETUP_SCORE", "85"))
 
+# Setup quality / stale setup controls
+MAX_OB_DISTANCE_ATR: float = float(os.getenv("MAX_OB_DISTANCE_ATR", "2.0"))
+MAX_OB_DISTANCE_PCT: float = float(os.getenv("MAX_OB_DISTANCE_PCT", "1.20"))
+EXPIRE_IF_PRICE_AWAY_ATR: float = float(os.getenv("EXPIRE_IF_PRICE_AWAY_ATR", "3.0"))
+EXPIRE_IF_PRICE_AWAY_PCT: float = float(os.getenv("EXPIRE_IF_PRICE_AWAY_PCT", "2.0"))
+REVALIDATE_BEFORE_FIRE: bool = os.getenv("REVALIDATE_BEFORE_FIRE", "true").lower() == "true"
+OB_ENTRY_QUALITY_CHECK: bool = os.getenv("OB_ENTRY_QUALITY_CHECK", "true").lower() == "true"
 
-# Entry confirmation / MSS controls
-# If enabled, the bot will not enter on the first OB rejection candle.
-# It waits for a following completed candle to break the rejection candle high/low.
+# MSS / confirmation-break entry controls
 REQUIRE_MSS_BREAK_ENTRY: bool = os.getenv("REQUIRE_MSS_BREAK_ENTRY", "true").lower() == "true"
 MSS_BREAK_LOOKBACK_CANDLES: int = int(os.getenv("MSS_BREAK_LOOKBACK_CANDLES", "2"))
-MSS_BREAK_BUFFER_PCT: float = float(os.getenv("MSS_BREAK_BUFFER_PCT", "0.02"))
+MSS_BREAK_BUFFER_PCT: float = float(os.getenv("MSS_BREAK_BUFFER_PCT", "0.01"))
 
-# Stop-loss quality control
-# Prevents extremely tight SLs that are easily hit by normal 5m noise.
+# ATR stop floor: prevents very tight structure SL from normal 5m noise.
 ENABLE_ATR_STOP_FLOOR: bool = os.getenv("ENABLE_ATR_STOP_FLOOR", "true").lower() == "true"
 ATR_STOP_FLOOR_MULTIPLIER: float = float(os.getenv("ATR_STOP_FLOOR_MULTIPLIER", "0.75"))
 
-# Trend candle confirmation before firing a live signal.
+# Trend candle confirmation before firing.
 REQUIRE_TREND_CANDLE_CONFIRMATION: bool = os.getenv("REQUIRE_TREND_CANDLE_CONFIRMATION", "true").lower() == "true"
-TREND_CONFIRM_TF: str = os.getenv("TREND_CONFIRM_TF", TREND_TF)
+TREND_CONFIRM_TF: str = os.getenv("TREND_CONFIRM_TF", "15m")
 TREND_CONFIRM_KLINE_COUNT: int = int(os.getenv("TREND_CONFIRM_KLINE_COUNT", "20"))
 
 # ── Legacy EMA/CCI names kept only so old imports do not fail ─────
@@ -166,17 +167,36 @@ TP_ROI_PCT: float = 0.0
 SL_ROI_PCT: float = 0.0
 
 # ── Scheduler ────────────────────────────────────────────────────
-SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "60"))
+SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "120"))
 SIGNAL_EXPIRE_HOURS: int = int(os.getenv("SIGNAL_EXPIRE_HOURS", "6"))
-MAX_CONCURRENT_SIGNALS: int = int(os.getenv("MAX_CONCURRENT_SIGNALS", "10"))
+MAX_CONCURRENT_SIGNALS: int = int(os.getenv("MAX_CONCURRENT_SIGNALS", "5"))
 SETUP_SCAN_CRON_MINUTES: str = os.getenv("SETUP_SCAN_CRON_MINUTES", "*/5")
 SETUP_MONITOR_MINUTES: int = int(os.getenv("SETUP_MONITOR_MINUTES", "1"))
 OUTCOME_CHECK_MINUTES: int = int(os.getenv("OUTCOME_CHECK_MINUTES", "1"))
-SIGNALS_PER_SCAN: int = int(os.getenv("SIGNALS_PER_SCAN", "3"))
+SIGNALS_PER_SCAN: int = int(os.getenv("SIGNALS_PER_SCAN", "2"))
 SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "4"))
+
+# Setup saving limits / correlation guard
+MAX_NEW_SETUPS_PER_SCAN: int = int(os.getenv("MAX_NEW_SETUPS_PER_SCAN", "4"))
+MAX_SETUPS_SAME_DIRECTION_PER_SCAN: int = int(os.getenv("MAX_SETUPS_SAME_DIRECTION_PER_SCAN", "2"))
+MAX_WAITING_SETUPS_TOTAL: int = int(os.getenv("MAX_WAITING_SETUPS_TOTAL", "15"))
+MAX_WAITING_SETUPS_SAME_DIRECTION: int = int(os.getenv("MAX_WAITING_SETUPS_SAME_DIRECTION", "8"))
+SETUP_MONITOR_LIMIT: int = int(os.getenv("SETUP_MONITOR_LIMIT", "15"))
+
+# Debug monitor logs
+SETUP_MONITOR_LOG_DETAILS: bool = os.getenv("SETUP_MONITOR_LOG_DETAILS", "true").lower() == "true"
+
+# APScheduler controls
+SCHEDULER_MISFIRE_GRACE_SECONDS: int = int(os.getenv("SCHEDULER_MISFIRE_GRACE_SECONDS", "30"))
+SCHEDULER_MAX_INSTANCES: int = int(os.getenv("SCHEDULER_MAX_INSTANCES", "1"))
 
 # Important: outcome checking uses ENTRY_TF 5m candles, so this must stay 5 by default.
 CANDLE_MINUTES: int = int(os.getenv("CANDLE_MINUTES", "5"))
+
+# ── Log rotation / restart backup ─────────────────────────────────
+LOG_FILE: str = os.getenv("LOG_FILE", "mexc_bot.log")
+ENABLE_LOG_BACKUP_ON_START: bool = os.getenv("ENABLE_LOG_BACKUP_ON_START", "true").lower() == "true"
+LOG_BACKUP_DIR: str = os.getenv("LOG_BACKUP_DIR", "logs/archive")
 
 # ── MEXC Futures REST API ─────────────────────────────────────────
 MEXC_BASE_URL = os.getenv("MEXC_BASE_URL", "https://contract.mexc.com/api/v1")
