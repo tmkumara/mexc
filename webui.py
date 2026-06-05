@@ -14,9 +14,9 @@ Set in .env:
 This dashboard reads from SQLite directly and shows:
     - Signal performance
     - Recent signals
-    - Pending breakout/retest setups
+    - Pending SMC sweep/order-block setups
     - Current strategy configuration
-    - WebSocket/cache configuration
+    - Hybrid SMC/MSS confirmation configuration
 
 Frontend communication:
     - Primary: WebSocket /ws?token=<WEBUI_TOKEN>
@@ -282,40 +282,58 @@ def get_runtime_status() -> dict:
 
 
 def get_strategy_config() -> dict:
-    ws_test_symbols = _safe_config_value("WS_TEST_SYMBOLS", [])
-
-    if isinstance(ws_test_symbols, list):
-        ws_mode = "Full coin pool" if len(ws_test_symbols) == 0 else ", ".join(ws_test_symbols)
-    else:
-        ws_mode = str(ws_test_symbols)
-
+    """Return dashboard-safe strategy/runtime configuration for Hybrid SMC Pro."""
     return {
-        "strategy": _safe_config_value("STRATEGY_NAME", "Breakout Retest EMA/VWAP Scalper"),
+        "strategy": _safe_config_value("STRATEGY_NAME", "Hybrid SMC Pro"),
         "trend_tf": _safe_config_value("TREND_TF", "—"),
         "entry_tf": _safe_config_value("ENTRY_TF", "—"),
-        "entry_kline_count": _safe_config_value("ENTRY_KLINE_COUNT", "—"),
-        "monitor_kline_count": _safe_config_value("MONITOR_KLINE_COUNT", "—"),
+        "htf_trend_tf": _safe_config_value("HTF_TREND_TF", "—"),
         "top_n_coins": _safe_config_value("TOP_N_COINS", "—"),
         "min_volume_usd": _safe_config_value("COIN_POOL_MIN_VOLUME_USD", "—"),
-        "breakout_lookback": _safe_config_value("BREAKOUT_LOOKBACK", "—"),
-        "retest_max_candles": _safe_config_value("RETEST_MAX_CANDLES", "—"),
-        "ema_period": _safe_config_value("EMA_PERIOD", "—"),
-        "vwap_lookback": _safe_config_value("VWAP_LOOKBACK_BARS", "—"),
-        "atr_period": _safe_config_value("ATR_PERIOD", "—"),
-        "min_rr": _safe_config_value("MIN_RR", "—"),
-        "target_rr": _safe_config_value("TARGET_RR", "—"),
-        "max_rr": _safe_config_value("MAX_RR", "—"),
-        "min_score": _safe_config_value("MIN_SIGNAL_SCORE", "—"),
-        "setups_per_scan": _safe_config_value("SETUPS_PER_SCAN", "—"),
+        "entry_kline_count": _safe_config_value("ENTRY_KLINE_COUNT", "—"),
+        "monitor_kline_count": _safe_config_value("MONITOR_KLINE_COUNT", "—"),
+
+        "min_score": _safe_config_value("MIN_SETUP_SCORE", "—"),
         "signals_per_scan": _safe_config_value("SIGNALS_PER_SCAN", "—"),
         "max_concurrent_signals": _safe_config_value("MAX_CONCURRENT_SIGNALS", "—"),
         "cooldown_minutes": _safe_config_value("SIGNAL_COOLDOWN_MINUTES", "—"),
         "scan_workers": _safe_config_value("SCAN_WORKERS", "—"),
-        "websocket_enabled": _safe_config_value("ENABLE_WEBSOCKET", False),
-        "websocket_url": _safe_config_value("MEXC_WS_URL", "—"),
-        "websocket_symbols": ws_mode,
-        "candle_cache_limit": _safe_config_value("CANDLE_CACHE_LIMIT", "—"),
+
+        "max_new_setups_per_scan": _safe_config_value("MAX_NEW_SETUPS_PER_SCAN", "—"),
+        "max_setups_same_direction_per_scan": _safe_config_value("MAX_SETUPS_SAME_DIRECTION_PER_SCAN", "—"),
+        "max_waiting_setups_total": _safe_config_value("MAX_WAITING_SETUPS_TOTAL", "—"),
+        "max_waiting_setups_same_direction": _safe_config_value("MAX_WAITING_SETUPS_SAME_DIRECTION", "—"),
+        "setup_monitor_limit": _safe_config_value("SETUP_MONITOR_LIMIT", "—"),
+
+        "min_rr": _safe_config_value("MIN_STRUCTURE_RR", "—"),
+        "max_rr": _safe_config_value("MAX_STRUCTURE_RR", "—"),
+        "min_sl_pct": _safe_config_value("MIN_SL_PCT", "—"),
+        "max_sl_pct": _safe_config_value("MAX_SL_PCT", "—"),
         "leverage": _safe_config_value("LEVERAGE", "—"),
+
+        "atr_period": _safe_config_value("ATR_PERIOD", "—"),
+        "min_atr_pct": _safe_config_value("MIN_ATR_PCT", "—"),
+        "max_atr_pct": _safe_config_value("MAX_ATR_PCT", "—"),
+        "atr_sl_multiplier": _safe_config_value("ATR_SL_MULTIPLIER", "—"),
+        "atr_stop_floor_multiplier": _safe_config_value("ATR_STOP_FLOOR_MULTIPLIER", "—"),
+
+        "max_ob_distance_pct": _safe_config_value("MAX_OB_DISTANCE_PCT", "—"),
+        "max_ob_distance_atr": _safe_config_value("MAX_OB_DISTANCE_ATR", "—"),
+        "expire_if_price_away_pct": _safe_config_value("EXPIRE_IF_PRICE_AWAY_PCT", "—"),
+        "expire_if_price_away_atr": _safe_config_value("EXPIRE_IF_PRICE_AWAY_ATR", "—"),
+
+        "require_mss_break_entry": _safe_config_value("REQUIRE_MSS_BREAK_ENTRY", False),
+        "mss_break_lookback_candles": _safe_config_value("MSS_BREAK_LOOKBACK_CANDLES", "—"),
+        "ob_entry_quality_check": _safe_config_value("OB_ENTRY_QUALITY_CHECK", False),
+        "revalidate_before_fire": _safe_config_value("REVALIDATE_BEFORE_FIRE", False),
+        "require_trend_candle_confirmation": _safe_config_value("REQUIRE_TREND_CANDLE_CONFIRMATION", False),
+        "trend_confirm_tf": _safe_config_value("TREND_CONFIRM_TF", _safe_config_value("TREND_TF", "—")),
+
+        "enable_htf_filter": _safe_config_value("ENABLE_HTF_FILTER", False),
+        "enable_entry_ema_filter": _safe_config_value("ENABLE_ENTRY_EMA_FILTER", False),
+        "enable_atr_filter": _safe_config_value("ENABLE_ATR_FILTER", False),
+        "enable_volume_filter": _safe_config_value("ENABLE_VOLUME_FILTER", False),
+        "enable_btc_filter": _safe_config_value("ENABLE_BTC_FILTER", False),
         "crypto_futures_only": _safe_config_value("CRYPTO_FUTURES_ONLY", True),
     }
 
@@ -397,7 +415,7 @@ HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MEXC Bot Dashboard</title>
+<title>Hybrid SMC Pro Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -790,8 +808,8 @@ tr:hover td {
 <header class="header">
   <div class="header-inner">
     <div>
-      <div class="logo"><span>📡</span> MEXC Signal Bot</div>
-      <div class="logo-sub">Breakout Retest + EMA/VWAP + ATR RR</div>
+      <div class="logo"><span>📡</span> Hybrid SMC Pro Bot</div>
+      <div class="logo-sub">15m Structure + 5m Sweep/OB Retest + MSS Break Confirmation</div>
     </div>
     <div class="meta">
       <span class="status-pill connecting" id="wsStatus"><span class="status-dot"></span>Connecting</span>
@@ -830,25 +848,25 @@ tr:hover td {
 
   <div class="section-title">Runtime State</div>
   <div class="grid runtime-grid">
-    <div class="card"><div class="card-label">Waiting Retests</div><div class="card-value blue" id="r-waiting">—</div><div class="card-small">Breakouts waiting for retest</div></div>
+    <div class="card"><div class="card-label">Waiting OB Retests</div><div class="card-value blue" id="r-waiting">—</div><div class="card-small">SMC setups waiting for confirmation</div></div>
     <div class="card"><div class="card-label">Active Signals</div><div class="card-value yellow" id="r-active">—</div><div class="card-small">Open signal outcomes</div></div>
-    <div class="card"><div class="card-label">Expired Setups</div><div class="card-value muted" id="r-expired">—</div><div class="card-small">Retests timed out</div></div>
-    <div class="card"><div class="card-label">Invalidated Setups</div><div class="card-value red" id="r-invalidated">—</div><div class="card-small">Breakout failed before entry</div></div>
+    <div class="card"><div class="card-label">Expired Setups</div><div class="card-value muted" id="r-expired">—</div><div class="card-small">Stale or far from OB</div></div>
+    <div class="card"><div class="card-label">Invalidated Setups</div><div class="card-value red" id="r-invalidated">—</div><div class="card-small">SL touched before entry</div></div>
   </div>
 
   <div class="section-title">Current Strategy Setup</div>
   <div class="grid config-grid">
     <div class="card"><div class="card-label">Timeframes</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">Trend / Entry</div></div>
-    <div class="card"><div class="card-label">Quality Filter</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">Min score / setups per scan</div></div>
-    <div class="card"><div class="card-label">Market WebSocket</div><div class="card-value green" id="cfg-ws">—</div><div class="card-small" id="cfg-ws-sub">—</div></div>
-    <div class="card"><div class="card-label">RR Model</div><div class="card-value orange" id="cfg-rr">—</div><div class="card-small" id="cfg-rr-sub">—</div></div>
+    <div class="card"><div class="card-label">Quality Filter</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">Min score / max new setups</div></div>
+    <div class="card"><div class="card-label">Entry Confirm</div><div class="card-value green" id="cfg-confirm">—</div><div class="card-small" id="cfg-confirm-sub">—</div></div>
+    <div class="card"><div class="card-label">Risk Model</div><div class="card-value orange" id="cfg-rr">—</div><div class="card-small" id="cfg-rr-sub">—</div></div>
   </div>
 
   <section class="panel">
     <div class="panel-head">
       <div>
-        <div class="panel-title">Pending / Recent Breakout Setups</div>
-        <div class="panel-subtitle">Breakout setups waiting, fired, expired, or invalidated</div>
+        <div class="panel-title">Pending / Recent SMC Setups</div>
+        <div class="panel-subtitle">Liquidity sweep + order-block setups waiting, fired, expired, or invalidated</div>
       </div>
       <span class="badge badge-config" id="setup-count">—</span>
     </div>
@@ -862,7 +880,7 @@ tr:hover td {
             <th>Status</th>
             <th>Score</th>
             <th>RR</th>
-            <th>Level / Zone</th>
+            <th>Sweep / OB Zone</th>
             <th>TP / SL</th>
             <th>Expires</th>
           </tr>
@@ -1048,15 +1066,19 @@ function renderRuntime() {
   set("r-invalidated", r.invalidated_setups);
 }
 
+function boolLabel(v) {
+  return v ? "ON" : "OFF";
+}
+
 function renderConfig() {
   const c = data.config;
 
   set("cfg-tf", `${c.trend_tf} / ${c.entry_tf}`);
-  set("cfg-quality", `${c.min_score} / ${c.setups_per_scan}`);
-  set("cfg-ws", c.websocket_enabled ? "ON" : "OFF");
-  set("cfg-ws-sub", `Cache ${c.candle_cache_limit} candles | Crypto only ${c.crypto_futures_only ? "ON" : "OFF"}`);
-  set("cfg-rr", `${c.target_rr}R`);
-  set("cfg-rr-sub", `ATR${c.atr_period} + EMA${c.ema_period}/VWAP${c.vwap_lookback}`);
+  set("cfg-quality", `${c.min_score} / ${c.max_new_setups_per_scan}`);
+  set("cfg-confirm", boolLabel(c.require_mss_break_entry));
+  set("cfg-confirm-sub", `MSS ${boolLabel(c.require_mss_break_entry)} | 15m confirm ${boolLabel(c.require_trend_candle_confirmation)} | Revalidate ${boolLabel(c.revalidate_before_fire)}`);
+  set("cfg-rr", `${c.min_rr}–${c.max_rr}R`);
+  set("cfg-rr-sub", `SL ${c.min_sl_pct}%–${c.max_sl_pct}% | ATR floor ${c.atr_stop_floor_multiplier}x | ${c.leverage}x`);
 }
 
 function renderSetups() {
@@ -1084,8 +1106,8 @@ function renderSetups() {
         <td><strong>${fmtNum(r.score)}</strong></td>
         <td>${fmtNum(r.rr_estimate)}</td>
         <td class="price-stack">
-          <span class="muted">Level</span> ${r.level_display}<br>
-          <span class="muted">Zone</span> ${r.zone_low_display} - ${r.zone_high_display}
+          <span class="muted">Sweep</span> ${r.level_display}<br>
+          <span class="muted">OB</span> ${r.zone_low_display} - ${r.zone_high_display}
         </td>
         <td class="price-stack">
           <span class="green">TP</span> ${r.tp_display}<br>
