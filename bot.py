@@ -1,10 +1,10 @@
 """
-Telegram bot: handles commands and broadcasts Fresh Trend Meter + Stoch MTM signals.
+Telegram bot: handles commands and broadcasts Hybrid SMC Pro signals.
 
 Important:
     Signal messages use HTML parse mode, not Markdown.
     This avoids Telegram parse errors caused by symbols/strategy text containing underscores,
-    e.g. H_USDT.
+    e.g. H_USDT, SELL_SIDE_SWEEP, BULLISH_OB.
 """
 
 import logging
@@ -159,18 +159,29 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
 
     from config import (
-        STRATEGY_TF,
-        EMA_FAST,
-        EMA_SLOW,
-        CCI_LENGTH,
-        SL_LOOKBACK,
-        REWARD_RATIO,
+        STRATEGY_NAME,
+        TREND_TF,
+        ENTRY_TF,
+        HTF_TREND_TF,
+        ENABLE_HTF_FILTER,
+        ENABLE_ENTRY_EMA_FILTER,
+        ENABLE_ATR_FILTER,
+        ENABLE_VOLUME_FILTER,
+        ENABLE_BTC_FILTER,
+        MIN_ATR_PCT,
+        MAX_ATR_PCT,
+        MIN_SL_PCT,
+        MAX_SL_PCT,
+        MIN_STRUCTURE_RR,
+        MAX_STRUCTURE_RR,
+        MIN_SETUP_SCORE,
         LEVERAGE,
         SIGNAL_COOLDOWN_MINUTES,
         SIGNALS_PER_SCAN,
         MAX_CONCURRENT_SIGNALS,
         SCAN_WORKERS,
         SETUP_SCAN_CRON_MINUTES,
+        SETUP_MONITOR_MINUTES,
     )
 
     state = "⏸ PAUSED" if paused else "▶️ RUNNING"
@@ -180,22 +191,39 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
 
+    filters = []
+    if ENABLE_HTF_FILTER:
+        filters.append("1h trend")
+    if ENABLE_ENTRY_EMA_FILTER:
+        filters.append("5m EMA")
+    if ENABLE_ATR_FILTER:
+        filters.append("ATR")
+    if ENABLE_VOLUME_FILTER:
+        filters.append("Volume")
+    if ENABLE_BTC_FILTER:
+        filters.append("BTC regime")
+
     msg = "\n".join([
         "📡 <b>Scanner Status</b>",
         "━━━━━━━━━━━━━━━━━━━━",
         f"State:      {_code(state)}",
-        f"Strategy:   {_code(f'EMA{EMA_FAST}/EMA{EMA_SLOW} cross + CCI({CCI_LENGTH})')}",
-        f"TF:         {_code(STRATEGY_TF)}",
+        f"Strategy:   {_code(STRATEGY_NAME)}",
+        f"Flow:       {_code('15m structure → 5m sweep/displacement/OB → OB retest')}",
+        f"HTF:        {_code(HTF_TREND_TF)} confirmation",
+        f"Trend TF:   {_code(TREND_TF)} market-structure bias",
+        f"Entry TF:   {_code(ENTRY_TF)} sweep + OB retest",
+        f"Filters:    {_code(', '.join(filters) if filters else 'none')}",
+        f"ATR:        {_code(f'{MIN_ATR_PCT:g}%–{MAX_ATR_PCT:g}%')}",
+        f"SL limit:   {_code(f'{MIN_SL_PCT:g}%–{MAX_SL_PCT:g}%')}",
+        f"RR:         {_code(f'{MIN_STRUCTURE_RR:g}–{MAX_STRUCTURE_RR:g}')}",
+        f"Min score:  {_code(MIN_SETUP_SCORE)}",
         f"Scan:       {_code(SETUP_SCAN_CRON_MINUTES)}",
-        f"Long:       {_code(f'EMA{EMA_FAST} x above EMA{EMA_SLOW} AND CCI > 0')}",
-        f"Short:      {_code(f'EMA{EMA_FAST} x below EMA{EMA_SLOW} AND CCI < 0')}",
-        f"SL:         {_code(f'Recent LL/HH over {SL_LOOKBACK} bars')}",
-        f"RR:         {_code(f'1:{REWARD_RATIO:g}')}",
+        f"Monitor:    {_code(f'every {SETUP_MONITOR_MINUTES} min')}",
         f"Workers:    {_code(SCAN_WORKERS)}",
         f"Leverage:   {_code(f'{LEVERAGE}x')}",
-        f"Per scan:   {_code(f'top {SIGNALS_PER_SCAN} signals')}",
+        f"Per scan:   {_code(f'top {SIGNALS_PER_SCAN} entries')}",
         f"Cooldown:   {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
-        f"Waiting:    {_code(f'{waiting} old setup rows')}",
+        f"Waiting:    {_code(f'{waiting} setups')}",
         f"Active:     {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
         f"Pool ({len(coins)}): {_code(pairs_str)}",
         f"Time (LKT): {_code(datetime.now(LKT).strftime('%H:%M'))}",
