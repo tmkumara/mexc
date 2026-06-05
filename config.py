@@ -128,16 +128,16 @@ MAX_SL_PCT: float = float(os.getenv("MAX_SL_PCT", "1.25"))
 MIN_SETUP_SCORE: int = int(os.getenv("MIN_SETUP_SCORE", "85"))
 
 # Setup quality / stale setup controls
-MAX_OB_DISTANCE_ATR: float = float(os.getenv("MAX_OB_DISTANCE_ATR", "2.0"))
-MAX_OB_DISTANCE_PCT: float = float(os.getenv("MAX_OB_DISTANCE_PCT", "1.20"))
-EXPIRE_IF_PRICE_AWAY_ATR: float = float(os.getenv("EXPIRE_IF_PRICE_AWAY_ATR", "3.0"))
-EXPIRE_IF_PRICE_AWAY_PCT: float = float(os.getenv("EXPIRE_IF_PRICE_AWAY_PCT", "2.0"))
+MAX_OB_DISTANCE_ATR: float = float(os.getenv("MAX_OB_DISTANCE_ATR", "5.0"))
+MAX_OB_DISTANCE_PCT: float = float(os.getenv("MAX_OB_DISTANCE_PCT", "4.0"))
+EXPIRE_IF_PRICE_AWAY_ATR: float = float(os.getenv("EXPIRE_IF_PRICE_AWAY_ATR", "5.0"))
+EXPIRE_IF_PRICE_AWAY_PCT: float = float(os.getenv("EXPIRE_IF_PRICE_AWAY_PCT", "4.0"))
 REVALIDATE_BEFORE_FIRE: bool = os.getenv("REVALIDATE_BEFORE_FIRE", "true").lower() == "true"
 OB_ENTRY_QUALITY_CHECK: bool = os.getenv("OB_ENTRY_QUALITY_CHECK", "true").lower() == "true"
 
 # MSS / confirmation-break entry controls
 REQUIRE_MSS_BREAK_ENTRY: bool = os.getenv("REQUIRE_MSS_BREAK_ENTRY", "true").lower() == "true"
-MSS_BREAK_LOOKBACK_CANDLES: int = int(os.getenv("MSS_BREAK_LOOKBACK_CANDLES", "2"))
+MSS_BREAK_LOOKBACK_CANDLES: int = int(os.getenv("MSS_BREAK_LOOKBACK_CANDLES", "4"))
 MSS_BREAK_BUFFER_PCT: float = float(os.getenv("MSS_BREAK_BUFFER_PCT", "0.01"))
 
 # ATR stop floor: prevents very tight structure SL from normal 5m noise.
@@ -179,9 +179,9 @@ SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "4"))
 # Setup saving limits / correlation guard
 MAX_NEW_SETUPS_PER_SCAN: int = int(os.getenv("MAX_NEW_SETUPS_PER_SCAN", "4"))
 MAX_SETUPS_SAME_DIRECTION_PER_SCAN: int = int(os.getenv("MAX_SETUPS_SAME_DIRECTION_PER_SCAN", "2"))
-MAX_WAITING_SETUPS_TOTAL: int = int(os.getenv("MAX_WAITING_SETUPS_TOTAL", "15"))
-MAX_WAITING_SETUPS_SAME_DIRECTION: int = int(os.getenv("MAX_WAITING_SETUPS_SAME_DIRECTION", "8"))
-SETUP_MONITOR_LIMIT: int = int(os.getenv("SETUP_MONITOR_LIMIT", "15"))
+MAX_WAITING_SETUPS_TOTAL: int = int(os.getenv("MAX_WAITING_SETUPS_TOTAL", "40"))
+MAX_WAITING_SETUPS_SAME_DIRECTION: int = int(os.getenv("MAX_WAITING_SETUPS_SAME_DIRECTION", "20"))
+SETUP_MONITOR_LIMIT: int = int(os.getenv("SETUP_MONITOR_LIMIT", "25"))
 
 # Debug monitor logs
 SETUP_MONITOR_LOG_DETAILS: bool = os.getenv("SETUP_MONITOR_LOG_DETAILS", "true").lower() == "true"
