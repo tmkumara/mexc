@@ -1,10 +1,10 @@
 """
-Telegram bot: handles commands and broadcasts Stateful SMC market-structure signals.
+Telegram bot: handles commands and broadcasts Fresh Trend Meter + Stoch MTM signals.
 
 Important:
     Signal messages use HTML parse mode, not Markdown.
     This avoids Telegram parse errors caused by symbols/strategy text containing underscores,
-    e.g. H_USDT, SELL_SIDE_SWEEP, BULLISH_OB.
+    e.g. H_USDT.
 """
 
 import logging
@@ -159,18 +159,33 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
 
     from config import (
+        STRATEGY_NAME,
         TREND_TF,
         ENTRY_TF,
-        SWING_LEFT,
-        SWING_RIGHT,
-        SWEEP_LOOKBACK,
-        DISPLACEMENT_BODY_MULTIPLIER,
-        ORDER_BLOCK_LOOKBACK,
-        PENDING_SETUP_EXPIRE_CANDLES,
-        MIN_STRUCTURE_RR,
-        MAX_STRUCTURE_RR,
+        HTF_TREND_TF,
+        ENABLE_HTF_FILTER,
+        ENABLE_ENTRY_EMA_FILTER,
+        ENABLE_ATR_FILTER,
+        ENABLE_VOLUME_FILTER,
+        ENABLE_BTC_FILTER,
+        MIN_ATR_PCT,
+        MAX_ATR_PCT,
         MIN_SL_PCT,
         MAX_SL_PCT,
+        MIN_STRUCTURE_RR,
+        MAX_STRUCTURE_RR,
+        MIN_SETUP_SCORE,
+        MAX_OB_DISTANCE_ATR,
+        MAX_OB_DISTANCE_PCT,
+        REVALIDATE_BEFORE_FIRE,
+        OB_ENTRY_QUALITY_CHECK,
+        REQUIRE_MSS_BREAK_ENTRY,
+        MSS_BREAK_LOOKBACK_CANDLES,
+        MSS_BREAK_BUFFER_PCT,
+        ENABLE_ATR_STOP_FLOOR,
+        ATR_STOP_FLOOR_MULTIPLIER,
+        REQUIRE_TREND_CANDLE_CONFIRMATION,
+        TREND_CONFIRM_TF,
         LEVERAGE,
         SIGNAL_COOLDOWN_MINUTES,
         SIGNALS_PER_SCAN,
@@ -178,6 +193,10 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SCAN_WORKERS,
         SETUP_SCAN_CRON_MINUTES,
         SETUP_MONITOR_MINUTES,
+        MAX_NEW_SETUPS_PER_SCAN,
+        MAX_SETUPS_SAME_DIRECTION_PER_SCAN,
+        MAX_WAITING_SETUPS_TOTAL,
+        SETUP_MONITOR_LIMIT,
     )
 
     state = "⏸ PAUSED" if paused else "▶️ RUNNING"
@@ -187,34 +206,53 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
 
+    filters = []
+    if ENABLE_HTF_FILTER:
+        filters.append("1h trend")
+    if ENABLE_ENTRY_EMA_FILTER:
+        filters.append("5m EMA")
+    if ENABLE_ATR_FILTER:
+        filters.append("ATR")
+    if ENABLE_VOLUME_FILTER:
+        filters.append("Volume")
+    if ENABLE_BTC_FILTER:
+        filters.append("BTC")
+
     msg = "\n".join([
         "📡 <b>Scanner Status</b>",
         "━━━━━━━━━━━━━━━━━━━━",
         f"State:      {_code(state)}",
-        f"Strategy:   {_code('Stateful SMC Sweep + OB Retest')}",
+        f"Strategy:   {_code(STRATEGY_NAME)}",
+        f"Flow:       {_code('15m structure → 5m sweep/OB → retest → MSS break')}",
+        f"HTF:        {_code(HTF_TREND_TF)} confirmation",
         f"Trend TF:   {_code(TREND_TF)} market-structure bias",
-        f"Entry TF:   {_code(ENTRY_TF)} sweep/displacement/OB retest",
-        f"Setup scan: {_code(SETUP_SCAN_CRON_MINUTES)}",
-        f"Monitor:    {_code(f'every {SETUP_MONITOR_MINUTES} min')}",
-        f"Swings:     {_code(f'left={SWING_LEFT} right={SWING_RIGHT}')}",
-        f"Sweep:      {_code(f'lookback={SWEEP_LOOKBACK}')}",
-        f"Displace:   {_code(f'body × {DISPLACEMENT_BODY_MULTIPLIER:g}')}",
-        f"OB:         {_code(f'lookback={ORDER_BLOCK_LOOKBACK}')}",
-        f"Expire:     {_code(f'{PENDING_SETUP_EXPIRE_CANDLES} candles')}",
-        f"RR:         {_code(f'{MIN_STRUCTURE_RR:g}–{MAX_STRUCTURE_RR:g}')}",
+        f"Entry TF:   {_code(ENTRY_TF)} OB retest + confirmation",
+        f"Filters:    {_code(', '.join(filters) if filters else 'none')}",
+        f"MSS break:  {_code('on' if REQUIRE_MSS_BREAK_ENTRY else 'off')}",
+        f"MSS window: {_code(f'{MSS_BREAK_LOOKBACK_CANDLES} candles / buffer {MSS_BREAK_BUFFER_PCT:g}%')}",
+        f"ATR floor:  {_code(f'on × {ATR_STOP_FLOOR_MULTIPLIER:g}' if ENABLE_ATR_STOP_FLOOR else 'off')}",
+        f"15m confirm:{_code(f'on ({TREND_CONFIRM_TF})' if REQUIRE_TREND_CANDLE_CONFIRMATION else 'off')}",
+        f"Revalidate: {_code('on' if REVALIDATE_BEFORE_FIRE else 'off')}",
+        f"OB quality: {_code('on' if OB_ENTRY_QUALITY_CHECK else 'off')}",
+        f"ATR:        {_code(f'{MIN_ATR_PCT:g}%–{MAX_ATR_PCT:g}%')}",
         f"SL limit:   {_code(f'{MIN_SL_PCT:g}%–{MAX_SL_PCT:g}%')}",
+        f"RR:         {_code(f'{MIN_STRUCTURE_RR:g}–{MAX_STRUCTURE_RR:g}')}",
+        f"Min score:  {_code(MIN_SETUP_SCORE)}",
+        f"OB distance:{_code(f'≤{MAX_OB_DISTANCE_PCT:g}% or ≤{MAX_OB_DISTANCE_ATR:g}ATR')}",
+        f"Scan:       {_code(SETUP_SCAN_CRON_MINUTES)}",
+        f"Monitor:    {_code(f'every {SETUP_MONITOR_MINUTES} min, top {SETUP_MONITOR_LIMIT}')}",
         f"Workers:    {_code(SCAN_WORKERS)}",
         f"Leverage:   {_code(f'{LEVERAGE}x')}",
-        f"Per scan:   {_code(f'top {SIGNALS_PER_SCAN} entries')}",
+        f"Entries:    {_code(f'top {SIGNALS_PER_SCAN} fires/monitor')}",
+        f"Save limit: {_code(f'{MAX_NEW_SETUPS_PER_SCAN}/scan, {MAX_SETUPS_SAME_DIRECTION_PER_SCAN}/direction')}",
+        f"Wait cap:   {_code(f'{waiting}/{MAX_WAITING_SETUPS_TOTAL} setups')}",
         f"Cooldown:   {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
-        f"Waiting:    {_code(f'{waiting} setups')}",
         f"Active:     {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
         f"Pool ({len(coins)}): {_code(pairs_str)}",
         f"Time (LKT): {_code(datetime.now(LKT).strftime('%H:%M'))}",
     ])
 
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
-
 
 async def cmd_pause(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global paused
