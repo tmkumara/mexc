@@ -6,6 +6,7 @@ No classic indicators are used.
 Flow:
     1. detect_setup(symbol)
        - 15m market structure bias
+       - 1H/4H higher timeframe direction filter
        - 5m liquidity sweep
        - 5m displacement candle
        - 5m order block
@@ -75,6 +76,18 @@ REQUIRE_MSS_BREAK_ENTRY: bool = getattr(_cfg, "REQUIRE_MSS_BREAK_ENTRY", True)
 MSS_BREAK_LOOKBACK_CANDLES: int = int(getattr(_cfg, "MSS_BREAK_LOOKBACK_CANDLES", 4))
 REQUIRE_TREND_CANDLE_CONFIRMATION: bool = getattr(_cfg, "REQUIRE_TREND_CANDLE_CONFIRMATION", True)
 TREND_CONFIRM_TF: str = str(getattr(_cfg, "TREND_CONFIRM_TF", TREND_TF))
+
+# Higher timeframe direction filter.
+# This is intentionally applied before saving setups, so counter-trend
+# 15m setups are not stored and later fired.
+ENABLE_HTF_FILTER: bool = bool(getattr(_cfg, "ENABLE_HTF_FILTER", True))
+HTF_CONFIRM_TFS: list[str] = list(getattr(_cfg, "HTF_CONFIRM_TFS", ["1h", "4h"]))
+HTF_KLINE_COUNT: int = int(getattr(_cfg, "HTF_KLINE_COUNT", 260))
+HTF_EMA_FAST: int = int(getattr(_cfg, "HTF_EMA_FAST", 50))
+HTF_EMA_SLOW: int = int(getattr(_cfg, "HTF_EMA_SLOW", 200))
+REQUIRE_HTF_EMA_STACK: bool = bool(getattr(_cfg, "REQUIRE_HTF_EMA_STACK", True))
+REQUIRE_HTF_EMA_SLOPE: bool = bool(getattr(_cfg, "REQUIRE_HTF_EMA_SLOPE", False))
+HTF_EMA_SLOPE_LOOKBACK: int = int(getattr(_cfg, "HTF_EMA_SLOPE_LOOKBACK", 3))
 
 
 def _debug_wait(symbol: str, message: str) -> None:
@@ -271,6 +284,73 @@ def _trend_candle_confirmation_ok(symbol: str, direction: str) -> bool:
     except Exception as e:
         logger.warning("[TREND-CONFIRM] %s fetch error: %s — filter skipped", symbol, e)
         return True
+
+
+def _higher_tf_direction_ok(symbol: str, direction: str) -> bool:
+    """
+    Confirm 15m SMC setup with stronger 1H/4H direction.
+
+    LONG:
+        close > EMA200
+        optional EMA50 > EMA200
+        optional EMA200 slope rising
+
+    SHORT:
+        close < EMA200
+        optional EMA50 < EMA200
+        optional EMA200 slope falling
+    """
+    if not ENABLE_HTF_FILTER:
+        return True
+
+    for tf in HTF_CONFIRM_TFS:
+        try:
+            df = get_klines(symbol, tf, count=HTF_KLINE_COUNT)
+
+            if df is None or df.empty or len(df) < max(HTF_EMA_FAST, HTF_EMA_SLOW) + HTF_EMA_SLOPE_LOOKBACK + 5:
+                logger.info("[HTF-FILTER] %s %s skipped: insufficient %s data", symbol, direction, tf)
+                return False
+
+            completed = df.iloc[:-1].copy()
+            close = float(completed["close"].astype(float).iloc[-1])
+            ema_fast = _ema(completed["close"], HTF_EMA_FAST)
+            ema_slow = _ema(completed["close"], HTF_EMA_SLOW)
+
+            fast_now = float(ema_fast.iloc[-1])
+            slow_now = float(ema_slow.iloc[-1])
+            slow_prev = float(ema_slow.iloc[-1 - HTF_EMA_SLOPE_LOOKBACK])
+
+            if direction == "LONG":
+                close_ok = close > slow_now
+                stack_ok = (fast_now > slow_now) if REQUIRE_HTF_EMA_STACK else True
+                slope_ok = (slow_now > slow_prev) if REQUIRE_HTF_EMA_SLOPE else True
+            else:
+                close_ok = close < slow_now
+                stack_ok = (fast_now < slow_now) if REQUIRE_HTF_EMA_STACK else True
+                slope_ok = (slow_now < slow_prev) if REQUIRE_HTF_EMA_SLOPE else True
+
+            if not (close_ok and stack_ok and slope_ok):
+                logger.info(
+                    "[HTF-FILTER] Reject %s %s | %s close=%.6g ema%d=%.6g ema%d=%.6g close_ok=%s stack_ok=%s slope_ok=%s",
+                    symbol,
+                    direction,
+                    tf,
+                    close,
+                    HTF_EMA_FAST,
+                    fast_now,
+                    HTF_EMA_SLOW,
+                    slow_now,
+                    close_ok,
+                    stack_ok,
+                    slope_ok,
+                )
+                return False
+
+        except Exception as e:
+            logger.warning("[HTF-FILTER] %s %s %s error: %s", symbol, direction, tf, e)
+            return False
+
+    return True
 
 
 # ── swings ────────────────────────────────────────────────────────
@@ -681,6 +761,9 @@ def detect_setup(symbol: str) -> dict | None:
         if bias is None:
             return None
 
+        if not _higher_tf_direction_ok(symbol, bias):
+            return None
+
         completed = entry_df.iloc[:-1].copy().tail(ENTRY_LOOKBACK)
 
         if len(completed) < 80:
@@ -966,7 +1049,7 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 tp_roi_pct=tp_roi_pct,
                 sl_roi_pct=sl_roi_pct,
                 timeframe_summary=(
-                    f"Stateful SMC {ENTRY_TF} | {TREND_TF} bias {setup['bias']} | "
+                    f"Stateful SMC {ENTRY_TF} | {TREND_TF} bias {setup['bias']} + HTF filter | "
                     f"{setup['sweep_type']} + {setup['ob_type']} retest + {trigger_note} | RR {rr:g}"
                 ),
                 generated_at=datetime.now(timezone.utc),

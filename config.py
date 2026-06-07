@@ -87,10 +87,31 @@ MAX_SIGNAL_CANDLE_BODY_PCT: float = float(os.getenv("MAX_SIGNAL_CANDLE_BODY_PCT"
 PENDING_SETUP_EXPIRE_CANDLES: int = int(os.getenv("PENDING_SETUP_EXPIRE_CANDLES", "24"))
 MAX_PENDING_SETUPS_PER_SYMBOL: int = int(os.getenv("MAX_PENDING_SETUPS_PER_SYMBOL", "1"))
 
-# HTF trend filter
+# Higher timeframe trend filter
+# This is the main accuracy filter.
+# It prevents 5m/15m SMC entries against the stronger 1H/4H trend.
 ENABLE_HTF_FILTER: bool = os.getenv("ENABLE_HTF_FILTER", "true").lower() == "true"
+
+# Comma-separated timeframes checked before saving a setup.
+# Recommended for high accuracy: "1h,4h"
+HTF_CONFIRM_TFS: list[str] = [
+    tf.strip()
+    for tf in os.getenv("HTF_CONFIRM_TFS", "1h,4h").split(",")
+    if tf.strip()
+]
+
 HTF_EMA_FAST: int = int(os.getenv("HTF_EMA_FAST", "50"))
 HTF_EMA_SLOW: int = int(os.getenv("HTF_EMA_SLOW", "200"))
+
+# If true:
+# LONG  requires close > EMA200 and EMA50 > EMA200
+# SHORT requires close < EMA200 and EMA50 < EMA200
+REQUIRE_HTF_EMA_STACK: bool = os.getenv("REQUIRE_HTF_EMA_STACK", "true").lower() == "true"
+
+# If true:
+# LONG  requires EMA200 rising
+# SHORT requires EMA200 falling
+REQUIRE_HTF_EMA_SLOPE: bool = os.getenv("REQUIRE_HTF_EMA_SLOPE", "false").lower() == "true"
 HTF_EMA_SLOPE_LOOKBACK: int = int(os.getenv("HTF_EMA_SLOPE_LOOKBACK", "3"))
 
 # Entry EMA alignment filter
