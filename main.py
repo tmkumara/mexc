@@ -13,7 +13,9 @@ Scheduler jobs:
 
 import asyncio
 import logging
+import shutil
 import sys
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
@@ -49,14 +51,51 @@ from config import (
     OUTCOME_CHECK_MINUTES,
     CANDLE_MINUTES,
     SCAN_WORKERS,
+    MAX_NEW_SETUPS_PER_SCAN,
+    MAX_SETUPS_SAME_DIRECTION_PER_SCAN,
+    MAX_WAITING_SETUPS_TOTAL,
+    MAX_WAITING_SETUPS_SAME_DIRECTION,
+    SETUP_MONITOR_LIMIT,
+    SCHEDULER_MISFIRE_GRACE_SECONDS,
+    SCHEDULER_MAX_INSTANCES,
+    LOG_FILE,
+    ENABLE_LOG_BACKUP_ON_START,
+    LOG_BACKUP_DIR,
+    ENABLE_WS_CANDLE_CACHE,
+    CANDLE_CACHE_LIMIT,
+    WS_MAX_SYMBOLS,
+    WS_SEED_KLINE_COUNT,
 )
+
+
+
+def _backup_log_on_startup() -> None:
+    """Backup previous log on each process start and create a fresh log file."""
+    if not ENABLE_LOG_BACKUP_ON_START:
+        Path(LOG_FILE).touch(exist_ok=True)
+        return
+
+    log_path = Path(LOG_FILE)
+    archive_dir = Path(LOG_BACKUP_DIR)
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    if log_path.exists() and log_path.stat().st_size > 0:
+        ts = datetime.now(LKT).strftime("%Y%m%d_%H%M%S")
+        backup_name = f"{log_path.stem}_{ts}{log_path.suffix or '.log'}"
+        shutil.copy2(log_path, archive_dir / backup_name)
+        log_path.write_text("", encoding="utf-8")
+    else:
+        log_path.touch(exist_ok=True)
+
+
+_backup_log_on_startup()
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("mexc_bot.log"),
+        logging.FileHandler(LOG_FILE),
     ],
 )
 
@@ -134,7 +173,11 @@ async def _start_ws_cache(coins: list[str]) -> None:
         logger.warning("[WS] No symbols available for WebSocket subscription")
         return
 
-    # Keep strategy.py using the same cache object.
+    # Make strategy.py use cache first without requiring a strategy.py change.
+    # strategy.py imports get_klines directly, so patch that module-level reference.
+    strategy.get_klines = _cached_or_rest_klines
+
+    # If a future strategy.py exposes set_candle_cache(), support it too.
     if hasattr(strategy, "set_candle_cache"):
         strategy.set_candle_cache(CANDLE_CACHE)
 
@@ -199,13 +242,13 @@ async def scan_for_setups(app: Application) -> None:
         and not db.pending_setup_exists(symbol)
     ]
 
-    logger.info(f"[SETUP-SCAN] {len(to_scan)}/{len(coins)} coins after filters")
+    logger.info("[SETUP-SCAN] %d/%d coins after cooldown + waiting-setup filters", len(to_scan), len(coins))
 
     def _detect(symbol: str):
         try:
             return strategy.detect_setup(symbol)
         except Exception as e:
-            logger.error(f"[SETUP-SCAN] {symbol} setup error: {e}", exc_info=True)
+            logger.error("[SETUP-SCAN] %s setup error: %s", symbol, e, exc_info=True)
             return None
 
     loop = asyncio.get_event_loop()
@@ -222,21 +265,74 @@ async def scan_for_setups(app: Application) -> None:
         logger.info("[SETUP-SCAN] Done — 0 new setups found")
         return
 
+    setups.sort(key=lambda setup: float(setup.get("score", 0.0)), reverse=True)
+
+    waiting_total = db.count_waiting_setups()
+    waiting_by_direction = db.count_waiting_setups_by_direction()
+    waiting_slots = max(MAX_WAITING_SETUPS_TOTAL - waiting_total, 0)
+    scan_limit = min(MAX_NEW_SETUPS_PER_SCAN, waiting_slots)
+
+    if scan_limit <= 0:
+        logger.info(
+            "[SETUP-SCAN] Waiting setup limit reached (%d/%d), skipping save",
+            waiting_total,
+            MAX_WAITING_SETUPS_TOTAL,
+        )
+        return
+
     saved = 0
+    direction_counts: dict[str, int] = {}
 
     for setup in setups:
+        if saved >= scan_limit:
+            break
+
+        direction = setup["direction"]
+
+        if direction_counts.get(direction, 0) >= MAX_SETUPS_SAME_DIRECTION_PER_SCAN:
+            logger.info(
+                "[SETUP-SCAN] Skip %s %s — same-direction scan limit %d reached",
+                setup["symbol"],
+                direction,
+                MAX_SETUPS_SAME_DIRECTION_PER_SCAN,
+            )
+            continue
+
+        current_same_direction = waiting_by_direction.get(direction, 0) + direction_counts.get(direction, 0)
+        if current_same_direction >= MAX_WAITING_SETUPS_SAME_DIRECTION:
+            logger.info(
+                "[SETUP-SCAN] Skip %s %s — waiting same-direction cap %d reached",
+                setup["symbol"],
+                direction,
+                MAX_WAITING_SETUPS_SAME_DIRECTION,
+            )
+            continue
+
         setup_id = db.save_pending_setup(setup)
 
         if setup_id:
             saved += 1
+            direction_counts[direction] = direction_counts.get(direction, 0) + 1
             logger.info(
-                f"[SETUP-SCAN] Saved setup #{setup_id} "
-                f"{setup['symbol']} {setup['direction']} "
-                f"OB={setup['ob_low']:.6g}-{setup['ob_high']:.6g}"
+                "[SETUP-SCAN] Saved setup #%s %s %s OB=%.6g-%.6g score=%.1f",
+                setup_id,
+                setup["symbol"],
+                setup["direction"],
+                float(setup["ob_low"]),
+                float(setup["ob_high"]),
+                float(setup.get("score", 0.0)),
             )
 
-    logger.info(f"[SETUP-SCAN] Done — {saved}/{len(setups)} setups saved")
-
+    logger.info(
+        "[SETUP-SCAN] Done — %d/%d setups saved (scan_limit=%d, waiting_before=%d/%d, waiting_dir=%s, saved_dir=%s)",
+        saved,
+        len(setups),
+        scan_limit,
+        waiting_total,
+        MAX_WAITING_SETUPS_TOTAL,
+        waiting_by_direction,
+        direction_counts,
+    )
 
 # ── pending setup monitor ─────────────────────────────────────────
 
@@ -255,13 +351,13 @@ async def monitor_setups(app: Application) -> None:
     now = datetime.now(timezone.utc)
     db.expire_old_waiting_setups(now)
 
-    setups = db.get_waiting_setups(limit=100)
+    setups = db.get_waiting_setups(limit=SETUP_MONITOR_LIMIT)
 
     if not setups:
         logger.info("[SETUP-MONITOR] No waiting setups")
         return
 
-    logger.info(f"[SETUP-MONITOR] Checking {len(setups)} waiting setups")
+    logger.info("[SETUP-MONITOR] Checking top %d waiting setups", len(setups))
 
     fired_signals = []
 
@@ -470,7 +566,14 @@ async def main():
 
     app = tg.build_app()
 
-    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler = AsyncIOScheduler(
+        timezone="UTC",
+        job_defaults={
+            "coalesce": True,
+            "max_instances": SCHEDULER_MAX_INSTANCES,
+            "misfire_grace_time": SCHEDULER_MISFIRE_GRACE_SECONDS,
+        },
+    )
 
     scheduler.add_job(
         scan_for_setups,

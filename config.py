@@ -208,7 +208,7 @@ DB_PATH = os.getenv("DB_PATH", "signals.db")
 # Hybrid mode: REST is still used for setup scanning/history; WebSocket is used
 # to keep ENTRY_TF candles fresh for pending setup monitoring and TP/SL checks.
 ENABLE_WS_CANDLE_CACHE: bool = os.getenv("ENABLE_WS_CANDLE_CACHE", "true").lower() == "true"
-MEXC_WS_URL: str = os.getenv("MEXC_WS_URL", "wss://contract.mexc.com/ws")
+MEXC_WS_URL: str = os.getenv("MEXC_WS_URL", "wss://contract.mexc.com/edge")
 CANDLE_CACHE_LIMIT: int = int(os.getenv("CANDLE_CACHE_LIMIT", "320"))
 WS_MAX_SYMBOLS: int = int(os.getenv("WS_MAX_SYMBOLS", "80"))
 WS_SEED_KLINE_COUNT: int = int(os.getenv("WS_SEED_KLINE_COUNT", "260"))
