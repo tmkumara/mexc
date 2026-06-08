@@ -35,6 +35,32 @@ logger = logging.getLogger(__name__)
 
 REQUIRED_COLUMNS = ["open", "high", "low", "close", "volume"]
 
+# Keep cache keys stable between app timeframes (5m/15m/1h) and MEXC WS
+# intervals (Min5/Min15/Min60). This lets strategy.py ask for ENTRY_TF while
+# the WebSocket client stores MEXC interval names.
+INTERVAL_ALIASES = {
+    "1m": "Min1",
+    "Min1": "Min1",
+    "3m": "Min3",
+    "Min3": "Min3",
+    "5m": "Min5",
+    "Min5": "Min5",
+    "15m": "Min15",
+    "Min15": "Min15",
+    "30m": "Min30",
+    "Min30": "Min30",
+    "1h": "Min60",
+    "60m": "Min60",
+    "Min60": "Min60",
+    "4h": "Hour4",
+    "Hour4": "Hour4",
+    "8h": "Hour8",
+    "Hour8": "Hour8",
+    "1d": "Day1",
+    "Day1": "Day1",
+}
+
+
 
 @dataclass(frozen=True)
 class CandleCloseEvent:
@@ -83,7 +109,8 @@ class CandleCache:
 
     @staticmethod
     def _normalize_interval(interval: str) -> str:
-        return str(interval).strip()
+        raw = str(interval).strip()
+        return INTERVAL_ALIASES.get(raw, INTERVAL_ALIASES.get(raw.lower(), raw))
 
     @staticmethod
     def _key(symbol: str, interval: str) -> tuple[str, str]:

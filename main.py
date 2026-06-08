@@ -13,9 +13,7 @@ Scheduler jobs:
 
 import asyncio
 import logging
-import shutil
 import sys
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 
@@ -28,6 +26,13 @@ import database as db
 import strategy
 import bot as tg
 import coin_scanner
+
+try:
+    from candle_cache import CandleCache
+    from mexc_ws_client import MexcWebSocketClient
+except Exception:  # keep REST-only mode safe if optional WS deps are missing
+    CandleCache = None
+    MexcWebSocketClient = None
 
 from mexc_client import get_klines
 from config import (
@@ -44,50 +49,14 @@ from config import (
     OUTCOME_CHECK_MINUTES,
     CANDLE_MINUTES,
     SCAN_WORKERS,
-    MAX_NEW_SETUPS_PER_SCAN,
-    MAX_SETUPS_SAME_DIRECTION_PER_SCAN,
-    MAX_WAITING_SETUPS_TOTAL,
-    MAX_WAITING_SETUPS_SAME_DIRECTION,
-    SETUP_MONITOR_LIMIT,
-    SCHEDULER_MISFIRE_GRACE_SECONDS,
-    SCHEDULER_MAX_INSTANCES,
-    LOG_FILE,
-    ENABLE_LOG_BACKUP_ON_START,
-    LOG_BACKUP_DIR,
 )
-
-def _backup_log_on_startup() -> None:
-    """
-    Backup the previous mexc_bot.log on each process start, then create a fresh log file.
-
-    This runs before FileHandler opens the log file. It gives each bot restart a clean
-    application log while preserving the previous run under logs/archive/.
-    """
-    if not ENABLE_LOG_BACKUP_ON_START:
-        Path(LOG_FILE).touch(exist_ok=True)
-        return
-
-    log_path = Path(LOG_FILE)
-    archive_dir = Path(LOG_BACKUP_DIR)
-    archive_dir.mkdir(parents=True, exist_ok=True)
-
-    if log_path.exists() and log_path.stat().st_size > 0:
-        ts = datetime.now(LKT).strftime("%Y%m%d_%H%M%S")
-        backup_name = f"{log_path.stem}_{ts}{log_path.suffix or '.log'}"
-        shutil.copy2(log_path, archive_dir / backup_name)
-        log_path.write_text("", encoding="utf-8")
-    else:
-        log_path.touch(exist_ok=True)
-
-
-_backup_log_on_startup()
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_FILE),
+        logging.FileHandler("mexc_bot.log"),
     ],
 )
 
@@ -100,6 +69,112 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
+
+
+# ── WebSocket candle cache ────────────────────────────────────────
+
+CANDLE_CACHE = CandleCache(limit=CANDLE_CACHE_LIMIT) if CandleCache is not None else None
+WS_CLIENT = None
+WS_TASK: asyncio.Task | None = None
+
+
+def _cached_or_rest_klines(symbol: str, interval: str, count: int):
+    """Return candles from WebSocket cache when ready, otherwise REST fallback."""
+    if CANDLE_CACHE is not None:
+        try:
+            df = CANDLE_CACHE.get_candles(symbol, interval, limit=count)
+            if df is not None and not df.empty and len(df) >= min(count, 2):
+                return df
+        except Exception as e:
+            logger.debug("[CACHE] %s %s read failed: %s", symbol, interval, e)
+
+    return get_klines(symbol, interval, count=count)
+
+
+def _seed_candle_cache(symbols: list[str], intervals: list[str], count: int) -> None:
+    """
+    Seed WebSocket cache with REST history before live updates arrive.
+
+    This keeps the first monitor/outcome cycle usable immediately after startup.
+    """
+    if CANDLE_CACHE is None:
+        return
+
+    for symbol in symbols:
+        for interval in intervals:
+            try:
+                df = get_klines(symbol, interval, count=count)
+                if df is not None and not df.empty:
+                    CANDLE_CACHE.seed(symbol, interval, df)
+            except Exception as e:
+                logger.warning("[CACHE] Failed to seed %s %s: %s", symbol, interval, e)
+
+
+async def _start_ws_cache(coins: list[str]) -> None:
+    """
+    Start MEXC kline WebSocket for ENTRY_TF candles.
+
+    REST remains fallback. We intentionally subscribe only the top WS_MAX_SYMBOLS coins
+    to avoid connection/subscription pressure. Active/waiting symbols outside this pool
+    still work through REST fallback.
+    """
+    global WS_CLIENT, WS_TASK
+
+    if not ENABLE_WS_CANDLE_CACHE:
+        logger.info("[WS] Candle cache disabled by ENABLE_WS_CANDLE_CACHE=false")
+        return
+
+    if CANDLE_CACHE is None or MexcWebSocketClient is None:
+        logger.warning("[WS] Candle cache unavailable; check candle_cache.py, mexc_ws_client.py, websockets package")
+        return
+
+    symbols = list(dict.fromkeys(coins[:WS_MAX_SYMBOLS]))
+
+    if not symbols:
+        logger.warning("[WS] No symbols available for WebSocket subscription")
+        return
+
+    # Keep strategy.py using the same cache object.
+    if hasattr(strategy, "set_candle_cache"):
+        strategy.set_candle_cache(CANDLE_CACHE)
+
+    logger.info(
+        "[WS] Seeding candle cache symbols=%d interval=%s count=%d",
+        len(symbols),
+        ENTRY_TF,
+        WS_SEED_KLINE_COUNT,
+    )
+    _seed_candle_cache(symbols, [ENTRY_TF], WS_SEED_KLINE_COUNT)
+
+    WS_CLIENT = MexcWebSocketClient(
+        candle_cache=CANDLE_CACHE,
+        symbols=symbols,
+        app_intervals=[ENTRY_TF],
+    )
+    WS_TASK = asyncio.create_task(WS_CLIENT.start(), name="mexc_ws_client")
+    logger.info("[WS] Started kline WebSocket cache for %d symbols on %s", len(symbols), ENTRY_TF)
+
+
+async def _stop_ws_cache() -> None:
+    global WS_CLIENT, WS_TASK
+
+    if WS_CLIENT is not None:
+        try:
+            await WS_CLIENT.stop()
+        except Exception:
+            logger.debug("[WS] Error while stopping client", exc_info=True)
+
+    if WS_TASK is not None:
+        WS_TASK.cancel()
+        try:
+            await WS_TASK
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.debug("[WS] Task stopped with error", exc_info=True)
+
+    WS_CLIENT = None
+    WS_TASK = None
 
 # ── setup detection scan ──────────────────────────────────────────
 
@@ -124,7 +199,7 @@ async def scan_for_setups(app: Application) -> None:
         and not db.pending_setup_exists(symbol)
     ]
 
-    logger.info("[SETUP-SCAN] %d/%d coins after cooldown + waiting-setup filters", len(to_scan), len(coins))
+    logger.info(f"[SETUP-SCAN] {len(to_scan)}/{len(coins)} coins after filters")
 
     def _detect(symbol: str):
         try:
@@ -147,74 +222,20 @@ async def scan_for_setups(app: Application) -> None:
         logger.info("[SETUP-SCAN] Done — 0 new setups found")
         return
 
-    setups.sort(key=lambda setup: float(setup.get("score", 0.0)), reverse=True)
-
-    waiting_total = db.count_waiting_setups()
-    waiting_by_direction = db.count_waiting_setups_by_direction()
-    waiting_slots = max(MAX_WAITING_SETUPS_TOTAL - waiting_total, 0)
-    scan_limit = min(MAX_NEW_SETUPS_PER_SCAN, waiting_slots)
-
-    if scan_limit <= 0:
-        logger.info(
-            "[SETUP-SCAN] Waiting setup limit reached (%d/%d), skipping save",
-            waiting_total,
-            MAX_WAITING_SETUPS_TOTAL,
-        )
-        return
-
     saved = 0
-    direction_counts: dict[str, int] = {}
 
     for setup in setups:
-        if saved >= scan_limit:
-            break
-
-        direction = setup["direction"]
-
-        if direction_counts.get(direction, 0) >= MAX_SETUPS_SAME_DIRECTION_PER_SCAN:
-            logger.info(
-                "[SETUP-SCAN] Skip %s %s — same-direction scan limit %d reached",
-                setup["symbol"],
-                direction,
-                MAX_SETUPS_SAME_DIRECTION_PER_SCAN,
-            )
-            continue
-
-        current_same_direction = waiting_by_direction.get(direction, 0) + direction_counts.get(direction, 0)
-        if current_same_direction >= MAX_WAITING_SETUPS_SAME_DIRECTION:
-            logger.info(
-                "[SETUP-SCAN] Skip %s %s — waiting same-direction cap %d reached",
-                setup["symbol"],
-                direction,
-                MAX_WAITING_SETUPS_SAME_DIRECTION,
-            )
-            continue
-
         setup_id = db.save_pending_setup(setup)
 
         if setup_id:
             saved += 1
-            direction_counts[direction] = direction_counts.get(direction, 0) + 1
             logger.info(
-                "[SETUP-SCAN] Saved setup #%s %s %s OB=%.6g-%.6g score=%.1f",
-                setup_id,
-                setup["symbol"],
-                setup["direction"],
-                float(setup["ob_low"]),
-                float(setup["ob_high"]),
-                float(setup.get("score", 0.0)),
+                f"[SETUP-SCAN] Saved setup #{setup_id} "
+                f"{setup['symbol']} {setup['direction']} "
+                f"OB={setup['ob_low']:.6g}-{setup['ob_high']:.6g}"
             )
 
-    logger.info(
-        "[SETUP-SCAN] Done — %d/%d setups saved (scan_limit=%d, waiting_before=%d/%d, waiting_dir=%s, saved_dir=%s)",
-        saved,
-        len(setups),
-        scan_limit,
-        waiting_total,
-        MAX_WAITING_SETUPS_TOTAL,
-        waiting_by_direction,
-        direction_counts,
-    )
+    logger.info(f"[SETUP-SCAN] Done — {saved}/{len(setups)} setups saved")
 
 
 # ── pending setup monitor ─────────────────────────────────────────
@@ -234,13 +255,13 @@ async def monitor_setups(app: Application) -> None:
     now = datetime.now(timezone.utc)
     db.expire_old_waiting_setups(now)
 
-    setups = db.get_waiting_setups(limit=SETUP_MONITOR_LIMIT)
+    setups = db.get_waiting_setups(limit=100)
 
     if not setups:
         logger.info("[SETUP-MONITOR] No waiting setups")
         return
 
-    logger.info("[SETUP-MONITOR] Checking top %d waiting setups", len(setups))
+    logger.info(f"[SETUP-MONITOR] Checking {len(setups)} waiting setups")
 
     fired_signals = []
 
@@ -357,7 +378,7 @@ async def check_outcomes(app: Application) -> None:
         fetch_count = int(elapsed_min / CANDLE_MINUTES) + 3
 
         try:
-            df = get_klines(symbol, ENTRY_TF, count=fetch_count)
+            df = _cached_or_rest_klines(symbol, ENTRY_TF, count=fetch_count)
 
             if df.empty or len(df) < 2:
                 continue
@@ -434,7 +455,10 @@ async def check_outcomes(app: Application) -> None:
 # ── main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot — Hybrid SMC Pro (%s entry)", ENTRY_TF)
+    logger.info(
+        f"Starting MEXC Signal Bot — "
+        f"Stateful SMC Sweep + OB Retest ({ENTRY_TF})"
+    )
 
     db.init_db()
 
@@ -442,16 +466,11 @@ async def main():
     coins = coin_scanner.refresh_coin_list()
     logger.info(f"Signal pool: {len(coins)} coins")
 
+    await _start_ws_cache(coins)
+
     app = tg.build_app()
 
-    scheduler = AsyncIOScheduler(
-        timezone="UTC",
-        job_defaults={
-            "coalesce": True,
-            "max_instances": SCHEDULER_MAX_INSTANCES,
-            "misfire_grace_time": SCHEDULER_MISFIRE_GRACE_SECONDS,
-        },
-    )
+    scheduler = AsyncIOScheduler(timezone="UTC")
 
     scheduler.add_job(
         scan_for_setups,
@@ -496,19 +515,8 @@ async def main():
     scheduler.start()
 
     logger.info(
-        "Scheduler started — setup scan='%s', monitor=%dm, entry_tf=%s, outcome_check=%dm, "
-        "setup_limit=%d, same_dir_scan=%d, same_dir_waiting=%d, waiting_limit=%d, monitor_limit=%d, misfire_grace=%ds, log_file=%s",
-        SETUP_SCAN_CRON_MINUTES,
-        SETUP_MONITOR_MINUTES,
-        ENTRY_TF,
-        OUTCOME_CHECK_MINUTES,
-        MAX_NEW_SETUPS_PER_SCAN,
-        MAX_SETUPS_SAME_DIRECTION_PER_SCAN,
-        MAX_WAITING_SETUPS_SAME_DIRECTION,
-        MAX_WAITING_SETUPS_TOTAL,
-        SETUP_MONITOR_LIMIT,
-        SCHEDULER_MISFIRE_GRACE_SECONDS,
-        LOG_FILE,
+        f"Scheduler started — setup scan='{SETUP_SCAN_CRON_MINUTES}', "
+        f"monitor={SETUP_MONITOR_MINUTES}m, entry_tf={ENTRY_TF}"
     )
 
     async with app:
@@ -523,6 +531,7 @@ async def main():
         except (KeyboardInterrupt, SystemExit):
             pass
         finally:
+            await _stop_ws_cache()
             scheduler.shutdown(wait=False)
             await app.updater.stop()
             await app.stop()

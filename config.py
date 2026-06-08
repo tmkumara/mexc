@@ -87,31 +87,10 @@ MAX_SIGNAL_CANDLE_BODY_PCT: float = float(os.getenv("MAX_SIGNAL_CANDLE_BODY_PCT"
 PENDING_SETUP_EXPIRE_CANDLES: int = int(os.getenv("PENDING_SETUP_EXPIRE_CANDLES", "24"))
 MAX_PENDING_SETUPS_PER_SYMBOL: int = int(os.getenv("MAX_PENDING_SETUPS_PER_SYMBOL", "1"))
 
-# Higher timeframe trend filter
-# This is the main accuracy filter.
-# It prevents 5m/15m SMC entries against the stronger 1H/4H trend.
+# HTF trend filter
 ENABLE_HTF_FILTER: bool = os.getenv("ENABLE_HTF_FILTER", "true").lower() == "true"
-
-# Comma-separated timeframes checked before saving a setup.
-# Recommended for high accuracy: "1h,4h"
-HTF_CONFIRM_TFS: list[str] = [
-    tf.strip()
-    for tf in os.getenv("HTF_CONFIRM_TFS", "1h,4h").split(",")
-    if tf.strip()
-]
-
 HTF_EMA_FAST: int = int(os.getenv("HTF_EMA_FAST", "50"))
 HTF_EMA_SLOW: int = int(os.getenv("HTF_EMA_SLOW", "200"))
-
-# If true:
-# LONG  requires close > EMA200 and EMA50 > EMA200
-# SHORT requires close < EMA200 and EMA50 < EMA200
-REQUIRE_HTF_EMA_STACK: bool = os.getenv("REQUIRE_HTF_EMA_STACK", "true").lower() == "true"
-
-# If true:
-# LONG  requires EMA200 rising
-# SHORT requires EMA200 falling
-REQUIRE_HTF_EMA_SLOPE: bool = os.getenv("REQUIRE_HTF_EMA_SLOPE", "false").lower() == "true"
 HTF_EMA_SLOPE_LOOKBACK: int = int(os.getenv("HTF_EMA_SLOPE_LOOKBACK", "3"))
 
 # Entry EMA alignment filter
@@ -224,3 +203,38 @@ MEXC_BASE_URL = os.getenv("MEXC_BASE_URL", "https://contract.mexc.com/api/v1")
 
 # ── Database ──────────────────────────────────────────────────────
 DB_PATH = os.getenv("DB_PATH", "signals.db")
+
+# ── WebSocket candle cache ────────────────────────────────────────
+# Hybrid mode: REST is still used for setup scanning/history; WebSocket is used
+# to keep ENTRY_TF candles fresh for pending setup monitoring and TP/SL checks.
+ENABLE_WS_CANDLE_CACHE: bool = os.getenv("ENABLE_WS_CANDLE_CACHE", "true").lower() == "true"
+MEXC_WS_URL: str = os.getenv("MEXC_WS_URL", "wss://contract.mexc.com/ws")
+CANDLE_CACHE_LIMIT: int = int(os.getenv("CANDLE_CACHE_LIMIT", "320"))
+WS_MAX_SYMBOLS: int = int(os.getenv("WS_MAX_SYMBOLS", "80"))
+WS_SEED_KLINE_COUNT: int = int(os.getenv("WS_SEED_KLINE_COUNT", "260"))
+WS_DYNAMIC_REFRESH_SECONDS: int = int(os.getenv("WS_DYNAMIC_REFRESH_SECONDS", "300"))
+WS_RECONNECT_DELAY_SECONDS: int = int(os.getenv("WS_RECONNECT_DELAY_SECONDS", "5"))
+WS_PING_INTERVAL_SECONDS: int = int(os.getenv("WS_PING_INTERVAL_SECONDS", "20"))
+WS_PING_TIMEOUT_SECONDS: int = int(os.getenv("WS_PING_TIMEOUT_SECONDS", "10"))
+WS_APP_HEARTBEAT_ENABLED: bool = os.getenv("WS_APP_HEARTBEAT_ENABLED", "true").lower() == "true"
+WS_APP_HEARTBEAT_SECONDS: int = int(os.getenv("WS_APP_HEARTBEAT_SECONDS", "15"))
+WS_SUBSCRIBE_DELAY_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_DELAY_SECONDS", "0.05"))
+WS_SUBSCRIBE_BATCH_SIZE: int = int(os.getenv("WS_SUBSCRIBE_BATCH_SIZE", "20"))
+WS_SUBSCRIBE_BATCH_PAUSE_SECONDS: float = float(os.getenv("WS_SUBSCRIBE_BATCH_PAUSE_SECONDS", "1.0"))
+WS_TEST_SYMBOLS: list[str] = [
+    s.strip().upper()
+    for s in os.getenv("WS_TEST_SYMBOLS", "BTC_USDT").split(",")
+    if s.strip()
+]
+
+MEXC_INTERVAL_MAP: dict[str, str] = {
+    "1m": "Min1",
+    "3m": "Min3",
+    "5m": "Min5",
+    "15m": "Min15",
+    "30m": "Min30",
+    "1h": "Min60",
+    "4h": "Hour4",
+    "8h": "Hour8",
+    "1d": "Day1",
+}
