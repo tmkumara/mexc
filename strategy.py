@@ -80,6 +80,16 @@ from config import (
     LEVERAGE,
     CANDLE_MINUTES,
     SETUP_MONITOR_LOG_DETAILS,
+    EXPIRE_IF_PRICE_AWAY_ATR,
+    EXPIRE_IF_PRICE_AWAY_PCT,
+    REVALIDATE_BEFORE_FIRE,
+    OB_ENTRY_QUALITY_CHECK,
+    REQUIRE_MSS_BREAK_ENTRY,
+    MSS_BREAK_LOOKBACK_CANDLES,
+    ENABLE_ATR_STOP_FLOOR,
+    ATR_STOP_FLOOR_MULTIPLIER,
+    REQUIRE_TREND_CANDLE_CONFIRMATION,
+    TREND_CONFIRM_TF,
 )
 
 logger = logging.getLogger(__name__)
@@ -157,6 +167,93 @@ def _atr_pct(df: pd.DataFrame) -> tuple[bool, float, float]:
 
     pct = atr_value / close * 100.0
     return MIN_ATR_PCT <= pct <= MAX_ATR_PCT, round(pct, 3), atr_value
+
+
+def _atr_status(df: pd.DataFrame) -> tuple[bool, float, float]:
+    """Compatibility wrapper used by monitor logic."""
+    return _atr_pct(df)
+
+
+def _touches_zone(row: pd.Series, zone_low: float, zone_high: float) -> bool:
+    high = float(row["high"])
+    low = float(row["low"])
+    return low <= zone_high and high >= zone_low
+
+
+def _distance_to_zone(price: float, zone_low: float, zone_high: float) -> float:
+    if zone_low <= price <= zone_high:
+        return 0.0
+    if price < zone_low:
+        return zone_low - price
+    return price - zone_high
+
+
+def _distance_from_ob(price: float, zone_low: float, zone_high: float, atr_value: float) -> tuple[float, float]:
+    distance = _distance_to_zone(price, zone_low, zone_high)
+    distance_pct = 0.0 if price <= 0 else distance / price * 100.0
+    distance_atr = 0.0 if atr_value <= 0 else distance / atr_value
+    return round(distance_pct, 3), round(distance_atr, 3)
+
+
+def _too_far_from_ob(
+    price: float,
+    zone_low: float,
+    zone_high: float,
+    atr_value: float,
+    max_pct: float,
+    max_atr: float,
+) -> tuple[bool, float, float]:
+    distance_pct, distance_atr = _distance_from_ob(price, zone_low, zone_high, atr_value)
+    pct_fail = max_pct > 0 and distance_pct > max_pct
+    atr_fail = max_atr > 0 and atr_value > 0 and distance_atr > max_atr
+    return pct_fail or atr_fail, distance_pct, distance_atr
+
+
+def _ob_entry_quality_ok(row: pd.Series, direction: str, zone_low: float, zone_high: float) -> bool:
+    if not OB_ENTRY_QUALITY_CHECK:
+        return True
+
+    midpoint = (zone_low + zone_high) / 2.0
+    if direction == "LONG":
+        return float(row["low"]) <= midpoint
+    return float(row["high"]) >= midpoint
+
+
+def _mss_break_ok(retest_row: pd.Series, candidate_row: pd.Series, direction: str) -> bool:
+    buffer_pct = MSS_BREAK_BUFFER_PCT / 100.0
+
+    if direction == "LONG":
+        trigger = float(retest_row["high"]) * (1.0 + buffer_pct)
+        return (
+            float(candidate_row["high"]) > trigger
+            and float(candidate_row["close"]) > trigger
+            and _is_bullish(candidate_row)
+        )
+
+    trigger = float(retest_row["low"]) * (1.0 - buffer_pct)
+    return (
+        float(candidate_row["low"]) < trigger
+        and float(candidate_row["close"]) < trigger
+        and _is_bearish(candidate_row)
+    )
+
+
+def _trend_candle_confirmation_ok(symbol: str, direction: str) -> bool:
+    if not REQUIRE_TREND_CANDLE_CONFIRMATION:
+        return True
+
+    try:
+        df = get_klines(symbol, TREND_CONFIRM_TF, count=5)
+        if df is None or df.empty or len(df) < 2:
+            logger.warning("[TREND-CONFIRM] %s insufficient data — filter skipped", symbol)
+            return True
+
+        row = df.iloc[-2]
+        return _is_bullish(row) if direction == "LONG" else _is_bearish(row)
+
+    except Exception as e:
+        logger.warning("[TREND-CONFIRM] %s fetch error: %s — filter skipped", symbol, e)
+        return True
 
 
 # ── candle helpers ────────────────────────────────────────────────
@@ -543,12 +640,20 @@ def _calculate_setup_prices(direction: str, ob: dict, sweep: dict, target_swing:
     return round(sl_price, 8), round(target_price, 8), round(rr, 2), round(sl_pct, 3)
 
 
-def _calculate_final_prices(direction: str, entry: float, setup: dict) -> tuple[float, float, float, float, float] | None:
+def _calculate_final_prices(direction: str, entry: float, setup: dict, atr_value: float = 0.0) -> tuple[float, float, float, float, float] | None:
     sl_price = float(setup["sl_price"])
     target_price = float(setup["target_price"])
 
     if entry <= 0:
         return None
+
+    # Optional ATR stop floor prevents very tight structure SL from normal noise.
+    if ENABLE_ATR_STOP_FLOOR and atr_value > 0 and ATR_STOP_FLOOR_MULTIPLIER > 0:
+        min_risk = atr_value * ATR_STOP_FLOOR_MULTIPLIER
+        if direction == "LONG" and entry - sl_price < min_risk:
+            sl_price = entry - min_risk
+        elif direction == "SHORT" and sl_price - entry < min_risk:
+            sl_price = entry + min_risk
 
     if direction == "LONG":
         risk = entry - sl_price
