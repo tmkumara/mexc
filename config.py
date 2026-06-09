@@ -146,6 +146,18 @@ MIN_SL_PCT: float = float(os.getenv("MIN_SL_PCT", "0.20"))
 MAX_SL_PCT: float = float(os.getenv("MAX_SL_PCT", "1.25"))
 MIN_SETUP_SCORE: float = float(os.getenv("MIN_SETUP_SCORE", "88"))
 
+# ── Support / Resistance target selection ─────────────────────────
+USE_SR_TARGETS: bool = os.getenv("USE_SR_TARGETS", "true").lower() == "true"
+SR_LOOKBACK: int = int(os.getenv("SR_LOOKBACK", "180"))
+SR_SWING_LEFT: int = int(os.getenv("SR_SWING_LEFT", str(int(os.getenv("SWING_LEFT", "3")))))
+SR_SWING_RIGHT: int = int(os.getenv("SR_SWING_RIGHT", str(int(os.getenv("SWING_RIGHT", "2")))))
+SR_MERGE_ATR_MULT: float = float(os.getenv("SR_MERGE_ATR_MULT", "0.35"))
+MIN_ROOM_TO_TARGET_ATR: float = float(os.getenv("MIN_ROOM_TO_TARGET_ATR", "1.2"))
+MAX_TARGET_DISTANCE_ATR: float = float(os.getenv("MAX_TARGET_DISTANCE_ATR", "8.0"))
+SR_MIN_TOUCHES: int = int(os.getenv("SR_MIN_TOUCHES", "2"))
+ALLOW_FIXED_RR_FALLBACK: bool = os.getenv("ALLOW_FIXED_RR_FALLBACK", "true").lower() == "true"
+SR_TARGET_SCORE_BONUS: float = float(os.getenv("SR_TARGET_SCORE_BONUS", "8.0"))
+
 # Setup quality / stale setup controls
 MAX_OB_DISTANCE_ATR: float = float(os.getenv("MAX_OB_DISTANCE_ATR", "5.0"))
 MAX_OB_DISTANCE_PCT: float = float(os.getenv("MAX_OB_DISTANCE_PCT", "4.0"))

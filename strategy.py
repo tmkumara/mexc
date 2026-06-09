@@ -103,6 +103,15 @@ from config import (
     ATR_STOP_FLOOR_MULTIPLIER,
     REQUIRE_TREND_CANDLE_CONFIRMATION,
     TREND_CONFIRM_TF,
+    USE_SR_TARGETS,
+    SR_LOOKBACK,
+    SR_SWING_LEFT,
+    SR_SWING_RIGHT,
+    SR_MERGE_ATR_MULT,
+    MIN_ROOM_TO_TARGET_ATR,
+    MAX_TARGET_DISTANCE_ATR,
+    SR_MIN_TOUCHES,
+    ALLOW_FIXED_RR_FALLBACK,
 )
 
 logger = logging.getLogger(__name__)
@@ -162,6 +171,14 @@ def _atr(df: pd.DataFrame, period: int) -> pd.Series:
     ).max(axis=1)
 
     return tr.ewm(span=period, adjust=False).mean()
+
+
+def _atr_scalar(df: pd.DataFrame, period: int = 14) -> float:
+    """Returns the latest ATR value as a scalar float."""
+    if df is None or df.empty or len(df) < period + 2:
+        return 0.0
+    val = float(_atr(df, period).iloc[-1])
+    return val if val > 0 else 0.0
 
 
 def _atr_pct(df: pd.DataFrame) -> tuple[bool, float, float]:
@@ -352,6 +369,143 @@ def _find_target_swing(swings: list[dict], direction: str, pos: int, reference_p
     else:
         candidates = [s for s in swings if s["type"] == "LOW" and s["pos"] < pos and s["price"] < reference_price]
     return candidates[-1] if candidates else None
+
+
+def _build_sr_levels(
+    df: pd.DataFrame,
+    left: int,
+    right: int,
+    merge_distance: float,
+) -> list[dict]:
+    """
+    Builds support/resistance levels from swing highs/lows.
+
+    Returns list of {"type", "price", "touches", "strength", "last_pos"}.
+    Nearby levels of the same type within merge_distance are grouped.
+    """
+    swings = _find_swings(df, left, right)
+    n = len(df)
+
+    raw: list[dict] = []
+    for s in swings:
+        level_type = "RESISTANCE" if s["type"] == "HIGH" else "SUPPORT"
+        raw.append({"type": level_type, "price": s["price"], "pos": s["pos"]})
+
+    result: list[dict] = []
+    for level_type in ("RESISTANCE", "SUPPORT"):
+        levels = sorted([r for r in raw if r["type"] == level_type], key=lambda x: x["price"])
+
+        groups: list[list[dict]] = []
+        for lvl in levels:
+            if groups and abs(lvl["price"] - groups[-1][-1]["price"]) <= merge_distance:
+                groups[-1].append(lvl)
+            else:
+                groups.append([lvl])
+
+        for group in groups:
+            prices = [g["price"] for g in group]
+            positions = [g["pos"] for g in group]
+            avg_price = sum(prices) / len(prices)
+            last_pos = max(positions)
+            touches = len(group)
+            recency_bonus = max(0.0, 1.0 - ((n - last_pos) / n)) if n > 0 else 0.0
+            strength = touches + recency_bonus
+            result.append({
+                "type": level_type,
+                "price": avg_price,
+                "touches": touches,
+                "strength": strength,
+                "last_pos": last_pos,
+            })
+
+    return result
+
+
+def _select_sr_target(
+    direction: str,
+    entry_ref: float,
+    sl_price: float,
+    df: pd.DataFrame,
+) -> tuple[float, float, dict] | None:
+    """
+    Selects the nearest strong S/R level as TP.
+
+    LONG: nearest resistance above entry_ref with valid RR.
+    SHORT: nearest support below entry_ref with valid RR.
+
+    Returns (target_price, rr, selected_level) or None.
+    """
+    atr = _atr_scalar(df)
+    if atr <= 0:
+        return None
+
+    sr_df = df.tail(SR_LOOKBACK)
+    merge_dist = atr * SR_MERGE_ATR_MULT
+    levels = _build_sr_levels(sr_df, SR_SWING_LEFT, SR_SWING_RIGHT, merge_dist)
+
+    if direction == "LONG":
+        risk = entry_ref - sl_price
+        if risk <= 0:
+            return None
+        candidates = sorted(
+            [l for l in levels if l["type"] == "RESISTANCE" and l["price"] > entry_ref],
+            key=lambda x: x["price"],
+        )
+    else:
+        risk = sl_price - entry_ref
+        if risk <= 0:
+            return None
+        candidates = sorted(
+            [l for l in levels if l["type"] == "SUPPORT" and l["price"] < entry_ref],
+            key=lambda x: x["price"],
+            reverse=True,
+        )
+
+    valid: list[tuple[float, float, float, dict]] = []  # (distance, neg_touches, target, rr, lvl)
+    for lvl in candidates:
+        if lvl["touches"] < SR_MIN_TOUCHES:
+            continue
+
+        if direction == "LONG":
+            distance = lvl["price"] - entry_ref
+        else:
+            distance = entry_ref - lvl["price"]
+
+        if distance < atr * MIN_ROOM_TO_TARGET_ATR:
+            continue
+        if distance > atr * MAX_TARGET_DISTANCE_ATR:
+            continue
+
+        if direction == "LONG":
+            target = lvl["price"] * (1.0 - TP_BUFFER_PCT / 100.0)
+            reward = target - entry_ref
+        else:
+            target = lvl["price"] * (1.0 + TP_BUFFER_PCT / 100.0)
+            reward = entry_ref - target
+
+        if reward <= 0:
+            continue
+
+        rr = reward / risk
+        if rr < MIN_STRUCTURE_RR:
+            continue
+
+        if rr > MAX_STRUCTURE_RR:
+            rr = MAX_STRUCTURE_RR
+            if direction == "LONG":
+                target = entry_ref + risk * rr
+            else:
+                target = entry_ref - risk * rr
+
+        valid.append((distance, -lvl["touches"], target, rr, lvl))
+
+    if not valid:
+        return None
+
+    # Prefer nearest; among equidistant, prefer stronger touches.
+    valid.sort(key=lambda x: (x[0], x[1]))
+    _, _, target, rr, lvl = valid[0]
+    return round(target, 8), round(rr, 2), lvl
 
 
 def _get_market_structure_bias(structure_df: pd.DataFrame) -> tuple[str | None, dict]:
@@ -669,7 +823,12 @@ def _calculate_setup_prices(
     sweep: dict,
     target_swing: dict | None,
     atr_value: float,
-) -> tuple[float, float, float, float] | None:
+    entry_df: pd.DataFrame | None = None,
+) -> tuple[float, float, float, float, str] | None:
+    """
+    Returns (sl_price, target_price, rr, sl_pct, target_source) or None.
+    target_source is one of "SR", "SWING", "FIXED_RR".
+    """
     ob_mid = (ob["zone_low"] + ob["zone_high"]) / 2.0
     if ob_mid <= 0:
         return None
@@ -678,18 +837,41 @@ def _calculate_setup_prices(
 
     if direction == "LONG":
         sl_price = min(sweep["extreme"], ob["zone_low"]) * (1.0 - SL_BUFFER_PCT / 100.0) - atr_buffer
-        if target_swing and target_swing["price"] > ob_mid:
+    else:
+        sl_price = max(sweep["extreme"], ob["zone_high"]) * (1.0 + SL_BUFFER_PCT / 100.0) + atr_buffer
+
+    target_price: float | None = None
+    target_source = "FIXED_RR"
+
+    # 1. Try SR-based target
+    if USE_SR_TARGETS and entry_df is not None:
+        sr_result = _select_sr_target(direction, ob_mid, sl_price, entry_df)
+        if sr_result is not None:
+            target_price, _, _ = sr_result
+            target_source = "SR"
+
+    # 2. Fall back to target swing
+    if target_price is None:
+        if direction == "LONG" and target_swing and target_swing["price"] > ob_mid:
             target_price = target_swing["price"] * (1.0 - TP_BUFFER_PCT / 100.0)
-        else:
+            target_source = "SWING"
+        elif direction == "SHORT" and target_swing and target_swing["price"] < ob_mid:
+            target_price = target_swing["price"] * (1.0 + TP_BUFFER_PCT / 100.0)
+            target_source = "SWING"
+
+    # 3. Fall back to fixed RR
+    if target_price is None:
+        if not ALLOW_FIXED_RR_FALLBACK:
+            return None
+        if direction == "LONG":
             target_price = ob_mid + (ob_mid - sl_price) * REWARD_RATIO
+        else:
+            target_price = ob_mid - (sl_price - ob_mid) * REWARD_RATIO
+
+    if direction == "LONG":
         risk = ob_mid - sl_price
         reward = target_price - ob_mid
     else:
-        sl_price = max(sweep["extreme"], ob["zone_high"]) * (1.0 + SL_BUFFER_PCT / 100.0) + atr_buffer
-        if target_swing and target_swing["price"] < ob_mid:
-            target_price = target_swing["price"] * (1.0 + TP_BUFFER_PCT / 100.0)
-        else:
-            target_price = ob_mid - (sl_price - ob_mid) * REWARD_RATIO
         risk = sl_price - ob_mid
         reward = ob_mid - target_price
 
@@ -711,7 +893,7 @@ def _calculate_setup_prices(
         else:
             target_price = ob_mid - risk * rr
 
-    return round(sl_price, 8), round(target_price, 8), round(rr, 2), round(sl_pct, 3)
+    return round(sl_price, 8), round(target_price, 8), round(rr, 2), round(sl_pct, 3), target_source
 
 
 def _calculate_final_prices(
@@ -952,11 +1134,17 @@ def detect_setup(symbol: str) -> dict | None:
                 sweep=sweep,
                 target_swing=target_swing,
                 atr_value=atr_value,
+                entry_df=completed,
             )
             if not prices:
+                if USE_SR_TARGETS and not ALLOW_FIXED_RR_FALLBACK:
+                    logger.info(
+                        "[SETUP-REJECT] %s | no SR target with RR >= %g",
+                        symbol, MIN_STRUCTURE_RR,
+                    )
                 continue
 
-            sl_price, target_price, rr_estimate, sl_pct = prices
+            sl_price, target_price, rr_estimate, sl_pct, target_source = prices
 
             score = _score_setup(
                 rr_estimate, ob_age, sweep_age, displacement_age,
@@ -1008,13 +1196,13 @@ def detect_setup(symbol: str) -> dict | None:
             }
 
             logger.info(
-                "[SETUP] %s %s | OB=%.6g-%.6g SL=%.6g TP=%.6g SL%%=%.2f ATR%%=%.2f RR=%.2f score=%.1f"
-                " [1D=%s 4H=%s 1H=%s]",
+                "[SETUP] %s %s | OB=%.6g-%.6g SL=%.6g TP=%.6g SL%%=%.2f ATR%%=%.2f RR=%.2f"
+                " score=%.1f tp_src=%s [1D=%s 4H=%s 1H=%s]",
                 bias, symbol,
                 ob["zone_low"], ob["zone_high"],
                 sl_price, target_price,
                 sl_pct, atr_value_pct, rr_estimate, score,
-                macro_regime, htf_trend, bias,
+                target_source, macro_regime, htf_trend, bias,
             )
 
         return best_setup
