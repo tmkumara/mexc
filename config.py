@@ -57,17 +57,30 @@ MIN_24H_VOLUME_USD: float = float(os.getenv("MIN_24H_VOLUME_USD", str(COIN_POOL_
 MAX_SPREAD_PCT: float = float(os.getenv("MAX_SPREAD_PCT", "0.35"))
 MIN_PRICE_CHANGE_24H_PCT: float = float(os.getenv("MIN_PRICE_CHANGE_24H_PCT", "0.0"))
 
-# ── Hybrid SMC Pro Strategy ───────────────────────────────────────
-STRATEGY_NAME: str = os.getenv("STRATEGY_NAME", "Hybrid SMC Pro")
-STRATEGY_TF: str = os.getenv("STRATEGY_TF", "5m")
-TREND_TF: str = os.getenv("TREND_TF", "15m")
-ENTRY_TF: str = os.getenv("ENTRY_TF", "5m")
-HTF_TREND_TF: str = os.getenv("HTF_TREND_TF", "1h")
+# ── MTF SMC Strategy — Timeframes ─────────────────────────────────
+STRATEGY_NAME: str = os.getenv("STRATEGY_NAME", "MTF SMC Sweep + OB Retest")
 
-TREND_KLINE_COUNT: int = int(os.getenv("TREND_KLINE_COUNT", "220"))
-ENTRY_KLINE_COUNT: int = int(os.getenv("ENTRY_KLINE_COUNT", "220"))
-MONITOR_KLINE_COUNT: int = int(os.getenv("MONITOR_KLINE_COUNT", "60"))
-HTF_KLINE_COUNT: int = int(os.getenv("HTF_KLINE_COUNT", "260"))
+# 1D = macro regime | 4H = trend | 1H = structure | 15m = entry
+MACRO_TF: str    = os.getenv("MACRO_TF",    "1d")
+HTF_TREND_TF: str = os.getenv("HTF_TREND_TF", "4h")
+STRUCTURE_TF: str = os.getenv("STRUCTURE_TF", "1h")
+ENTRY_TF: str    = os.getenv("ENTRY_TF",    "15m")
+
+# TREND_TF kept for backward compat — equals STRUCTURE_TF
+TREND_TF: str = STRUCTURE_TF
+
+# Kline counts per timeframe
+MACRO_KLINE_COUNT: int     = int(os.getenv("MACRO_KLINE_COUNT",     "220"))
+HTF_KLINE_COUNT: int       = int(os.getenv("HTF_KLINE_COUNT",       "220"))
+STRUCTURE_KLINE_COUNT: int = int(os.getenv("STRUCTURE_KLINE_COUNT", "220"))
+ENTRY_KLINE_COUNT: int     = int(os.getenv("ENTRY_KLINE_COUNT",     "220"))
+MONITOR_KLINE_COUNT: int   = int(os.getenv("MONITOR_KLINE_COUNT",   "80"))
+
+# TREND_KLINE_COUNT kept for backward compat — equals STRUCTURE_KLINE_COUNT
+TREND_KLINE_COUNT: int = STRUCTURE_KLINE_COUNT
+
+# MTF alignment gate
+REQUIRE_MTF_ALIGNMENT: bool = os.getenv("REQUIRE_MTF_ALIGNMENT", "true").lower() == "true"
 
 # Swing / structure detection
 SWING_LEFT: int = int(os.getenv("SWING_LEFT", "3"))
@@ -81,19 +94,25 @@ AVG_BODY_PERIOD: int = int(os.getenv("AVG_BODY_PERIOD", "20"))
 DISPLACEMENT_BODY_MULTIPLIER: float = float(os.getenv("DISPLACEMENT_BODY_MULTIPLIER", "1.35"))
 DISPLACEMENT_CLOSE_POSITION: float = float(os.getenv("DISPLACEMENT_CLOSE_POSITION", "0.65"))
 
+# Freshness controls — how many ENTRY_TF candles back a setup component can be
+# With 15m candles: 6 = 90m, 10 = 150m, 12 = 3h
+MAX_DISPLACEMENT_AGE_CANDLES: int = int(os.getenv("MAX_DISPLACEMENT_AGE_CANDLES", "6"))
+MAX_SWEEP_AGE_CANDLES: int        = int(os.getenv("MAX_SWEEP_AGE_CANDLES",        "10"))
+MAX_OB_AGE_CANDLES: int           = int(os.getenv("MAX_OB_AGE_CANDLES",           "12"))
+
 # Order block
 ORDER_BLOCK_LOOKBACK: int = int(os.getenv("ORDER_BLOCK_LOOKBACK", "12"))
 MAX_SIGNAL_CANDLE_BODY_PCT: float = float(os.getenv("MAX_SIGNAL_CANDLE_BODY_PCT", "1.20"))
 PENDING_SETUP_EXPIRE_CANDLES: int = int(os.getenv("PENDING_SETUP_EXPIRE_CANDLES", "24"))
 MAX_PENDING_SETUPS_PER_SYMBOL: int = int(os.getenv("MAX_PENDING_SETUPS_PER_SYMBOL", "1"))
 
-# HTF trend filter
+# HTF trend filter (4H EMA50/200)
 ENABLE_HTF_FILTER: bool = os.getenv("ENABLE_HTF_FILTER", "true").lower() == "true"
 HTF_EMA_FAST: int = int(os.getenv("HTF_EMA_FAST", "50"))
 HTF_EMA_SLOW: int = int(os.getenv("HTF_EMA_SLOW", "200"))
 HTF_EMA_SLOPE_LOOKBACK: int = int(os.getenv("HTF_EMA_SLOPE_LOOKBACK", "3"))
 
-# Entry EMA alignment filter
+# Entry EMA alignment filter (on ENTRY_TF)
 ENABLE_ENTRY_EMA_FILTER: bool = os.getenv("ENABLE_ENTRY_EMA_FILTER", "true").lower() == "true"
 EMA_FAST_FILTER: int = int(os.getenv("EMA_FAST_FILTER", "20"))
 EMA_SLOW_FILTER: int = int(os.getenv("EMA_SLOW_FILTER", "50"))
@@ -125,7 +144,7 @@ SL_BUFFER_PCT: float = float(os.getenv("SL_BUFFER_PCT", "0.05"))
 TP_BUFFER_PCT: float = float(os.getenv("TP_BUFFER_PCT", "0.02"))
 MIN_SL_PCT: float = float(os.getenv("MIN_SL_PCT", "0.20"))
 MAX_SL_PCT: float = float(os.getenv("MAX_SL_PCT", "1.25"))
-MIN_SETUP_SCORE: int = int(os.getenv("MIN_SETUP_SCORE", "85"))
+MIN_SETUP_SCORE: float = float(os.getenv("MIN_SETUP_SCORE", "88"))
 
 # Setup quality / stale setup controls
 MAX_OB_DISTANCE_ATR: float = float(os.getenv("MAX_OB_DISTANCE_ATR", "5.0"))
@@ -140,11 +159,11 @@ REQUIRE_MSS_BREAK_ENTRY: bool = os.getenv("REQUIRE_MSS_BREAK_ENTRY", "true").low
 MSS_BREAK_LOOKBACK_CANDLES: int = int(os.getenv("MSS_BREAK_LOOKBACK_CANDLES", "4"))
 MSS_BREAK_BUFFER_PCT: float = float(os.getenv("MSS_BREAK_BUFFER_PCT", "0.01"))
 
-# ATR stop floor: prevents very tight structure SL from normal 5m noise.
+# ATR stop floor
 ENABLE_ATR_STOP_FLOOR: bool = os.getenv("ENABLE_ATR_STOP_FLOOR", "true").lower() == "true"
 ATR_STOP_FLOOR_MULTIPLIER: float = float(os.getenv("ATR_STOP_FLOOR_MULTIPLIER", "0.75"))
 
-# Trend candle confirmation before firing.
+# Trend candle confirmation before firing (uses ENTRY_TF by default)
 REQUIRE_TREND_CANDLE_CONFIRMATION: bool = os.getenv("REQUIRE_TREND_CANDLE_CONFIRMATION", "true").lower() == "true"
 TREND_CONFIRM_TF: str = os.getenv("TREND_CONFIRM_TF", "15m")
 TREND_CONFIRM_KLINE_COUNT: int = int(os.getenv("TREND_CONFIRM_KLINE_COUNT", "20"))
@@ -190,8 +209,15 @@ SETUP_MONITOR_LOG_DETAILS: bool = os.getenv("SETUP_MONITOR_LOG_DETAILS", "true")
 SCHEDULER_MISFIRE_GRACE_SECONDS: int = int(os.getenv("SCHEDULER_MISFIRE_GRACE_SECONDS", "30"))
 SCHEDULER_MAX_INSTANCES: int = int(os.getenv("SCHEDULER_MAX_INSTANCES", "1"))
 
-# Important: outcome checking uses ENTRY_TF 5m candles, so this must stay 5 by default.
-CANDLE_MINUTES: int = int(os.getenv("CANDLE_MINUTES", "5"))
+# Derive CANDLE_MINUTES from ENTRY_TF so outcome checking uses the right interval.
+_TF_MINUTES: dict[str, int] = {
+    "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+    "1h": 60, "4h": 240, "8h": 480, "1d": 1440,
+}
+CANDLE_MINUTES: int = int(os.getenv(
+    "CANDLE_MINUTES",
+    str(_TF_MINUTES.get(ENTRY_TF, 15)),
+))
 
 # ── Log rotation / restart backup ─────────────────────────────────
 LOG_FILE: str = os.getenv("LOG_FILE", "mexc_bot.log")
@@ -205,8 +231,6 @@ MEXC_BASE_URL = os.getenv("MEXC_BASE_URL", "https://contract.mexc.com/api/v1")
 DB_PATH = os.getenv("DB_PATH", "signals.db")
 
 # ── WebSocket candle cache ────────────────────────────────────────
-# Hybrid mode: REST is still used for setup scanning/history; WebSocket is used
-# to keep ENTRY_TF candles fresh for pending setup monitoring and TP/SL checks.
 ENABLE_WS_CANDLE_CACHE: bool = os.getenv("ENABLE_WS_CANDLE_CACHE", "true").lower() == "true"
 MEXC_WS_URL: str = os.getenv("MEXC_WS_URL", "wss://contract.mexc.com/edge")
 CANDLE_CACHE_LIMIT: int = int(os.getenv("CANDLE_CACHE_LIMIT", "320"))

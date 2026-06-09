@@ -387,26 +387,36 @@ async def monitor_setups(app: Application) -> None:
     )
 
     for setup, sig in to_send:
-        signal_id = db.save_signal(
-            symbol=sig.symbol,
-            direction=sig.direction,
-            entry_price=sig.entry_price,
-            tp_price=sig.tp_price,
-            sl_price=sig.sl_price,
-            leverage=sig.leverage,
-            generated_at=sig.generated_at,
-        )
-
-        db.mark_setup_fired(setup["id"], signal_id)
+        # Atomic claim — prevents duplicate fires if monitor cycles overlap or
+        # two bot processes run simultaneously.
+        if not db.claim_setup_for_fire(setup["id"]):
+            logger.info(
+                "[SETUP-MONITOR] Setup #%d %s already claimed, skipping duplicate",
+                setup["id"], setup["symbol"],
+            )
+            continue
 
         try:
+            signal_id = db.save_signal(
+                symbol=sig.symbol,
+                direction=sig.direction,
+                entry_price=sig.entry_price,
+                tp_price=sig.tp_price,
+                sl_price=sig.sl_price,
+                leverage=sig.leverage,
+                generated_at=sig.generated_at,
+            )
+
+            db.mark_setup_fired(setup["id"], signal_id)
+
             await tg.broadcast_signal(app, sig, signal_id)
             logger.info(
-                f"[SETUP-MONITOR] Sent signal #{signal_id} "
-                f"from setup #{setup['id']} {sig.symbol} {sig.direction} score={sig.score}"
+                "[SETUP-MONITOR] Sent signal #%d from setup #%d %s %s score=%.1f",
+                signal_id, setup["id"], sig.symbol, sig.direction, sig.score,
             )
         except Exception as e:
-            logger.error(f"Failed to broadcast {sig.symbol}: {e}", exc_info=True)
+            db.mark_setup_fire_failed(setup["id"])
+            logger.error(f"Failed to fire signal for {sig.symbol}: {e}", exc_info=True)
 
 
 # ── outcome checker ───────────────────────────────────────────────

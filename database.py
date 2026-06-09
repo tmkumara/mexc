@@ -110,6 +110,20 @@ def init_db():
             ON pending_setups (symbol, status)
         """)
 
+        # MTF columns — added safely so existing DBs do not break.
+        for col, definition in [
+            ("macro_tf",       "TEXT"),
+            ("macro_bias",     "TEXT"),
+            ("htf_tf",         "TEXT"),
+            ("htf_bias",       "TEXT"),
+            ("structure_tf",   "TEXT"),
+            ("structure_bias", "TEXT"),
+        ]:
+            try:
+                con.execute(f"ALTER TABLE pending_setups ADD COLUMN {col} {definition}")
+            except Exception:
+                pass
+
     logger.info("Database initialised")
 
 
@@ -214,20 +228,24 @@ def signal_exists_for_coin(symbol: str, since: datetime) -> bool:
 # ── pending_setups table ──────────────────────────────────────────
 
 def pending_setup_exists(symbol: str, direction: str | None = None) -> bool:
+    """
+    Returns True if the symbol has an active setup in 'waiting' or 'firing' state.
+    Treating 'firing' as active prevents a new setup being saved while one is mid-fire.
+    """
     with _conn() as con:
         if direction:
             row = con.execute("""
                 SELECT id FROM pending_setups
                 WHERE symbol = ?
                   AND direction = ?
-                  AND status = 'waiting'
+                  AND status IN ('waiting', 'firing')
                 LIMIT 1
             """, (symbol, direction)).fetchone()
         else:
             row = con.execute("""
                 SELECT id FROM pending_setups
                 WHERE symbol = ?
-                  AND status = 'waiting'
+                  AND status IN ('waiting', 'firing')
                 LIMIT 1
             """, (symbol,)).fetchone()
 
@@ -238,7 +256,7 @@ def save_pending_setup(setup: dict) -> int | None:
     """
     Saves a pending SMC setup.
 
-    Avoids duplicates for same symbol + direction while status='waiting'.
+    Avoids duplicates for same symbol + direction while status is waiting/firing.
     """
     if pending_setup_exists(setup["symbol"], setup["direction"]):
         return None
@@ -255,7 +273,9 @@ def save_pending_setup(setup: dict) -> int | None:
                 ob_type, ob_low, ob_high, ob_time,
                 target_price, sl_price,
                 rr_estimate, score,
-                setup_time, expires_at, created_at, updated_at
+                setup_time, expires_at, created_at, updated_at,
+                macro_tf, macro_bias, htf_tf, htf_bias,
+                structure_tf, structure_bias
             )
             VALUES (
                 ?, ?, 'waiting',
@@ -265,7 +285,9 @@ def save_pending_setup(setup: dict) -> int | None:
                 ?, ?, ?, ?,
                 ?, ?,
                 ?, ?,
-                ?, ?, ?, ?
+                ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?
             )
         """, (
             setup["symbol"],
@@ -290,12 +312,19 @@ def save_pending_setup(setup: dict) -> int | None:
             setup["expires_at"],
             now,
             now,
+            setup.get("macro_tf"),
+            setup.get("macro_bias"),
+            setup.get("htf_tf"),
+            setup.get("htf_bias"),
+            setup.get("structure_tf"),
+            setup.get("structure_bias"),
         ))
 
         return cur.lastrowid
 
 
 def get_waiting_setups(limit: int = 200) -> list[dict]:
+    """Returns only 'waiting' setups — 'firing' rows are excluded to prevent double evaluation."""
     with _conn() as con:
         rows = con.execute("""
             SELECT * FROM pending_setups
@@ -330,7 +359,30 @@ def count_waiting_setups_by_direction() -> dict[str, int]:
         return {str(r["direction"]): int(r["cnt"]) for r in rows}
 
 
+def claim_setup_for_fire(setup_id: int) -> bool:
+    """
+    Atomically claims a waiting setup before creating a signal.
+
+    Sets status to 'firing' so no other monitor loop or process can claim it.
+    Returns True only if the row was still 'waiting' and is now claimed.
+    Returns False if it was already claimed, fired, expired, or invalidated.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+
+    with _conn() as con:
+        cur = con.execute("""
+            UPDATE pending_setups
+            SET status = 'firing',
+                updated_at = ?
+            WHERE id = ?
+              AND status = 'waiting'
+        """, (now, setup_id))
+
+        return cur.rowcount == 1
+
+
 def mark_setup_fired(setup_id: int, signal_id: int):
+    """Transitions status from 'firing' to 'fired' after signal is saved and broadcast."""
     now = datetime.now(timezone.utc).isoformat()
 
     with _conn() as con:
@@ -340,8 +392,21 @@ def mark_setup_fired(setup_id: int, signal_id: int):
                 fired_signal_id = ?,
                 fired_at = ?,
                 updated_at = ?
-            WHERE id = ? AND status = 'waiting'
+            WHERE id = ? AND status = 'firing'
         """, (signal_id, now, now, setup_id))
+
+
+def mark_setup_fire_failed(setup_id: int):
+    """Reverts a 'firing' setup back to 'waiting' if save/broadcast fails, allowing retry."""
+    now = datetime.now(timezone.utc).isoformat()
+
+    with _conn() as con:
+        con.execute("""
+            UPDATE pending_setups
+            SET status = 'waiting',
+                updated_at = ?
+            WHERE id = ? AND status = 'firing'
+        """, (now, setup_id))
 
 
 def mark_setup_expired(setup_id: int):

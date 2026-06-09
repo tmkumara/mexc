@@ -1,24 +1,28 @@
 """
-Hybrid SMC Pro — 1h Trend + 15m Structure + 5m Sweep/OB Retest.
+MTF SMC — 1D Macro + 4H Trend + 1H Structure + 15m Entry (Sweep/OB Retest).
 
-This file intentionally disables the old EMA/CCI direct signal path.
-Signals now fire only through this stateful flow:
+Signal flow:
 
     detect_setup(symbol)
-        1. Detect 15m market-structure bias.
-        2. Confirm 1h trend filter.
-        3. Confirm BTC market regime is not against the setup.
-        4. Detect 5m liquidity sweep + displacement candle.
-        5. Find the order block and calculate SL/TP.
-        6. Return a pending setup dict for database.save_pending_setup().
+        1. 1H market-structure bias (swing-based).
+        2. 1D macro regime filter (EMA50/200).
+        3. 4H trend filter (EMA50/200).
+        4. MTF alignment gate — all three must agree.
+        5. BTC market regime cross-check.
+        6. 15m liquidity sweep + displacement candle + order block.
+        7. Freshness gates — reject stale sweep/OB/displacement.
+        8. ATR, volume, entry-EMA filters.
+        9. Score >= MIN_SETUP_SCORE (88).
+       10. Return pending setup dict.
 
     evaluate_pending_setup(setup)
-        1. Wait for price to retest the OB zone.
-        2. Require confirmation candle after retest.
-        3. Recalculate real entry, SL, TP and ROI.
-        4. Return Signal only when entry confirms.
+        1. Wait for 15m price to enter OB zone.
+        2. Rejection candle required.
+        3. MSS break within lookback window.
+        4. Revalidate 4H trend + BTC + ATR + entry EMA.
+        5. Return FIRE + Signal when entry confirms.
 
-No external TA package is used. Indicators are calculated with pandas only.
+No external TA package. All indicators use pandas only.
 """
 
 from __future__ import annotations
@@ -31,13 +35,17 @@ import pandas as pd
 
 from mexc_client import get_klines
 from config import (
-    TREND_TF,
-    ENTRY_TF,
+    MACRO_TF,
     HTF_TREND_TF,
-    TREND_KLINE_COUNT,
-    ENTRY_KLINE_COUNT,
-    MONITOR_KLINE_COUNT,
+    STRUCTURE_TF,
+    ENTRY_TF,
+    TREND_TF,             # backward compat alias = STRUCTURE_TF
+    MACRO_KLINE_COUNT,
     HTF_KLINE_COUNT,
+    STRUCTURE_KLINE_COUNT,
+    ENTRY_KLINE_COUNT,
+    TREND_KLINE_COUNT,    # backward compat alias = STRUCTURE_KLINE_COUNT
+    MONITOR_KLINE_COUNT,
     SWING_LEFT,
     SWING_RIGHT,
     STRUCTURE_LOOKBACK,
@@ -46,6 +54,9 @@ from config import (
     AVG_BODY_PERIOD,
     DISPLACEMENT_BODY_MULTIPLIER,
     DISPLACEMENT_CLOSE_POSITION,
+    MAX_DISPLACEMENT_AGE_CANDLES,
+    MAX_SWEEP_AGE_CANDLES,
+    MAX_OB_AGE_CANDLES,
     ORDER_BLOCK_LOOKBACK,
     PENDING_SETUP_EXPIRE_CANDLES,
     MAX_SIGNAL_CANDLE_BODY_PCT,
@@ -77,6 +88,7 @@ from config import (
     MIN_SL_PCT,
     MAX_SL_PCT,
     MIN_SETUP_SCORE,
+    REQUIRE_MTF_ALIGNMENT,
     LEVERAGE,
     CANDLE_MINUTES,
     SETUP_MONITOR_LOG_DETAILS,
@@ -171,14 +183,11 @@ def _atr_pct(df: pd.DataFrame) -> tuple[bool, float, float]:
 
 
 def _atr_status(df: pd.DataFrame) -> tuple[bool, float, float]:
-    """Compatibility wrapper used by monitor logic."""
     return _atr_pct(df)
 
 
 def _touches_zone(row: pd.Series, zone_low: float, zone_high: float) -> bool:
-    high = float(row["high"])
-    low = float(row["low"])
-    return low <= zone_high and high >= zone_low
+    return float(row["low"]) <= zone_high and float(row["high"]) >= zone_low
 
 
 def _distance_to_zone(price: float, zone_low: float, zone_high: float) -> float:
@@ -345,8 +354,9 @@ def _find_target_swing(swings: list[dict], direction: str, pos: int, reference_p
     return candidates[-1] if candidates else None
 
 
-def _get_market_structure_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict]:
-    completed = trend_df.iloc[:-1].copy()
+def _get_market_structure_bias(structure_df: pd.DataFrame) -> tuple[str | None, dict]:
+    """Determines 1H bias via swing structure break."""
+    completed = structure_df.iloc[:-1].copy()
     if len(completed) < STRUCTURE_LOOKBACK // 2:
         return None, {}
 
@@ -385,10 +395,61 @@ def _get_market_structure_bias(trend_df: pd.DataFrame) -> tuple[str | None, dict
     }
 
 
+# ── MTF regime/trend helpers ──────────────────────────────────────
+
+def _get_macro_regime(macro_df: pd.DataFrame) -> str | None:
+    """
+    1D macro regime using EMA50/EMA200.
+    Returns 'LONG', 'SHORT', or None if neutral/insufficient data.
+    """
+    if len(macro_df) < HTF_EMA_SLOW + 10:
+        return None
+
+    close = macro_df["close"].astype(float)
+    ema50 = _ema(close, 50)
+    ema200 = _ema(close, 200)
+
+    last_close = float(close.iloc[-1])
+    last_ema50 = float(ema50.iloc[-1])
+    last_ema200 = float(ema200.iloc[-1])
+
+    if last_close > last_ema50 and last_ema50 >= last_ema200:
+        return "LONG"
+    if last_close < last_ema50 and last_ema50 <= last_ema200:
+        return "SHORT"
+    return None
+
+
+def _get_htf_trend(htf_df: pd.DataFrame) -> str | None:
+    """
+    4H trend using EMA50/EMA200.
+    Returns 'LONG', 'SHORT', or None if neutral/insufficient data.
+    """
+    if len(htf_df) < HTF_EMA_SLOW + 10:
+        return None
+
+    close = htf_df["close"].astype(float)
+    ema50 = _ema(close, HTF_EMA_FAST)
+    ema200 = _ema(close, HTF_EMA_SLOW)
+
+    last_close = float(close.iloc[-1])
+    last_ema50 = float(ema50.iloc[-1])
+    last_ema200 = float(ema200.iloc[-1])
+
+    if last_ema50 > last_ema200 and last_close > last_ema50:
+        return "LONG"
+    if last_ema50 < last_ema200 and last_close < last_ema50:
+        return "SHORT"
+    return None
+
+
 # ── filters ───────────────────────────────────────────────────────
 
 def _htf_trend_ok(symbol: str, direction: str) -> tuple[bool, bool]:
-    """Returns (allowed, strong_agreement)."""
+    """
+    4H revalidation filter used by evaluate_pending_setup().
+    Returns (allowed, strong_agreement).
+    """
     if not ENABLE_HTF_FILTER:
         return True, False
 
@@ -461,12 +522,7 @@ def _volume_ok(df: pd.DataFrame, pos: int) -> bool:
 
 
 def _btc_regime_ok(direction: str) -> bool:
-    """
-    BTC market-regime guard with short in-process cache.
-
-    Without this cache, one full scan may fetch BTC candles once per coin,
-    which can slow the scheduler and cause missed outcome-check runs.
-    """
+    """BTC market-regime guard with short in-process cache."""
     if not ENABLE_BTC_FILTER:
         return True
 
@@ -509,6 +565,7 @@ def _btc_regime_ok(direction: str) -> bool:
     except Exception as e:
         logger.warning("[BTC-REGIME] fetch error: %s — filter skipped", e)
         return True
+
 
 # ── sweep / displacement / OB ─────────────────────────────────────
 
@@ -557,13 +614,23 @@ def _detect_buy_side_sweep(df: pd.DataFrame, swings: list[dict], pos: int) -> di
 def _is_bullish_displacement(df: pd.DataFrame, pos: int) -> bool:
     row = df.iloc[pos]
     avg = _avg_body(df, pos, AVG_BODY_PERIOD)
-    return avg > 0 and _is_bullish(row) and _body_size(row) >= avg * DISPLACEMENT_BODY_MULTIPLIER and _close_position(row) >= DISPLACEMENT_CLOSE_POSITION
+    return (
+        avg > 0
+        and _is_bullish(row)
+        and _body_size(row) >= avg * DISPLACEMENT_BODY_MULTIPLIER
+        and _close_position(row) >= DISPLACEMENT_CLOSE_POSITION
+    )
 
 
 def _is_bearish_displacement(df: pd.DataFrame, pos: int) -> bool:
     row = df.iloc[pos]
     avg = _avg_body(df, pos, AVG_BODY_PERIOD)
-    return avg > 0 and _is_bearish(row) and _body_size(row) >= avg * DISPLACEMENT_BODY_MULTIPLIER and _close_position(row) <= (1.0 - DISPLACEMENT_CLOSE_POSITION)
+    return (
+        avg > 0
+        and _is_bearish(row)
+        and _body_size(row) >= avg * DISPLACEMENT_BODY_MULTIPLIER
+        and _close_position(row) <= (1.0 - DISPLACEMENT_CLOSE_POSITION)
+    )
 
 
 def _find_bullish_ob(df: pd.DataFrame, displacement_pos: int) -> dict | None:
@@ -596,7 +663,13 @@ def _find_bearish_ob(df: pd.DataFrame, displacement_pos: int) -> dict | None:
     return None
 
 
-def _calculate_setup_prices(direction: str, ob: dict, sweep: dict, target_swing: dict | None, atr_value: float) -> tuple[float, float, float, float] | None:
+def _calculate_setup_prices(
+    direction: str,
+    ob: dict,
+    sweep: dict,
+    target_swing: dict | None,
+    atr_value: float,
+) -> tuple[float, float, float, float] | None:
     ob_mid = (ob["zone_low"] + ob["zone_high"]) / 2.0
     if ob_mid <= 0:
         return None
@@ -641,14 +714,18 @@ def _calculate_setup_prices(direction: str, ob: dict, sweep: dict, target_swing:
     return round(sl_price, 8), round(target_price, 8), round(rr, 2), round(sl_pct, 3)
 
 
-def _calculate_final_prices(direction: str, entry: float, setup: dict, atr_value: float = 0.0) -> tuple[float, float, float, float, float] | None:
+def _calculate_final_prices(
+    direction: str,
+    entry: float,
+    setup: dict,
+    atr_value: float = 0.0,
+) -> tuple[float, float, float, float, float] | None:
     sl_price = float(setup["sl_price"])
     target_price = float(setup["target_price"])
 
     if entry <= 0:
         return None
 
-    # Optional ATR stop floor prevents very tight structure SL from normal noise.
     if ENABLE_ATR_STOP_FLOOR and atr_value > 0 and ATR_STOP_FLOOR_MULTIPLIER > 0:
         min_risk = atr_value * ATR_STOP_FLOOR_MULTIPLIER
         if direction == "LONG" and entry - sl_price < min_risk:
@@ -695,36 +772,50 @@ def _calculate_final_prices(direction: str, entry: float, setup: dict, atr_value
     )
 
 
-def _score_setup(rr: float, ob_age: int, sweep_age: int, htf_strong: bool, atr_ok: bool, volume_ok: bool, ema_ok: bool) -> float:
-    score = 45.0
+def _score_setup(
+    rr: float,
+    ob_age: int,
+    sweep_age: int,
+    displacement_age: int,
+    mtf_aligned: bool,
+    atr_ok: bool,
+    volume_ok: bool,
+    ema_ok: bool,
+) -> float:
+    """
+    MTF-weighted scoring.
+
+    Base 50 — requires MTF alignment + decent RR + fresh OB to reach MIN_SETUP_SCORE=88.
+    Without full MTF alignment the max score (50+15+10+5+5+3+3+3) = 94 but MTF block
+    makes that path extremely rare and forces quality.
+    """
+    score = 50.0
+
+    if mtf_aligned:
+        score += 20.0
 
     if rr >= 3.0:
-        score += 20.0
-    elif rr >= 2.0:
         score += 15.0
-    elif rr >= MIN_STRUCTURE_RR:
+    elif rr >= 2.0:
         score += 10.0
 
-    if ob_age <= 8:
+    if ob_age <= 6:
         score += 10.0
-    elif ob_age <= 16:
-        score += 6.0
-    else:
-        score += 3.0
-
-    if sweep_age <= 12:
-        score += 8.0
-    elif sweep_age <= 24:
-        score += 4.0
-
-    if htf_strong:
-        score += 10.0
-    if atr_ok and ENABLE_ATR_FILTER:
-        score += 7.0
-    if volume_ok and ENABLE_VOLUME_FILTER:
-        score += 7.0
-    if ema_ok and ENABLE_ENTRY_EMA_FILTER:
+    elif ob_age <= 12:
         score += 5.0
+
+    if sweep_age <= 6:
+        score += 5.0
+
+    if displacement_age <= 6:
+        score += 5.0
+
+    if atr_ok and ENABLE_ATR_FILTER:
+        score += 3.0
+    if volume_ok and ENABLE_VOLUME_FILTER:
+        score += 3.0
+    if ema_ok and ENABLE_ENTRY_EMA_FILTER:
+        score += 3.0
 
     return round(min(score, 100.0), 1)
 
@@ -733,34 +824,57 @@ def _score_setup(rr: float, ob_age: int, sweep_age: int, htf_strong: bool, atr_o
 
 def detect_setup(symbol: str) -> dict | None:
     try:
-        trend_df = get_klines(symbol, TREND_TF, count=TREND_KLINE_COUNT)
-        entry_df = get_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
+        # Fetch all 4 timeframes upfront.
+        macro_df     = get_klines(symbol, MACRO_TF,     count=MACRO_KLINE_COUNT)
+        htf_df       = get_klines(symbol, HTF_TREND_TF, count=HTF_KLINE_COUNT)
+        structure_df = get_klines(symbol, STRUCTURE_TF, count=STRUCTURE_KLINE_COUNT)
+        entry_df     = get_klines(symbol, ENTRY_TF,     count=ENTRY_KLINE_COUNT)
 
-        if trend_df is None or trend_df.empty:
-            return None
-        if entry_df is None or entry_df.empty:
+        if any(df is None or df.empty for df in [macro_df, htf_df, structure_df, entry_df]):
             return None
 
-        bias, bias_details = _get_market_structure_bias(trend_df)
+        # ── 1H structure bias ──────────────────────────────────────
+        bias, bias_details = _get_market_structure_bias(structure_df)
         if bias is None:
             return None
 
-        htf_ok, htf_strong = _htf_trend_ok(symbol, bias)
-        if not htf_ok:
-            logger.info("[SETUP-REJECT] %s | HTF trend mismatch", symbol)
+        # ── 1D macro regime ────────────────────────────────────────
+        macro_regime = _get_macro_regime(macro_df)
+        if macro_regime is None:
+            logger.info("[SETUP-REJECT] %s | 1D macro neutral", symbol)
             return None
 
+        # ── 4H trend ───────────────────────────────────────────────
+        htf_trend = _get_htf_trend(htf_df)
+        if htf_trend is None:
+            logger.info("[SETUP-REJECT] %s | 4H trend neutral", symbol)
+            return None
+
+        # ── MTF alignment gate ─────────────────────────────────────
+        mtf_aligned = (macro_regime == htf_trend == bias)
+        if REQUIRE_MTF_ALIGNMENT and not mtf_aligned:
+            logger.info(
+                "[SETUP-REJECT] %s | MTF mismatch 1D=%s 4H=%s 1H=%s",
+                symbol, macro_regime, htf_trend, bias,
+            )
+            return None
+
+        # ── BTC cross-regime guard ─────────────────────────────────
         if not _btc_regime_ok(bias):
             logger.info("[SETUP-REJECT] %s | BTC filter conflict", symbol)
             return None
 
+        # ── Entry TF filters (15m) ─────────────────────────────────
         completed = entry_df.iloc[:-1].copy().tail(ENTRY_LOOKBACK)
         if len(completed) < 80:
             return None
 
         atr_ok, atr_value_pct, atr_value = _atr_pct(completed)
         if not atr_ok:
-            logger.info("[SETUP-REJECT] %s | ATR %.2f%% outside %.2f-%.2f", symbol, atr_value_pct, MIN_ATR_PCT, MAX_ATR_PCT)
+            logger.info(
+                "[SETUP-REJECT] %s | ATR %.2f%% outside %.2f-%.2f",
+                symbol, atr_value_pct, MIN_ATR_PCT, MAX_ATR_PCT,
+            )
             return None
 
         ema_ok = _entry_ema_ok(completed, bias)
@@ -784,6 +898,10 @@ def detect_setup(symbol: str) -> dict | None:
             if bias == "SHORT" and not _is_bearish_displacement(completed, displacement_pos):
                 continue
 
+            displacement_age = len(completed) - displacement_pos
+            if displacement_age > MAX_DISPLACEMENT_AGE_CANDLES:
+                continue
+
             vol_ok = _volume_ok(completed, displacement_pos)
             if not vol_ok:
                 logger.info("[SETUP-REJECT] %s | volume weak", symbol)
@@ -792,15 +910,33 @@ def detect_setup(symbol: str) -> dict | None:
             sweep = None
             sweep_start = max(0, displacement_pos - SWEEP_LOOKBACK)
             for sweep_pos in range(displacement_pos - 1, sweep_start - 1, -1):
-                sweep = _detect_sell_side_sweep(completed, swings, sweep_pos) if bias == "LONG" else _detect_buy_side_sweep(completed, swings, sweep_pos)
+                sweep = (
+                    _detect_sell_side_sweep(completed, swings, sweep_pos)
+                    if bias == "LONG"
+                    else _detect_buy_side_sweep(completed, swings, sweep_pos)
+                )
                 if sweep:
                     break
 
             if not sweep:
                 continue
 
-            ob = _find_bullish_ob(completed, displacement_pos) if bias == "LONG" else _find_bearish_ob(completed, displacement_pos)
+            sweep_age = len(completed) - sweep["pos"]
+            if sweep_age > MAX_SWEEP_AGE_CANDLES:
+                logger.info("[SETUP-REJECT] %s | sweep too old (%d candles)", symbol, sweep_age)
+                continue
+
+            ob = (
+                _find_bullish_ob(completed, displacement_pos)
+                if bias == "LONG"
+                else _find_bearish_ob(completed, displacement_pos)
+            )
             if not ob:
+                continue
+
+            ob_age = len(completed) - ob["pos"]
+            if ob_age > MAX_OB_AGE_CANDLES:
+                logger.info("[SETUP-REJECT] %s | OB too old (%d candles)", symbol, ob_age)
                 continue
 
             target_swing = _find_target_swing(
@@ -821,12 +957,17 @@ def detect_setup(symbol: str) -> dict | None:
                 continue
 
             sl_price, target_price, rr_estimate, sl_pct = prices
-            ob_age = len(completed) - ob["pos"]
-            sweep_age = len(completed) - sweep["pos"]
-            score = _score_setup(rr_estimate, ob_age, sweep_age, htf_strong, atr_ok, vol_ok, ema_ok)
+
+            score = _score_setup(
+                rr_estimate, ob_age, sweep_age, displacement_age,
+                mtf_aligned, atr_ok, vol_ok, ema_ok,
+            )
 
             if score < MIN_SETUP_SCORE:
-                logger.info("[SETUP-REJECT] %s | score %.1f < min %d", symbol, score, MIN_SETUP_SCORE)
+                logger.info(
+                    "[SETUP-REJECT] %s | score %.1f < min %g",
+                    symbol, score, MIN_SETUP_SCORE,
+                )
                 continue
 
             if score <= best_score:
@@ -839,7 +980,7 @@ def detect_setup(symbol: str) -> dict | None:
             best_setup = {
                 "symbol": symbol,
                 "direction": bias,
-                "trend_tf": TREND_TF,
+                "trend_tf": STRUCTURE_TF,
                 "entry_tf": ENTRY_TF,
                 "bias": bias,
                 "bias_break": bias_details.get("break_price"),
@@ -857,20 +998,23 @@ def detect_setup(symbol: str) -> dict | None:
                 "score": score,
                 "setup_time": _iso(completed.index[displacement_pos]),
                 "expires_at": expires_at.isoformat(),
+                # MTF context stored for DB and signal summary
+                "macro_tf": MACRO_TF,
+                "macro_bias": macro_regime,
+                "htf_tf": HTF_TREND_TF,
+                "htf_bias": htf_trend,
+                "structure_tf": STRUCTURE_TF,
+                "structure_bias": bias,
             }
 
             logger.info(
-                "[SETUP] %s %s | OB=%.6g-%.6g SL=%.6g TP=%.6g SL%%=%.2f ATR%%=%.2f RR=%.2f score=%.1f",
-                bias,
-                symbol,
-                ob["zone_low"],
-                ob["zone_high"],
-                sl_price,
-                target_price,
-                sl_pct,
-                atr_value_pct,
-                rr_estimate,
-                score,
+                "[SETUP] %s %s | OB=%.6g-%.6g SL=%.6g TP=%.6g SL%%=%.2f ATR%%=%.2f RR=%.2f score=%.1f"
+                " [1D=%s 4H=%s 1H=%s]",
+                bias, symbol,
+                ob["zone_low"], ob["zone_high"],
+                sl_price, target_price,
+                sl_pct, atr_value_pct, rr_estimate, score,
+                macro_regime, htf_trend, bias,
             )
 
         return best_setup
@@ -884,12 +1028,12 @@ def detect_setup(symbol: str) -> dict | None:
 
 def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
     """
-    Called by main.py for each waiting setup.
+    Called by main.py for each waiting setup every minute.
 
     Returns:
-        ("WAIT", None)         — setup is still valid but no confirmed entry yet
-        ("EXPIRED", None)      — setup is stale or price moved too far away
-        ("INVALIDATED", None)  — SL level was touched before entry
+        ("WAIT", None)         — valid but no confirmed entry yet
+        ("EXPIRED", None)      — stale or price moved too far
+        ("INVALIDATED", None)  — SL touched before entry
         ("FIRE", Signal)       — confirmed OB retest + MSS break entry
     """
     try:
@@ -924,18 +1068,14 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         )
         if too_far:
             logger.info(
-                "[SETUP-EXPIRE] %s %s | price moved too far from OB close=%.6g distance=%.2f%% %.2fATR limit=%.2f%% %.2fATR",
-                symbol,
-                direction,
-                last_close,
-                distance_pct,
-                distance_atr,
-                EXPIRE_IF_PRICE_AWAY_PCT,
-                EXPIRE_IF_PRICE_AWAY_ATR,
+                "[SETUP-EXPIRE] %s %s | price moved too far from OB close=%.6g"
+                " distance=%.2f%% %.2fATR limit=%.2f%% %.2fATR",
+                symbol, direction, last_close,
+                distance_pct, distance_atr,
+                EXPIRE_IF_PRICE_AWAY_PCT, EXPIRE_IF_PRICE_AWAY_ATR,
             )
             return "EXPIRED", None
 
-        # Use enough candles to support retest candle + following MSS break candles.
         lookback = max(6, MSS_BREAK_LOOKBACK_CANDLES + 4)
         recent = completed.tail(lookback).copy()
         recent_rows = list(recent.iterrows())
@@ -945,18 +1085,14 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             if direction == "LONG" and float(row["low"]) <= sl_price:
                 logger.info(
                     "[SETUP-INVALID] %s LONG | low %.6g <= SL %.6g before entry",
-                    symbol,
-                    float(row["low"]),
-                    sl_price,
+                    symbol, float(row["low"]), sl_price,
                 )
                 return "INVALIDATED", None
 
             if direction == "SHORT" and float(row["high"]) >= sl_price:
                 logger.info(
                     "[SETUP-INVALID] %s SHORT | high %.6g >= SL %.6g before entry",
-                    symbol,
-                    float(row["high"]),
-                    sl_price,
+                    symbol, float(row["high"]), sl_price,
                 )
                 return "INVALIDATED", None
 
@@ -997,9 +1133,6 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
 
             found_retest_without_break = True
 
-            # Confirmation-break / MSS style trigger:
-            # After the rejection candle, wait for a following completed candle to break
-            # the rejection candle high/low. This prevents immediate fake entries.
             break_row = row
             break_ts = ts
             if REQUIRE_MSS_BREAK_ENTRY:
@@ -1057,21 +1190,23 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
             tp_price, final_sl_price, tp_roi_pct, sl_roi_pct, rr = prices
             score = min(float(setup["score"]) + 5.0, 100.0)
 
+            # Build MTF summary from stored setup fields (falls back gracefully for old DB rows).
+            macro_tf    = setup.get("macro_tf")    or MACRO_TF
+            htf_tf      = setup.get("htf_tf")      or HTF_TREND_TF
+            macro_bias  = setup.get("macro_bias")  or direction
+            htf_bias    = setup.get("htf_bias")    or direction
+            structure_tf = setup.get("structure_tf") or STRUCTURE_TF
+            trigger_note = "MSS break" if REQUIRE_MSS_BREAK_ENTRY else "OB rejection"
+
             logger.info(
                 "[ENTRY] %s %s @ %.6g | OB=%.6g-%.6g TP=%.6g SL=%.6g RR=%.2f score=%.1f mss=%s",
-                direction,
-                symbol,
-                entry,
-                zone_low,
-                zone_high,
-                tp_price,
-                final_sl_price,
-                rr,
-                score,
+                direction, symbol, entry,
+                zone_low, zone_high,
+                tp_price, final_sl_price,
+                rr, score,
                 "on" if REQUIRE_MSS_BREAK_ENTRY else "off",
             )
 
-            trigger_note = "MSS break" if REQUIRE_MSS_BREAK_ENTRY else "OB rejection"
             return "FIRE", Signal(
                 symbol=symbol,
                 direction=direction,
@@ -1082,8 +1217,10 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 tp_roi_pct=tp_roi_pct,
                 sl_roi_pct=sl_roi_pct,
                 timeframe_summary=(
-                    f"Hybrid SMC Pro | {TREND_TF} bias + {ENTRY_TF} OB retest + {trigger_note} | "
-                    f"{setup['sweep_type']} + {setup['ob_type']} | RR {rr:g}"
+                    f"SMC MTF | {macro_tf.upper()} macro {macro_bias} | "
+                    f"{htf_tf.upper()} trend {htf_bias} | "
+                    f"{structure_tf.upper()} bias {direction} | "
+                    f"{ENTRY_TF} OB retest + {trigger_note} | RR {rr:g}"
                 ),
                 generated_at=datetime.now(timezone.utc),
                 score=score,
@@ -1092,7 +1229,8 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         if not touched_zone:
             _debug_wait(
                 symbol,
-                f"price not in OB yet close={last_close:.6g} OB={zone_low:.6g}-{zone_high:.6g} distance={distance_pct:.2f}%/{distance_atr:.2f}ATR",
+                f"price not in OB yet close={last_close:.6g} OB={zone_low:.6g}-{zone_high:.6g}"
+                f" distance={distance_pct:.2f}%/{distance_atr:.2f}ATR",
             )
         elif found_retest_without_break:
             _debug_wait(symbol, "OB rejection found but no MSS break entry yet")
@@ -1109,11 +1247,5 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
 # ── legacy direct signal path intentionally disabled ──────────────
 
 def analyze_coin(symbol: str) -> Signal | None:
-    """
-    Disabled on purpose.
-
-    The previous EMA/CCI direct strategy caused immediate entries that often hit SL.
-    main.py should call detect_setup() + evaluate_pending_setup() instead.
-    Keeping this wrapper prevents old imports from crashing, but it must not fire signals.
-    """
+    """Disabled on purpose — use detect_setup() + evaluate_pending_setup() instead."""
     return None

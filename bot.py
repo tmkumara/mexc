@@ -160,9 +160,11 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     from config import (
         STRATEGY_NAME,
-        TREND_TF,
-        ENTRY_TF,
+        MACRO_TF,
         HTF_TREND_TF,
+        STRUCTURE_TF,
+        ENTRY_TF,
+        REQUIRE_MTF_ALIGNMENT,
         ENABLE_HTF_FILTER,
         ENABLE_ENTRY_EMA_FILTER,
         ENABLE_ATR_FILTER,
@@ -177,6 +179,9 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         MIN_SETUP_SCORE,
         MAX_OB_DISTANCE_ATR,
         MAX_OB_DISTANCE_PCT,
+        MAX_DISPLACEMENT_AGE_CANDLES,
+        MAX_SWEEP_AGE_CANDLES,
+        MAX_OB_AGE_CANDLES,
         REVALIDATE_BEFORE_FIRE,
         OB_ENTRY_QUALITY_CHECK,
         REQUIRE_MSS_BREAK_ENTRY,
@@ -208,9 +213,9 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     filters = []
     if ENABLE_HTF_FILTER:
-        filters.append("1h trend")
+        filters.append("4H trend")
     if ENABLE_ENTRY_EMA_FILTER:
-        filters.append("5m EMA")
+        filters.append(f"{ENTRY_TF} EMA")
     if ENABLE_ATR_FILTER:
         filters.append("ATR")
     if ENABLE_VOLUME_FILTER:
@@ -221,35 +226,40 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = "\n".join([
         "📡 <b>Scanner Status</b>",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"State:      {_code(state)}",
-        f"Strategy:   {_code(STRATEGY_NAME)}",
-        f"Flow:       {_code('15m structure → 5m sweep/OB → retest → MSS break')}",
-        f"HTF:        {_code(HTF_TREND_TF)} confirmation",
-        f"Trend TF:   {_code(TREND_TF)} market-structure bias",
-        f"Entry TF:   {_code(ENTRY_TF)} OB retest + confirmation",
-        f"Filters:    {_code(', '.join(filters) if filters else 'none')}",
-        f"MSS break:  {_code('on' if REQUIRE_MSS_BREAK_ENTRY else 'off')}",
-        f"MSS window: {_code(f'{MSS_BREAK_LOOKBACK_CANDLES} candles / buffer {MSS_BREAK_BUFFER_PCT:g}%')}",
-        f"ATR floor:  {_code(f'on × {ATR_STOP_FLOOR_MULTIPLIER:g}' if ENABLE_ATR_STOP_FLOOR else 'off')}",
-        f"15m confirm:{_code(f'on ({TREND_CONFIRM_TF})' if REQUIRE_TREND_CANDLE_CONFIRMATION else 'off')}",
-        f"Revalidate: {_code('on' if REVALIDATE_BEFORE_FIRE else 'off')}",
-        f"OB quality: {_code('on' if OB_ENTRY_QUALITY_CHECK else 'off')}",
-        f"ATR:        {_code(f'{MIN_ATR_PCT:g}%–{MAX_ATR_PCT:g}%')}",
-        f"SL limit:   {_code(f'{MIN_SL_PCT:g}%–{MAX_SL_PCT:g}%')}",
-        f"RR:         {_code(f'{MIN_STRUCTURE_RR:g}–{MAX_STRUCTURE_RR:g}')}",
-        f"Min score:  {_code(MIN_SETUP_SCORE)}",
-        f"OB distance:{_code(f'≤{MAX_OB_DISTANCE_PCT:g}% or ≤{MAX_OB_DISTANCE_ATR:g}ATR')}",
-        f"Scan:       {_code(SETUP_SCAN_CRON_MINUTES)}",
-        f"Monitor:    {_code(f'every {SETUP_MONITOR_MINUTES} min, top {SETUP_MONITOR_LIMIT}')}",
-        f"Workers:    {_code(SCAN_WORKERS)}",
-        f"Leverage:   {_code(f'{LEVERAGE}x')}",
-        f"Entries:    {_code(f'top {SIGNALS_PER_SCAN} fires/monitor')}",
-        f"Save limit: {_code(f'{MAX_NEW_SETUPS_PER_SCAN}/scan, {MAX_SETUPS_SAME_DIRECTION_PER_SCAN}/direction')}",
-        f"Wait cap:   {_code(f'{waiting}/{MAX_WAITING_SETUPS_TOTAL} setups')}",
-        f"Cooldown:   {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
-        f"Active:     {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
-        f"Pool ({len(coins)}): {_code(pairs_str)}",
-        f"Time (LKT): {_code(datetime.now(LKT).strftime('%H:%M'))}",
+        f"State:       {_code(state)}",
+        f"Strategy:    {_code(STRATEGY_NAME)}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"Macro TF:    {_code(MACRO_TF.upper())} regime (EMA50/200)",
+        f"HTF Trend:   {_code(HTF_TREND_TF.upper())} trend (EMA50/200)",
+        f"Structure:   {_code(STRUCTURE_TF.upper())} bias (swing structure)",
+        f"Entry TF:    {_code(ENTRY_TF)} sweep / OB retest",
+        f"MTF align:   {_code('required' if REQUIRE_MTF_ALIGNMENT else 'optional')}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"Min score:   {_code(MIN_SETUP_SCORE)}",
+        f"MSS break:   {_code('on' if REQUIRE_MSS_BREAK_ENTRY else 'off')}"
+            f"  {_code(f'window {MSS_BREAK_LOOKBACK_CANDLES}c / buf {MSS_BREAK_BUFFER_PCT:g}%')}",
+        f"Freshness:   {_code(f'disp ≤{MAX_DISPLACEMENT_AGE_CANDLES}c  sweep ≤{MAX_SWEEP_AGE_CANDLES}c  OB ≤{MAX_OB_AGE_CANDLES}c')}",
+        f"ATR:         {_code(f'{MIN_ATR_PCT:g}%–{MAX_ATR_PCT:g}%')}",
+        f"SL limit:    {_code(f'{MIN_SL_PCT:g}%–{MAX_SL_PCT:g}%')}",
+        f"RR:          {_code(f'{MIN_STRUCTURE_RR:g}–{MAX_STRUCTURE_RR:g}')}",
+        f"OB distance: {_code(f'≤{MAX_OB_DISTANCE_PCT:g}% or ≤{MAX_OB_DISTANCE_ATR:g}ATR')}",
+        f"ATR floor:   {_code(f'on × {ATR_STOP_FLOOR_MULTIPLIER:g}' if ENABLE_ATR_STOP_FLOOR else 'off')}",
+        f"Revalidate:  {_code('on' if REVALIDATE_BEFORE_FIRE else 'off')}",
+        f"OB quality:  {_code('on' if OB_ENTRY_QUALITY_CHECK else 'off')}",
+        f"Confirm TF:  {_code(f'on ({TREND_CONFIRM_TF})' if REQUIRE_TREND_CANDLE_CONFIRMATION else 'off')}",
+        f"Filters:     {_code(', '.join(filters) if filters else 'none')}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"Scan:        {_code(SETUP_SCAN_CRON_MINUTES)}",
+        f"Monitor:     {_code(f'every {SETUP_MONITOR_MINUTES} min, top {SETUP_MONITOR_LIMIT}')}",
+        f"Workers:     {_code(SCAN_WORKERS)}",
+        f"Leverage:    {_code(f'{LEVERAGE}x')}",
+        f"Entries:     {_code(f'top {SIGNALS_PER_SCAN} fires/monitor')}",
+        f"Save limit:  {_code(f'{MAX_NEW_SETUPS_PER_SCAN}/scan, {MAX_SETUPS_SAME_DIRECTION_PER_SCAN}/direction')}",
+        f"Wait cap:    {_code(f'{waiting}/{MAX_WAITING_SETUPS_TOTAL} setups')}",
+        f"Cooldown:    {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
+        f"Active:      {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
+        f"Pool ({len(coins)}):  {_code(pairs_str)}",
+        f"Time (LKT):  {_code(datetime.now(LKT).strftime('%H:%M'))}",
     ])
 
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
