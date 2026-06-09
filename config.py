@@ -146,6 +146,24 @@ MIN_SL_PCT: float = float(os.getenv("MIN_SL_PCT", "0.20"))
 MAX_SL_PCT: float = float(os.getenv("MAX_SL_PCT", "1.25"))
 MIN_SETUP_SCORE: float = float(os.getenv("MIN_SETUP_SCORE", "88"))
 
+# ── Pending setup invalidation tuning ─────────────────────────────
+# Default: close-based only (wick alone cannot invalidate).
+INVALIDATE_ON_WICK: bool = os.getenv("INVALIDATE_ON_WICK", "false").lower() == "true"
+INVALIDATE_ON_CLOSE: bool = os.getenv("INVALIDATE_ON_CLOSE", "true").lower() == "true"
+
+# Extra tolerance before invalidating — prevents single-tick SL tag from killing setup.
+PENDING_INVALIDATION_BUFFER_PCT: float = float(os.getenv("PENDING_INVALIDATION_BUFFER_PCT", "0.05"))
+
+# Use OB midpoint as RR reference instead of actual candle close (avoids RR fail on slight entry slippage).
+USE_PLANNED_ENTRY_FOR_RR: bool = os.getenv("USE_PLANNED_ENTRY_FOR_RR", "true").lower() == "true"
+
+# Keep waiting for next candle instead of blocking the setup when final RR/SL fails.
+KEEP_WAITING_ON_FINAL_RR_FAIL: bool = os.getenv("KEEP_WAITING_ON_FINAL_RR_FAIL", "true").lower() == "true"
+
+# Allow slightly lower final RR for very high-score setups.
+HIGH_SCORE_MIN_FINAL_RR: float = float(os.getenv("HIGH_SCORE_MIN_FINAL_RR", "1.35"))
+HIGH_SCORE_RR_SCORE_THRESHOLD: float = float(os.getenv("HIGH_SCORE_RR_SCORE_THRESHOLD", "90"))
+
 # ── Support / Resistance target selection ─────────────────────────
 USE_SR_TARGETS: bool = os.getenv("USE_SR_TARGETS", "true").lower() == "true"
 SR_LOOKBACK: int = int(os.getenv("SR_LOOKBACK", "180"))

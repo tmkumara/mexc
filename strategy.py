@@ -112,6 +112,13 @@ from config import (
     MAX_TARGET_DISTANCE_ATR,
     SR_MIN_TOUCHES,
     ALLOW_FIXED_RR_FALLBACK,
+    INVALIDATE_ON_WICK,
+    INVALIDATE_ON_CLOSE,
+    PENDING_INVALIDATION_BUFFER_PCT,
+    USE_PLANNED_ENTRY_FOR_RR,
+    KEEP_WAITING_ON_FINAL_RR_FAIL,
+    HIGH_SCORE_MIN_FINAL_RR,
+    HIGH_SCORE_RR_SCORE_THRESHOLD,
 )
 
 logger = logging.getLogger(__name__)
@@ -901,6 +908,7 @@ def _calculate_final_prices(
     entry: float,
     setup: dict,
     atr_value: float = 0.0,
+    min_rr_override: float | None = None,
 ) -> tuple[float, float, float, float, float] | None:
     sl_price = float(setup["sl_price"])
     target_price = float(setup["target_price"])
@@ -929,8 +937,9 @@ def _calculate_final_prices(
     if sl_pct < MIN_SL_PCT or sl_pct > MAX_SL_PCT:
         return None
 
+    effective_min_rr = min_rr_override if min_rr_override is not None else MIN_STRUCTURE_RR
     rr = reward / risk
-    if rr < MIN_STRUCTURE_RR:
+    if rr < effective_min_rr:
         return None
 
     if rr > MAX_STRUCTURE_RR:
@@ -1269,20 +1278,30 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
         recent_rows = list(recent.iterrows())
 
         # Invalidation before entry.
+        inval_buf = PENDING_INVALIDATION_BUFFER_PCT / 100.0
         for _, row in recent_rows:
-            if direction == "LONG" and float(row["low"]) <= sl_price:
-                logger.info(
-                    "[SETUP-INVALID] %s LONG | low %.6g <= SL %.6g before entry",
-                    symbol, float(row["low"]), sl_price,
-                )
-                return "INVALIDATED", None
-
-            if direction == "SHORT" and float(row["high"]) >= sl_price:
-                logger.info(
-                    "[SETUP-INVALID] %s SHORT | high %.6g >= SL %.6g before entry",
-                    symbol, float(row["high"]), sl_price,
-                )
-                return "INVALIDATED", None
+            if direction == "LONG":
+                inval_level = sl_price * (1.0 - inval_buf)
+                wick_breach = INVALIDATE_ON_WICK and float(row["low"]) <= inval_level
+                close_breach = INVALIDATE_ON_CLOSE and float(row["close"]) <= inval_level
+                if wick_breach or close_breach:
+                    logger.info(
+                        "[SETUP-INVALID] %s LONG | low=%.6g close=%.6g <= inval=%.6g (SL=%.6g buf=%.2f%%)",
+                        symbol, float(row["low"]), float(row["close"]), inval_level, sl_price,
+                        PENDING_INVALIDATION_BUFFER_PCT,
+                    )
+                    return "INVALIDATED", None
+            elif direction == "SHORT":
+                inval_level = sl_price * (1.0 + inval_buf)
+                wick_breach = INVALIDATE_ON_WICK and float(row["high"]) >= inval_level
+                close_breach = INVALIDATE_ON_CLOSE and float(row["close"]) >= inval_level
+                if wick_breach or close_breach:
+                    logger.info(
+                        "[SETUP-INVALID] %s SHORT | high=%.6g close=%.6g >= inval=%.6g (SL=%.6g buf=%.2f%%)",
+                        symbol, float(row["high"]), float(row["close"]), inval_level, sl_price,
+                        PENDING_INVALIDATION_BUFFER_PCT,
+                    )
+                    return "INVALIDATED", None
 
         midpoint = (zone_low + zone_high) / 2.0
         touched_zone = False
@@ -1364,14 +1383,53 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                     return "WAIT", None
 
             entry = float(break_row["close"])
+            ob_mid = (zone_low + zone_high) / 2.0
+
+            setup_score = float(setup.get("score", 0.0))
+            min_rr_override = (
+                HIGH_SCORE_MIN_FINAL_RR
+                if setup_score >= HIGH_SCORE_RR_SCORE_THRESHOLD
+                else None
+            )
 
             prices = _calculate_final_prices(
                 direction=direction,
                 entry=entry,
                 setup=setup,
                 atr_value=monitor_atr_value,
+                min_rr_override=min_rr_override,
             )
-            if not prices:
+
+            # If actual entry fails RR, retry using OB midpoint as reference entry.
+            if prices is None and USE_PLANNED_ENTRY_FOR_RR and abs(entry - ob_mid) > 0:
+                prices_planned = _calculate_final_prices(
+                    direction=direction,
+                    entry=ob_mid,
+                    setup=setup,
+                    atr_value=monitor_atr_value,
+                    min_rr_override=min_rr_override,
+                )
+                if prices_planned is not None:
+                    tp_price_p, sl_price_p, _, _, rr_p = prices_planned
+                    if direction == "LONG":
+                        tp_roi_adj = round((tp_price_p - entry) / entry * 100.0 * LEVERAGE, 1)
+                        sl_roi_adj = round((entry - sl_price_p) / entry * 100.0 * LEVERAGE, 1)
+                    else:
+                        tp_roi_adj = round((entry - tp_price_p) / entry * 100.0 * LEVERAGE, 1)
+                        sl_roi_adj = round((sl_price_p - entry) / entry * 100.0 * LEVERAGE, 1)
+                    prices = (tp_price_p, sl_price_p, tp_roi_adj, sl_roi_adj, rr_p)
+                    logger.info(
+                        "[ENTRY-ADJUST] %s %s | actual entry %.6g vs OB mid %.6g — RR validated from planned",
+                        direction, symbol, entry, ob_mid,
+                    )
+
+            if prices is None:
+                if KEEP_WAITING_ON_FINAL_RR_FAIL:
+                    _debug_wait(
+                        symbol,
+                        f"confirmed retest/MSS but final RR/SL failed (entry={entry:.6g} ob_mid={ob_mid:.6g}) — will retry",
+                    )
+                    continue
                 _debug_wait(symbol, "confirmed retest/MSS but final RR/SL validation failed")
                 return "WAIT", None
 
