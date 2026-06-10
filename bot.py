@@ -158,6 +158,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
+    from datetime import date, timezone as tz
 
     from config import (
         STRATEGY_NAME,
@@ -203,12 +204,21 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         MAX_SETUPS_SAME_DIRECTION_PER_SCAN,
         MAX_WAITING_SETUPS_TOTAL,
         SETUP_MONITOR_LIMIT,
+        MAX_DAILY_SIGNALS,
+        MIN_DAILY_SIGNAL_GAP_MINUTES,
+        MIN_TP_ROI_PCT,
+        MAX_SL_ROI_PCT,
     )
 
     state = "⏸ PAUSED" if paused else "▶️ RUNNING"
     coins = coin_scanner.get_cached_coins()
     active = db.count_active_signals()
     waiting = db.count_waiting_setups()
+
+    today_start = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=tz.utc)
+    signals_today = db.count_signals_since(today_start)
+    last_sig = db.latest_signal_time()
+    last_sig_str = last_sig.astimezone(LKT).strftime('%H:%M LKT') if last_sig else "none"
 
     pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
 
@@ -259,6 +269,12 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Wait cap:    {_code(f'{waiting}/{MAX_WAITING_SETUPS_TOTAL} setups')}",
         f"Cooldown:    {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
         f"Active:      {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"Today:       {_code(f'{signals_today} / {MAX_DAILY_SIGNALS} signals')}",
+        f"Last signal: {_code(last_sig_str)}",
+        f"Gap:         {_code(f'{MIN_DAILY_SIGNAL_GAP_MINUTES} min between signals')}",
+        f"ROI target:  {_code(f'TP +{MIN_TP_ROI_PCT:g}% / SL -{MAX_SL_ROI_PCT:g}%')}",
+        "━━━━━━━━━━━━━━━━━━━━",
         f"Pool ({len(coins)}):  {_code(pairs_str)}",
         f"Time (LKT):  {_code(datetime.now(LKT).strftime('%H:%M'))}",
     ])

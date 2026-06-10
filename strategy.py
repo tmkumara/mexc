@@ -114,6 +114,7 @@ from config import (
     MAX_TARGET_DISTANCE_ATR,
     SR_MIN_TOUCHES,
     ALLOW_FIXED_RR_FALLBACK,
+    SR_TARGET_SCORE_BONUS,
     INVALIDATE_ON_WICK,
     INVALIDATE_ON_CLOSE,
     PENDING_INVALIDATION_BUFFER_PCT,
@@ -1210,6 +1211,11 @@ def detect_setup(symbol: str) -> dict | None:
                 mtf_aligned, atr_ok, vol_ok, ema_ok,
             )
 
+            sr_bonus_applied = False
+            if target_source == "SR" and SR_TARGET_SCORE_BONUS > 0:
+                score = min(score + SR_TARGET_SCORE_BONUS, 100.0)
+                sr_bonus_applied = True
+
             if score < MIN_SETUP_SCORE:
                 logger.info(
                     "[SETUP-REJECT] %s | score %.1f < min %g",
@@ -1256,12 +1262,13 @@ def detect_setup(symbol: str) -> dict | None:
 
             logger.info(
                 "[SETUP] %s %s | OB=%.6g-%.6g SL=%.6g TP=%.6g SL%%=%.2f ATR%%=%.2f RR=%.2f"
-                " score=%.1f tp_src=%s [1D=%s 4H=%s 1H=%s]",
+                " score=%.1f tp_src=%s sr_bonus=%s [1D=%s 4H=%s 1H=%s]",
                 bias, symbol,
                 ob["zone_low"], ob["zone_high"],
                 sl_price, target_price,
                 sl_pct, atr_value_pct, rr_estimate, score,
-                target_source, macro_regime, htf_trend, bias,
+                target_source, "yes" if sr_bonus_applied else "no",
+                macro_regime, htf_trend, bias,
             )
 
         return best_setup

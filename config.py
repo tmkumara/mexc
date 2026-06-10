@@ -96,7 +96,7 @@ DISPLACEMENT_CLOSE_POSITION: float = float(os.getenv("DISPLACEMENT_CLOSE_POSITIO
 
 # Freshness controls — how many ENTRY_TF candles back a setup component can be
 # With 15m candles: 6 = 90m, 10 = 150m, 12 = 3h
-MAX_DISPLACEMENT_AGE_CANDLES: int = int(os.getenv("MAX_DISPLACEMENT_AGE_CANDLES", "6"))
+MAX_DISPLACEMENT_AGE_CANDLES: int = int(os.getenv("MAX_DISPLACEMENT_AGE_CANDLES", "8"))
 MAX_SWEEP_AGE_CANDLES: int        = int(os.getenv("MAX_SWEEP_AGE_CANDLES",        "10"))
 MAX_OB_AGE_CANDLES: int           = int(os.getenv("MAX_OB_AGE_CANDLES",           "12"))
 
@@ -132,7 +132,7 @@ MIN_VOLUME_MULTIPLIER: float = float(os.getenv("MIN_VOLUME_MULTIPLIER", "1.05"))
 # BTC market regime filter
 ENABLE_BTC_FILTER: bool = os.getenv("ENABLE_BTC_FILTER", "true").lower() == "true"
 BTC_SYMBOL: str = os.getenv("BTC_SYMBOL", "BTC_USDT")
-BTC_TF: str = os.getenv("BTC_TF", "15m")
+BTC_TF: str = os.getenv("BTC_TF", "1h")
 BTC_EMA_PERIOD: int = int(os.getenv("BTC_EMA_PERIOD", "50"))
 BTC_KLINE_COUNT: int = int(os.getenv("BTC_KLINE_COUNT", "100"))
 
@@ -144,7 +144,7 @@ SL_BUFFER_PCT: float = float(os.getenv("SL_BUFFER_PCT", "0.05"))
 TP_BUFFER_PCT: float = float(os.getenv("TP_BUFFER_PCT", "0.02"))
 MIN_SL_PCT: float = float(os.getenv("MIN_SL_PCT", "0.65"))
 MAX_SL_PCT: float = float(os.getenv("MAX_SL_PCT", "1.25"))
-MIN_SETUP_SCORE: float = float(os.getenv("MIN_SETUP_SCORE", "90"))
+MIN_SETUP_SCORE: float = float(os.getenv("MIN_SETUP_SCORE", "88"))
 
 # ROI quality gates (20x leverage: 2.5% move = 50% ROI, 1.25% risk = 25% SL ROI)
 MIN_TP_ROI_PCT: float = float(os.getenv("MIN_TP_ROI_PCT", "45.0"))
