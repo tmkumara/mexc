@@ -73,6 +73,7 @@ def format_signal(signal, signal_id: int) -> str:
         f"🛑 SL:       {_code(f'{signal.sl_price:,.6g}')}  {_italic(f'-{signal.sl_roi_pct:.1f}% ROI')}",
         f"⚡ Leverage: {_code(f'{signal.leverage}x')}  {_italic('Isolated')}",
         f"📊 {escape(signal.timeframe_summary)}",
+        f"🎯 Model: {_code('20x | RR 1:2 | TP ≈ +50% ROI')}",
         f"🏅 Score:    {_code(f'{signal.score}/100')}  {stars}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"⏰ {_code(signal.generated_at.astimezone(LKT).strftime('%Y-%m-%d %H:%M LKT'))}",
@@ -94,10 +95,10 @@ async def notify_outcome(app: Application, signal_db: dict) -> None:
 
     if status == "win":
         emoji = "✅"
-        label = f"TARGET HIT +{roi:.1f}%"
+        label = f"TARGET HIT {roi:+.1f}%"
     elif status == "loss":
         emoji = "❌"
-        label = f"STOP HIT {roi:.1f}%"
+        label = f"STOP HIT {roi:+.1f}%"
     else:
         emoji = "💤"
         label = "EXPIRED"

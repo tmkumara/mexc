@@ -21,9 +21,10 @@ def clear(skip_confirm: bool = False) -> None:
 
     with sqlite3.connect(DB_PATH) as con:
         cur = con.execute("DELETE FROM signals")
-        con.execute("DELETE FROM sqlite_sequence WHERE name='signals'")
+        cur2 = con.execute("DELETE FROM pending_setups")
+        con.execute("DELETE FROM sqlite_sequence WHERE name IN ('signals', 'pending_setups')")
         con.commit()
-        print(f"Cleared {cur.rowcount} signal(s). Auto-increment reset.")
+        print(f"Cleared {cur.rowcount} signal(s) and {cur2.rowcount} pending setup(s). Auto-increment reset.")
 
 
 if __name__ == "__main__":

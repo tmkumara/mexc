@@ -310,6 +310,11 @@ def get_strategy_config() -> dict:
         "min_sl_pct": _safe_config_value("MIN_SL_PCT", "—"),
         "max_sl_pct": _safe_config_value("MAX_SL_PCT", "—"),
         "leverage": _safe_config_value("LEVERAGE", "—"),
+        "min_tp_roi_pct": _safe_config_value("MIN_TP_ROI_PCT", "—"),
+        "target_tp_roi_pct": _safe_config_value("TARGET_TP_ROI_PCT", "—"),
+        "max_sl_roi_pct": _safe_config_value("MAX_SL_ROI_PCT", "—"),
+        "max_daily_signals": _safe_config_value("MAX_DAILY_SIGNALS", "—"),
+        "min_daily_signal_gap_minutes": _safe_config_value("MIN_DAILY_SIGNAL_GAP_MINUTES", "—"),
 
         "atr_period": _safe_config_value("ATR_PERIOD", "—"),
         "min_atr_pct": _safe_config_value("MIN_ATR_PCT", "—"),

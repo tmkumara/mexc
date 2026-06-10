@@ -56,6 +56,8 @@ from config import (
     MAX_WAITING_SETUPS_TOTAL,
     MAX_WAITING_SETUPS_SAME_DIRECTION,
     SETUP_MONITOR_LIMIT,
+    MAX_DAILY_SIGNALS,
+    MIN_DAILY_SIGNAL_GAP_MINUTES,
     SCHEDULER_MISFIRE_GRACE_SECONDS,
     SCHEDULER_MAX_INSTANCES,
     LOG_FILE,
@@ -108,6 +110,16 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
+
+
+def _valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
+    if entry <= 0 or tp <= 0 or sl <= 0:
+        return False
+    if direction == "LONG":
+        return tp > entry and sl < entry
+    if direction == "SHORT":
+        return tp < entry and sl > entry
+    return False
 
 
 # ── WebSocket candle cache ────────────────────────────────────────
@@ -379,8 +391,31 @@ async def monitor_setups(app: Application) -> None:
         logger.info("[SETUP-MONITOR] Done — 0 entries fired")
         return
 
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_count = db.count_signals_since(today_start)
+    remaining_daily_slots = max(MAX_DAILY_SIGNALS - today_count, 0)
+
+    if remaining_daily_slots <= 0:
+        logger.info(
+            "[SETUP-MONITOR] Daily signal cap reached %d/%d",
+            today_count,
+            MAX_DAILY_SIGNALS,
+        )
+        return
+
+    latest = db.latest_signal_time()
+    if latest is not None:
+        gap_min = (now - latest).total_seconds() / 60
+        if gap_min < MIN_DAILY_SIGNAL_GAP_MINUTES:
+            logger.info(
+                "[SETUP-MONITOR] Waiting for signal gap %.1fm/%dm",
+                gap_min,
+                MIN_DAILY_SIGNAL_GAP_MINUTES,
+            )
+            return
+
     fired_signals.sort(key=lambda item: item[1].score, reverse=True)
-    to_send = fired_signals[:min(SIGNALS_PER_SCAN, slots)]
+    to_send = fired_signals[:min(SIGNALS_PER_SCAN, slots, remaining_daily_slots)]
 
     logger.info(
         f"[SETUP-MONITOR] {len(fired_signals)} entry signal(s), sending {len(to_send)}"
@@ -394,6 +429,18 @@ async def monitor_setups(app: Application) -> None:
                 "[SETUP-MONITOR] Setup #%d %s already claimed, skipping duplicate",
                 setup["id"], setup["symbol"],
             )
+            continue
+
+        if not _valid_trade_geometry(sig.direction, sig.entry_price, sig.tp_price, sig.sl_price):
+            logger.error(
+                "[SIGNAL-BLOCK] Invalid geometry %s %s entry=%.8g tp=%.8g sl=%.8g",
+                sig.symbol,
+                sig.direction,
+                sig.entry_price,
+                sig.tp_price,
+                sig.sl_price,
+            )
+            db.mark_setup_fire_failed(setup["id"])
             continue
 
         try:
@@ -452,6 +499,19 @@ async def check_outcomes(app: Application) -> None:
         tp_price = sig["tp_price"]
         sl_price = sig["sl_price"]
         entry_price = sig["entry_price"]
+
+        if not _valid_trade_geometry(direction, entry_price, tp_price, sl_price):
+            logger.error(
+                "[OUTCOME-BLOCK] Invalid signal geometry #%s %s %s entry=%.8g tp=%.8g sl=%.8g",
+                sig["id"],
+                symbol,
+                direction,
+                entry_price,
+                tp_price,
+                sl_price,
+            )
+            db.update_signal_outcome(sig["id"], "expired", 0.0)
+            continue
 
         generated = datetime.fromisoformat(sig["generated_at"])
 

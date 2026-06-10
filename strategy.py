@@ -88,6 +88,8 @@ from config import (
     MIN_SL_PCT,
     MAX_SL_PCT,
     MIN_SETUP_SCORE,
+    MIN_TP_ROI_PCT,
+    MAX_SL_ROI_PCT,
     REQUIRE_MTF_ALIGNMENT,
     LEVERAGE,
     CANDLE_MINUTES,
@@ -903,6 +905,49 @@ def _calculate_setup_prices(
     return round(sl_price, 8), round(target_price, 8), round(rr, 2), round(sl_pct, 3), target_source
 
 
+def _valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
+    if entry <= 0 or tp <= 0 or sl <= 0:
+        return False
+    if direction == "LONG":
+        return tp > entry and sl < entry
+    if direction == "SHORT":
+        return tp < entry and sl > entry
+    return False
+
+
+def _trade_quality_ok(
+    direction: str,
+    entry: float,
+    tp: float,
+    sl: float,
+    leverage: int,
+) -> tuple[bool, float, float, float]:
+    if not _valid_trade_geometry(direction, entry, tp, sl):
+        return False, 0.0, 0.0, 0.0
+
+    if direction == "LONG":
+        risk_pct = (entry - sl) / entry * 100.0
+        reward_pct = (tp - entry) / entry * 100.0
+    else:
+        risk_pct = (sl - entry) / entry * 100.0
+        reward_pct = (entry - tp) / entry * 100.0
+
+    if risk_pct <= 0 or reward_pct <= 0:
+        return False, 0.0, 0.0, 0.0
+
+    rr = reward_pct / risk_pct
+    tp_roi = reward_pct * leverage
+    sl_roi = risk_pct * leverage
+
+    ok = (
+        rr >= MIN_STRUCTURE_RR
+        and tp_roi >= MIN_TP_ROI_PCT
+        and sl_roi <= MAX_SL_ROI_PCT
+    )
+
+    return ok, round(tp_roi, 1), round(sl_roi, 1), round(rr, 2)
+
+
 def _calculate_final_prices(
     direction: str,
     entry: float,
@@ -911,9 +956,8 @@ def _calculate_final_prices(
     min_rr_override: float | None = None,
 ) -> tuple[float, float, float, float, float] | None:
     sl_price = float(setup["sl_price"])
-    target_price = float(setup["target_price"])
 
-    if entry <= 0:
+    if entry <= 0 or sl_price <= 0:
         return None
 
     if ENABLE_ATR_STOP_FLOOR and atr_value > 0 and ATR_STOP_FLOOR_MULTIPLIER > 0:
@@ -925,41 +969,47 @@ def _calculate_final_prices(
 
     if direction == "LONG":
         risk = entry - sl_price
-        reward = target_price - entry
+        if risk <= 0:
+            return None
+        target_price = entry + (risk * REWARD_RATIO)
     else:
         risk = sl_price - entry
-        reward = entry - target_price
+        if risk <= 0:
+            return None
+        target_price = entry - (risk * REWARD_RATIO)
 
-    if risk <= 0 or reward <= 0:
+    if not _valid_trade_geometry(direction, entry, target_price, sl_price):
+        logger.warning(
+            "[FINAL-REJECT] invalid geometry %s entry=%.8g tp=%.8g sl=%.8g",
+            direction, entry, target_price, sl_price,
+        )
         return None
 
     sl_pct = risk / entry * 100.0
     if sl_pct < MIN_SL_PCT or sl_pct > MAX_SL_PCT:
         return None
 
-    effective_min_rr = min_rr_override if min_rr_override is not None else MIN_STRUCTURE_RR
-    rr = reward / risk
-    if rr < effective_min_rr:
+    ok, tp_roi_pct, sl_roi_pct, rr = _trade_quality_ok(
+        direction=direction,
+        entry=entry,
+        tp=target_price,
+        sl=sl_price,
+        leverage=LEVERAGE,
+    )
+
+    if not ok:
+        logger.info(
+            "[FINAL-REJECT] quality failed %s entry=%.8g tp=%.8g sl=%.8g rr=%.2f tp_roi=%.1f sl_roi=%.1f",
+            direction, entry, target_price, sl_price, rr, tp_roi_pct, sl_roi_pct,
+        )
         return None
-
-    if rr > MAX_STRUCTURE_RR:
-        rr = MAX_STRUCTURE_RR
-        if direction == "LONG":
-            target_price = entry + risk * rr
-        else:
-            target_price = entry - risk * rr
-
-    if direction == "LONG":
-        tp_move_pct = (target_price - entry) / entry * 100.0
-    else:
-        tp_move_pct = (entry - target_price) / entry * 100.0
 
     return (
         round(target_price, 8),
         round(sl_price, 8),
-        round(tp_move_pct * LEVERAGE, 1),
-        round(sl_pct * LEVERAGE, 1),
-        round(rr, 2),
+        tp_roi_pct,
+        sl_roi_pct,
+        rr,
     )
 
 
@@ -1434,6 +1484,28 @@ def evaluate_pending_setup(setup: dict) -> tuple[str, Signal | None]:
                 return "WAIT", None
 
             tp_price, final_sl_price, tp_roi_pct, sl_roi_pct, rr = prices
+
+            if not _valid_trade_geometry(direction, entry, tp_price, final_sl_price):
+                logger.warning(
+                    "[ENTRY-REJECT] %s %s invalid geometry entry=%.8g tp=%.8g sl=%.8g",
+                    symbol, direction, entry, tp_price, final_sl_price,
+                )
+                return "WAIT", None
+
+            quality_ok, checked_tp_roi, checked_sl_roi, checked_rr = _trade_quality_ok(
+                direction=direction,
+                entry=entry,
+                tp=tp_price,
+                sl=final_sl_price,
+                leverage=LEVERAGE,
+            )
+            if not quality_ok:
+                logger.info(
+                    "[ENTRY-REJECT] %s %s final quality failed rr=%.2f tp_roi=%.1f sl_roi=%.1f",
+                    symbol, direction, checked_rr, checked_tp_roi, checked_sl_roi,
+                )
+                return "WAIT", None
+
             score = min(float(setup["score"]) + 5.0, 100.0)
 
             # Build MTF summary from stored setup fields (falls back gracefully for old DB rows).

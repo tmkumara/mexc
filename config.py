@@ -137,14 +137,19 @@ BTC_EMA_PERIOD: int = int(os.getenv("BTC_EMA_PERIOD", "50"))
 BTC_KLINE_COUNT: int = int(os.getenv("BTC_KLINE_COUNT", "100"))
 
 # RR / SL controls
-MIN_STRUCTURE_RR: float = float(os.getenv("MIN_STRUCTURE_RR", "1.50"))
-MAX_STRUCTURE_RR: float = float(os.getenv("MAX_STRUCTURE_RR", "3.00"))
-REWARD_RATIO: float = float(os.getenv("REWARD_RATIO", "1.50"))
+MIN_STRUCTURE_RR: float = float(os.getenv("MIN_STRUCTURE_RR", "2.00"))
+MAX_STRUCTURE_RR: float = float(os.getenv("MAX_STRUCTURE_RR", "2.20"))
+REWARD_RATIO: float = float(os.getenv("REWARD_RATIO", "2.00"))
 SL_BUFFER_PCT: float = float(os.getenv("SL_BUFFER_PCT", "0.05"))
 TP_BUFFER_PCT: float = float(os.getenv("TP_BUFFER_PCT", "0.02"))
-MIN_SL_PCT: float = float(os.getenv("MIN_SL_PCT", "0.20"))
+MIN_SL_PCT: float = float(os.getenv("MIN_SL_PCT", "0.65"))
 MAX_SL_PCT: float = float(os.getenv("MAX_SL_PCT", "1.25"))
-MIN_SETUP_SCORE: float = float(os.getenv("MIN_SETUP_SCORE", "88"))
+MIN_SETUP_SCORE: float = float(os.getenv("MIN_SETUP_SCORE", "90"))
+
+# ROI quality gates (20x leverage: 2.5% move = 50% ROI, 1.25% risk = 25% SL ROI)
+MIN_TP_ROI_PCT: float = float(os.getenv("MIN_TP_ROI_PCT", "45.0"))
+TARGET_TP_ROI_PCT: float = float(os.getenv("TARGET_TP_ROI_PCT", "50.0"))
+MAX_SL_ROI_PCT: float = float(os.getenv("MAX_SL_ROI_PCT", "28.0"))
 
 # ── Pending setup invalidation tuning ─────────────────────────────
 # Default: close-based only (wick alone cannot invalidate).
@@ -216,21 +221,25 @@ TP_ROI_PCT: float = 0.0
 SL_ROI_PCT: float = 0.0
 
 # ── Scheduler ────────────────────────────────────────────────────
-SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "120"))
+SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "240"))
 SIGNAL_EXPIRE_HOURS: int = int(os.getenv("SIGNAL_EXPIRE_HOURS", "6"))
-MAX_CONCURRENT_SIGNALS: int = int(os.getenv("MAX_CONCURRENT_SIGNALS", "5"))
+MAX_CONCURRENT_SIGNALS: int = int(os.getenv("MAX_CONCURRENT_SIGNALS", "3"))
 SETUP_SCAN_CRON_MINUTES: str = os.getenv("SETUP_SCAN_CRON_MINUTES", "*/5")
 SETUP_MONITOR_MINUTES: int = int(os.getenv("SETUP_MONITOR_MINUTES", "1"))
 OUTCOME_CHECK_MINUTES: int = int(os.getenv("OUTCOME_CHECK_MINUTES", "1"))
-SIGNALS_PER_SCAN: int = int(os.getenv("SIGNALS_PER_SCAN", "2"))
+SIGNALS_PER_SCAN: int = int(os.getenv("SIGNALS_PER_SCAN", "1"))
 SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "4"))
 
+# Daily frequency controls
+MAX_DAILY_SIGNALS: int = int(os.getenv("MAX_DAILY_SIGNALS", "3"))
+MIN_DAILY_SIGNAL_GAP_MINUTES: int = int(os.getenv("MIN_DAILY_SIGNAL_GAP_MINUTES", "180"))
+
 # Setup saving limits / correlation guard
-MAX_NEW_SETUPS_PER_SCAN: int = int(os.getenv("MAX_NEW_SETUPS_PER_SCAN", "4"))
-MAX_SETUPS_SAME_DIRECTION_PER_SCAN: int = int(os.getenv("MAX_SETUPS_SAME_DIRECTION_PER_SCAN", "2"))
-MAX_WAITING_SETUPS_TOTAL: int = int(os.getenv("MAX_WAITING_SETUPS_TOTAL", "40"))
-MAX_WAITING_SETUPS_SAME_DIRECTION: int = int(os.getenv("MAX_WAITING_SETUPS_SAME_DIRECTION", "20"))
-SETUP_MONITOR_LIMIT: int = int(os.getenv("SETUP_MONITOR_LIMIT", "25"))
+MAX_NEW_SETUPS_PER_SCAN: int = int(os.getenv("MAX_NEW_SETUPS_PER_SCAN", "2"))
+MAX_SETUPS_SAME_DIRECTION_PER_SCAN: int = int(os.getenv("MAX_SETUPS_SAME_DIRECTION_PER_SCAN", "1"))
+MAX_WAITING_SETUPS_TOTAL: int = int(os.getenv("MAX_WAITING_SETUPS_TOTAL", "12"))
+MAX_WAITING_SETUPS_SAME_DIRECTION: int = int(os.getenv("MAX_WAITING_SETUPS_SAME_DIRECTION", "6"))
+SETUP_MONITOR_LIMIT: int = int(os.getenv("SETUP_MONITOR_LIMIT", "12"))
 
 # Debug monitor logs
 SETUP_MONITOR_LOG_DETAILS: bool = os.getenv("SETUP_MONITOR_LOG_DETAILS", "true").lower() == "true"
