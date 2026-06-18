@@ -67,8 +67,16 @@ from config import (
     CANDLE_CACHE_LIMIT,
     WS_MAX_SYMBOLS,
     WS_SEED_KLINE_COUNT,
+    MARKET_WINDOW_MINUTES,
+    MAX_SAME_DIRECTION_SIGNALS_PER_WINDOW,
+    ENABLE_DIRECTION_IMBALANCE_ALERT,
+    DIRECTION_IMBALANCE_THRESHOLD,
+    CORRELATION_BRAKE_KEEP_WAITING,
+    SYMBOL_LOSS_COOLDOWN_HOURS,
+    SYMBOL_DIRECTION_MAX_LOSSES_7D,
+    SYMBOL_DIRECTION_BLOCK_DAYS,
+    DIRECTION_IMBALANCE_MIN_SETUPS,
 )
-
 
 
 def _backup_log_on_startup() -> None:
@@ -111,7 +119,6 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-
 def _valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
     if entry <= 0 or tp <= 0 or sl <= 0:
         return False
@@ -130,11 +137,15 @@ WS_TASK: asyncio.Task | None = None
 
 
 def _cached_or_rest_klines(symbol: str, interval: str, count: int):
-    """Return candles from WebSocket cache when ready, otherwise REST fallback."""
+    """Return candles from WebSocket cache when ready, otherwise REST fallback.
+
+    Requires len(df) >= count: a partial cache (smaller than requested) risks
+    indicator warm-up failures (EMA200 needs 200+ bars) so we fall back to REST.
+    """
     if CANDLE_CACHE is not None:
         try:
             df = CANDLE_CACHE.get_candles(symbol, interval, limit=count)
-            if df is not None and not df.empty and len(df) >= min(count, 2):
+            if df is not None and not df.empty and len(df) >= count:
                 return df
         except Exception as e:
             logger.debug("[CACHE] %s %s read failed: %s", symbol, interval, e)
@@ -231,6 +242,7 @@ async def _stop_ws_cache() -> None:
     WS_CLIENT = None
     WS_TASK = None
 
+
 # ── setup detection scan ──────────────────────────────────────────
 
 async def scan_for_setups(app: Application) -> None:
@@ -246,15 +258,26 @@ async def scan_for_setups(app: Application) -> None:
 
     now = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
+    loss_cooldown_since = now - timedelta(hours=SYMBOL_LOSS_COOLDOWN_HOURS)
+    direction_block_since = now - timedelta(days=SYMBOL_DIRECTION_BLOCK_DAYS)
 
-    to_scan = [
-        symbol
-        for symbol in coins
-        if not db.signal_exists_for_coin(symbol, cooldown_since)
-        and not db.pending_setup_exists(symbol)
-    ]
+    # Pre-filter: skip coins on signal cooldown, already waiting, or on symbol loss cooldown.
+    to_scan: list[str] = []
+    for symbol in coins:
+        if db.signal_exists_for_coin(symbol, cooldown_since):
+            continue
+        if db.pending_setup_exists(symbol):
+            continue
+        if SYMBOL_LOSS_COOLDOWN_HOURS > 0:
+            if db.count_losses_since(symbol, None, loss_cooldown_since) > 0:
+                logger.info(
+                    "[SETUP-SCAN] Skip %s — loss cooldown (%dh)",
+                    symbol, SYMBOL_LOSS_COOLDOWN_HOURS,
+                )
+                continue
+        to_scan.append(symbol)
 
-    logger.info("[SETUP-SCAN] %d/%d coins after cooldown + waiting-setup filters", len(to_scan), len(coins))
+    logger.info("[SETUP-SCAN] %d/%d coins after cooldown + waiting-setup + loss-cooldown filters", len(to_scan), len(coins))
 
     def _detect(symbol: str):
         try:
@@ -271,7 +294,27 @@ async def scan_for_setups(app: Application) -> None:
             lambda: list(executor.map(_detect, to_scan)),
         )
 
-    setups = [setup for setup in results if setup is not None]
+    # Post-detect: apply per-direction loss block.
+    filtered_setups = []
+    for setup in results:
+        if setup is None:
+            continue
+
+        symbol    = setup["symbol"]
+        direction = setup["direction"]
+
+        if SYMBOL_DIRECTION_MAX_LOSSES_7D > 0:
+            dir_losses = db.count_losses_since(symbol, direction, direction_block_since)
+            if dir_losses >= SYMBOL_DIRECTION_MAX_LOSSES_7D:
+                logger.info(
+                    "[SETUP-SCAN] Skip %s %s — %d %s losses in %dd direction block",
+                    symbol, direction, dir_losses, direction, SYMBOL_DIRECTION_BLOCK_DAYS,
+                )
+                continue
+
+        filtered_setups.append(setup)
+
+    setups = filtered_setups
 
     if not setups:
         logger.info("[SETUP-SCAN] Done — 0 new setups found")
@@ -346,6 +389,19 @@ async def scan_for_setups(app: Application) -> None:
         direction_counts,
     )
 
+    if ENABLE_DIRECTION_IMBALANCE_ALERT and saved > 0:
+        final_waiting = db.count_waiting_setups_by_direction()
+        total_w = sum(final_waiting.values())
+        if total_w >= DIRECTION_IMBALANCE_MIN_SETUPS:
+            for dir_name, count in final_waiting.items():
+                ratio = count / total_w
+                if ratio >= DIRECTION_IMBALANCE_THRESHOLD:
+                    logger.warning(
+                        "[SETUP-SCAN] Direction imbalance: %d/%d (%.0f%%) waiting setups are %s",
+                        count, total_w, ratio * 100, dir_name,
+                    )
+
+
 # ── pending setup monitor ─────────────────────────────────────────
 
 async def monitor_setups(app: Application) -> None:
@@ -357,7 +413,7 @@ async def monitor_setups(app: Application) -> None:
     slots = MAX_CONCURRENT_SIGNALS - active
 
     if slots <= 0:
-        logger.info(f"[SETUP-MONITOR] {active}/{MAX_CONCURRENT_SIGNALS} active signals, skipping")
+        logger.info("[SETUP-MONITOR] %d/%d active signals, skipping", active, MAX_CONCURRENT_SIGNALS)
         return
 
     now = datetime.now(timezone.utc)
@@ -371,74 +427,115 @@ async def monitor_setups(app: Application) -> None:
 
     logger.info("[SETUP-MONITOR] Checking top %d waiting setups", len(setups))
 
-    fired_signals = []
+    # Evaluate daily cap + gap once upfront. Claiming only happens when we can send —
+    # this prevents duplicate [ENTRY] logs across successive monitor cycles for the same setup.
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_count = db.count_signals_since(today_start)
+    remaining_daily_slots = max(MAX_DAILY_SIGNALS - today_count, 0)
+
+    latest = db.latest_signal_time()
+    gap_ok = (
+        latest is None
+        or (now - latest).total_seconds() / 60 >= MIN_DAILY_SIGNAL_GAP_MINUTES
+    )
+
+    can_send = remaining_daily_slots > 0 and gap_ok
+
+    fired_signals: list[tuple[dict, strategy.Signal]] = []
 
     for setup in setups:
         status, sig = strategy.evaluate_pending_setup(setup)
 
         if status == "EXPIRED":
             db.mark_setup_expired(setup["id"])
-            logger.info(f"[SETUP-MONITOR] Expired setup #{setup['id']} {setup['symbol']}")
+            logger.info("[SETUP-MONITOR] Expired setup #%d %s", setup["id"], setup["symbol"])
 
         elif status == "INVALIDATED":
             db.mark_setup_invalidated(setup["id"])
-            logger.info(f"[SETUP-MONITOR] Invalidated setup #{setup['id']} {setup['symbol']}")
+            logger.info("[SETUP-MONITOR] Invalidated setup #%d %s", setup["id"], setup["symbol"])
 
         elif status == "FIRE" and sig is not None:
-            fired_signals.append((setup, sig))
+            if not can_send:
+                # Daily cap or gap prevents sending — leave setup 'waiting' so
+                # the next cycle re-evaluates it rather than logging [ENTRY] forever.
+                continue
+
+            # Claim immediately to stop repeated [ENTRY] logs in future cycles.
+            if db.claim_setup_for_fire(setup["id"]):
+                fired_signals.append((setup, sig))
+            else:
+                logger.info(
+                    "[SETUP-MONITOR] Setup #%d %s already claimed by another cycle",
+                    setup["id"], setup["symbol"],
+                )
+
+    if not can_send:
+        if remaining_daily_slots <= 0:
+            logger.info(
+                "[SETUP-MONITOR] Daily signal cap %d/%d — no sends this cycle",
+                today_count, MAX_DAILY_SIGNALS,
+            )
+        else:
+            gap_min = (now - latest).total_seconds() / 60
+            logger.info(
+                "[SETUP-MONITOR] Signal gap %.1fm / %dm — no sends this cycle",
+                gap_min, MIN_DAILY_SIGNAL_GAP_MINUTES,
+            )
+        return
 
     if not fired_signals:
         logger.info("[SETUP-MONITOR] Done — 0 entries fired")
         return
 
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_count = db.count_signals_since(today_start)
-    remaining_daily_slots = max(MAX_DAILY_SIGNALS - today_count, 0)
-
-    if remaining_daily_slots <= 0:
-        logger.info(
-            "[SETUP-MONITOR] Daily signal cap reached %d/%d",
-            today_count,
-            MAX_DAILY_SIGNALS,
-        )
-        return
-
-    latest = db.latest_signal_time()
-    if latest is not None:
-        gap_min = (now - latest).total_seconds() / 60
-        if gap_min < MIN_DAILY_SIGNAL_GAP_MINUTES:
-            logger.info(
-                "[SETUP-MONITOR] Waiting for signal gap %.1fm/%dm",
-                gap_min,
-                MIN_DAILY_SIGNAL_GAP_MINUTES,
-            )
-            return
-
     fired_signals.sort(key=lambda item: item[1].score, reverse=True)
-    to_send = fired_signals[:min(SIGNALS_PER_SCAN, slots, remaining_daily_slots)]
+
+    send_limit = min(SIGNALS_PER_SCAN, slots, remaining_daily_slots)
+    to_send = fired_signals[:send_limit]
+    overflow = fired_signals[send_limit:]
+
+    # Revert overflow claims so those setups can be re-evaluated next cycle.
+    for setup, _ in overflow:
+        db.mark_setup_fire_failed(setup["id"])
+        logger.info(
+            "[SETUP-MONITOR] Reverted overflow claim setup #%d %s",
+            setup["id"], setup["symbol"],
+        )
 
     logger.info(
-        f"[SETUP-MONITOR] {len(fired_signals)} entry signal(s), sending {len(to_send)}"
+        "[SETUP-MONITOR] %d fired, sending %d (limit=%d slots=%d daily=%d)",
+        len(fired_signals), len(to_send), send_limit, slots, remaining_daily_slots,
     )
 
+    # Correlation brake — block same-direction signals within MARKET_WINDOW_MINUTES.
+    window_start = now - timedelta(minutes=MARKET_WINDOW_MINUTES)
+    sent_directions: dict[str, int] = {}
+
     for setup, sig in to_send:
-        # Atomic claim — prevents duplicate fires if monitor cycles overlap or
-        # two bot processes run simultaneously.
-        if not db.claim_setup_for_fire(setup["id"]):
+        direction = sig.direction
+
+        db_dir_count = db.count_signals_since_by_direction(window_start, direction)
+        total_dir = db_dir_count + sent_directions.get(direction, 0)
+
+        if total_dir >= MAX_SAME_DIRECTION_SIGNALS_PER_WINDOW:
             logger.info(
-                "[SETUP-MONITOR] Setup #%d %s already claimed, skipping duplicate",
-                setup["id"], setup["symbol"],
+                "[SETUP-MONITOR] Correlation brake %s %s — %d %s signal(s) in %dm window",
+                sig.symbol, direction, total_dir, direction, MARKET_WINDOW_MINUTES,
             )
+            if CORRELATION_BRAKE_KEEP_WAITING:
+                db.mark_setup_fire_failed(setup["id"])
+                logger.info(
+                    "[SETUP-MONITOR] Setup #%d %s reverted to waiting (CORRELATION_BRAKE_KEEP_WAITING)",
+                    setup["id"], sig.symbol,
+                )
+            else:
+                db.mark_setup_fire_failed(setup["id"])
             continue
 
         if not _valid_trade_geometry(sig.direction, sig.entry_price, sig.tp_price, sig.sl_price):
             logger.error(
                 "[SIGNAL-BLOCK] Invalid geometry %s %s entry=%.8g tp=%.8g sl=%.8g",
-                sig.symbol,
-                sig.direction,
-                sig.entry_price,
-                sig.tp_price,
-                sig.sl_price,
+                sig.symbol, sig.direction,
+                sig.entry_price, sig.tp_price, sig.sl_price,
             )
             db.mark_setup_fire_failed(setup["id"])
             continue
@@ -457,13 +554,16 @@ async def monitor_setups(app: Application) -> None:
             db.mark_setup_fired(setup["id"], signal_id)
 
             await tg.broadcast_signal(app, sig, signal_id)
+
+            sent_directions[direction] = sent_directions.get(direction, 0) + 1
+
             logger.info(
                 "[SETUP-MONITOR] Sent signal #%d from setup #%d %s %s score=%.1f",
                 signal_id, setup["id"], sig.symbol, sig.direction, sig.score,
             )
         except Exception as e:
             db.mark_setup_fire_failed(setup["id"])
-            logger.error(f"Failed to fire signal for {sig.symbol}: {e}", exc_info=True)
+            logger.error("Failed to fire signal for %s: %s", sig.symbol, e, exc_info=True)
 
 
 # ── outcome checker ───────────────────────────────────────────────

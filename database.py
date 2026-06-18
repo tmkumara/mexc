@@ -4,9 +4,9 @@ SQLite database for signal tracking, reporting, and stateful SMC pending setups.
 
 import sqlite3
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from contextlib import contextmanager
-from config import DB_PATH
+from config import DB_PATH, SETUP_KEY_DEDUP_HOURS
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,11 @@ def init_db():
         con.execute("""
             CREATE INDEX IF NOT EXISTS idx_signals_symbol_status
             ON signals (symbol, status)
+        """)
+
+        con.execute("""
+            CREATE INDEX IF NOT EXISTS idx_signals_direction_generated
+            ON signals (direction, generated_at)
         """)
 
         for col, definition in [
@@ -118,11 +123,22 @@ def init_db():
             ("htf_bias",       "TEXT"),
             ("structure_tf",   "TEXT"),
             ("structure_bias", "TEXT"),
+            # Setup fingerprint for deduplication — nullable for backward compat.
+            ("setup_key",      "TEXT"),
         ]:
             try:
                 con.execute(f"ALTER TABLE pending_setups ADD COLUMN {col} {definition}")
             except Exception:
                 pass
+
+        # Index for setup_key dedup queries — created after column exists.
+        try:
+            con.execute("""
+                CREATE INDEX IF NOT EXISTS idx_pending_setups_key_status
+                ON pending_setups (setup_key, status)
+            """)
+        except Exception:
+            pass
 
     logger.info("Database initialised")
 
@@ -223,6 +239,46 @@ def count_signals_since(start: datetime) -> int:
         return int(row["cnt"] or 0)
 
 
+def count_signals_since_by_direction(start: datetime, direction: str) -> int:
+    """Count signals in a time window filtered by direction. Used for correlation brake."""
+    with _conn() as con:
+        row = con.execute("""
+            SELECT COUNT(*) AS cnt
+            FROM signals
+            WHERE generated_at >= ?
+              AND direction = ?
+        """, (start.isoformat(), direction)).fetchone()
+
+        return int(row["cnt"] or 0)
+
+
+def count_losses_since(symbol: str, direction: str | None, since: datetime) -> int:
+    """
+    Count loss outcomes for a symbol (and optionally direction) since a given time.
+    Used for symbol loss cooldown and direction block checks.
+    """
+    with _conn() as con:
+        if direction:
+            row = con.execute("""
+                SELECT COUNT(*) AS cnt
+                FROM signals
+                WHERE symbol = ?
+                  AND direction = ?
+                  AND status = 'loss'
+                  AND generated_at >= ?
+            """, (symbol, direction, since.isoformat())).fetchone()
+        else:
+            row = con.execute("""
+                SELECT COUNT(*) AS cnt
+                FROM signals
+                WHERE symbol = ?
+                  AND status = 'loss'
+                  AND generated_at >= ?
+            """, (symbol, since.isoformat())).fetchone()
+
+        return int(row["cnt"] or 0)
+
+
 def latest_signal_time() -> datetime | None:
     with _conn() as con:
         row = con.execute("""
@@ -282,14 +338,53 @@ def pending_setup_exists(symbol: str, direction: str | None = None) -> bool:
         return row is not None
 
 
+def pending_setup_key_exists(setup_key: str, since: datetime | None = None) -> bool:
+    """
+    Returns True if a setup with the same fingerprint key already exists in
+    waiting/firing/fired status (within last 6h by default).
+
+    Prevents saving duplicate OB+sweep combinations detected across consecutive scans.
+    """
+    with _conn() as con:
+        if since is not None:
+            row = con.execute("""
+                SELECT id FROM pending_setups
+                WHERE setup_key = ?
+                  AND status IN ('waiting', 'firing', 'fired')
+                  AND created_at >= ?
+                LIMIT 1
+            """, (setup_key, since.isoformat())).fetchone()
+        else:
+            row = con.execute("""
+                SELECT id FROM pending_setups
+                WHERE setup_key = ?
+                  AND status IN ('waiting', 'firing', 'fired')
+                LIMIT 1
+            """, (setup_key,)).fetchone()
+
+        return row is not None
+
+
 def save_pending_setup(setup: dict) -> int | None:
     """
     Saves a pending SMC setup.
 
-    Avoids duplicates for same symbol + direction while status is waiting/firing.
+    Dedup layer 1: symbol+direction active guard (existing behaviour).
+    Dedup layer 2: setup_key fingerprint guard — rejects same OB/sweep
+                   combination if it was already saved within the last 6 hours.
     """
     if pending_setup_exists(setup["symbol"], setup["direction"]):
         return None
+
+    setup_key = setup.get("setup_key")
+    if setup_key:
+        since = datetime.now(timezone.utc) - timedelta(hours=SETUP_KEY_DEDUP_HOURS)
+        if pending_setup_key_exists(setup_key, since):
+            logger.info(
+                "[SETUP-SCAN] Skip duplicate setup_key %s %s key=%s",
+                setup["symbol"], setup["direction"], setup_key[:72],
+            )
+            return None
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -305,7 +400,8 @@ def save_pending_setup(setup: dict) -> int | None:
                 rr_estimate, score,
                 setup_time, expires_at, created_at, updated_at,
                 macro_tf, macro_bias, htf_tf, htf_bias,
-                structure_tf, structure_bias
+                structure_tf, structure_bias,
+                setup_key
             )
             VALUES (
                 ?, ?, 'waiting',
@@ -317,7 +413,8 @@ def save_pending_setup(setup: dict) -> int | None:
                 ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?, ?,
-                ?, ?
+                ?, ?,
+                ?
             )
         """, (
             setup["symbol"],
@@ -348,6 +445,7 @@ def save_pending_setup(setup: dict) -> int | None:
             setup.get("htf_bias"),
             setup.get("structure_tf"),
             setup.get("structure_bias"),
+            setup_key,
         ))
 
         return cur.lastrowid

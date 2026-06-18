@@ -161,6 +161,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from datetime import date, timezone as tz
 
     from config import (
+        QUALITY_MODE,
         STRATEGY_NAME,
         MACRO_TF,
         HTF_TREND_TF,
@@ -172,6 +173,12 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ENABLE_ATR_FILTER,
         ENABLE_VOLUME_FILTER,
         ENABLE_BTC_FILTER,
+        ENABLE_MARKET_REGIME_GATE,
+        MARKET_REGIME_SYMBOL,
+        MARKET_REGIME_TF,
+        BLOCK_SHORTS_IN_BTC_BULL,
+        BLOCK_LONGS_IN_BTC_BEAR,
+        ALLOW_COUNTER_REGIME_IF_SCORE,
         MIN_ATR_PCT,
         MAX_ATR_PCT,
         MIN_SL_PCT,
@@ -193,6 +200,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ATR_STOP_FLOOR_MULTIPLIER,
         REQUIRE_TREND_CANDLE_CONFIRMATION,
         TREND_CONFIRM_TF,
+        USE_SR_TARGETS,
+        ALLOW_FIXED_RR_FALLBACK,
         LEVERAGE,
         SIGNAL_COOLDOWN_MINUTES,
         SIGNALS_PER_SCAN,
@@ -206,14 +215,20 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         SETUP_MONITOR_LIMIT,
         MAX_DAILY_SIGNALS,
         MIN_DAILY_SIGNAL_GAP_MINUTES,
+        MARKET_WINDOW_MINUTES,
         MIN_TP_ROI_PCT,
         MAX_SL_ROI_PCT,
+        SYMBOL_LOSS_COOLDOWN_HOURS,
+        SYMBOL_DIRECTION_MAX_LOSSES_7D,
     )
 
     state = "⏸ PAUSED" if paused else "▶️ RUNNING"
     coins = coin_scanner.get_cached_coins()
     active = db.count_active_signals()
     waiting = db.count_waiting_setups()
+    waiting_by_dir = db.count_waiting_setups_by_direction()
+    waiting_long  = waiting_by_dir.get("LONG",  0)
+    waiting_short = waiting_by_dir.get("SHORT", 0)
 
     today_start = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=tz.utc)
     signals_today = db.count_signals_since(today_start)
@@ -234,10 +249,29 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if ENABLE_BTC_FILTER:
         filters.append("BTC")
 
+    if ENABLE_MARKET_REGIME_GATE:
+        regime_parts = []
+        if BLOCK_SHORTS_IN_BTC_BULL:
+            regime_parts.append("no SHORT in bull")
+        if BLOCK_LONGS_IN_BTC_BEAR:
+            regime_parts.append("no LONG in bear")
+        regime_str = f"on ({MARKET_REGIME_SYMBOL} {MARKET_REGIME_TF.upper()}: {', '.join(regime_parts) or 'monitor'})"
+        if ALLOW_COUNTER_REGIME_IF_SCORE < 100:
+            regime_str += f" override@{ALLOW_COUNTER_REGIME_IF_SCORE:g}"
+    else:
+        regime_str = "off"
+
+    sr_mode = "SR"
+    if USE_SR_TARGETS and ALLOW_FIXED_RR_FALLBACK:
+        sr_mode = "SR + fixed-RR fallback"
+    elif not USE_SR_TARGETS:
+        sr_mode = "fixed-RR only"
+
     msg = "\n".join([
         "📡 <b>Scanner Status</b>",
         "━━━━━━━━━━━━━━━━━━━━",
         f"State:       {_code(state)}",
+        f"Mode:        {_code(QUALITY_MODE.upper())}",
         f"Strategy:    {_code(STRATEGY_NAME)}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"Macro TF:    {_code(MACRO_TF.upper())} regime (EMA50/200)",
@@ -245,6 +279,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Structure:   {_code(STRUCTURE_TF.upper())} bias (swing structure)",
         f"Entry TF:    {_code(ENTRY_TF)} sweep / OB retest",
         f"MTF align:   {_code('required' if REQUIRE_MTF_ALIGNMENT else 'optional')}",
+        f"Regime gate: {_code(regime_str)}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"Min score:   {_code(MIN_SETUP_SCORE)}",
         f"MSS break:   {_code('on' if REQUIRE_MSS_BREAK_ENTRY else 'off')}"
@@ -253,6 +288,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"ATR:         {_code(f'{MIN_ATR_PCT:g}%–{MAX_ATR_PCT:g}%')}",
         f"SL limit:    {_code(f'{MIN_SL_PCT:g}%–{MAX_SL_PCT:g}%')}",
         f"RR:          {_code(f'{MIN_STRUCTURE_RR:g}–{MAX_STRUCTURE_RR:g}')}",
+        f"Target src:  {_code(sr_mode)}",
         f"OB distance: {_code(f'≤{MAX_OB_DISTANCE_PCT:g}% or ≤{MAX_OB_DISTANCE_ATR:g}ATR')}",
         f"ATR floor:   {_code(f'on × {ATR_STOP_FLOOR_MULTIPLIER:g}' if ENABLE_ATR_STOP_FLOOR else 'off')}",
         f"Revalidate:  {_code('on' if REVALIDATE_BEFORE_FIRE else 'off')}",
@@ -266,13 +302,15 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Leverage:    {_code(f'{LEVERAGE}x')}",
         f"Entries:     {_code(f'top {SIGNALS_PER_SCAN} fires/monitor')}",
         f"Save limit:  {_code(f'{MAX_NEW_SETUPS_PER_SCAN}/scan, {MAX_SETUPS_SAME_DIRECTION_PER_SCAN}/direction')}",
-        f"Wait cap:    {_code(f'{waiting}/{MAX_WAITING_SETUPS_TOTAL} setups')}",
+        f"Wait cap:    {_code(f'{waiting}/{MAX_WAITING_SETUPS_TOTAL}  (L:{waiting_long} S:{waiting_short})')}",
         f"Cooldown:    {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
+        f"Loss guard:  {_code(f'skip {SYMBOL_LOSS_COOLDOWN_HOURS}h after any loss  dir-block {SYMBOL_DIRECTION_MAX_LOSSES_7D} losses/7d')}",
         f"Active:      {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"Today:       {_code(f'{signals_today} / {MAX_DAILY_SIGNALS} signals')}",
         f"Last signal: {_code(last_sig_str)}",
         f"Gap:         {_code(f'{MIN_DAILY_SIGNAL_GAP_MINUTES} min between signals')}",
+        f"Window:      {_code(f'{MARKET_WINDOW_MINUTES} min correlation window')}",
         f"ROI target:  {_code(f'TP +{MIN_TP_ROI_PCT:g}% / SL -{MAX_SL_ROI_PCT:g}%')}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"Pool ({len(coins)}):  {_code(pairs_str)}",
