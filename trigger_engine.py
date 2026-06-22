@@ -3,26 +3,40 @@ WebSocket trigger engine.
 
 Checks armed setups against live WebSocket prices every TRIGGER_CHECK_SECONDS.
 Fires a Telegram signal when live price enters the entry zone of an armed setup.
+
+Quality gates applied before firing:
+  - score >= MIN_SIGNAL_SCORE  (checked inside calculate_signal_from_setup)
+  - SL distance >= ATR * MIN_ATR_SL_MULTIPLIER  (checked inside calculate_signal_from_setup)
+  - SL ROI within [MIN_SL_ROI_PCT, MAX_SL_ROI_PCT]  (checked inside calculate_signal_from_setup)
+  - Confirmation candle direction matches signal  (when REQUIRE_CONFIRMATION_AFTER_TOUCH=True)
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 
 import database as db
 import strategy
 import bot as tg
+from mexc_client import get_klines
 from ws_manager import WsPriceManager
 from config import (
     MAX_ENTRY_DISTANCE_PCT,
     MAX_CONCURRENT_SIGNALS,
     SIGNAL_COOLDOWN_MINUTES,
     LEVERAGE,
+    ENTRY_TF,
+    REQUIRE_CONFIRMATION_AFTER_TOUCH,
 )
 from telegram.ext import Application
 
 logger = logging.getLogger(__name__)
+
+# Cache confirmation candle results: symbol → (checked_at_ts, confirmed)
+_conf_cache: dict[str, tuple[float, bool]] = {}
+_CONF_CACHE_TTL_SECONDS = 60
 
 
 def _valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
@@ -33,6 +47,40 @@ def _valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) ->
     if direction == "SHORT":
         return tp < entry < sl
     return False
+
+
+def _check_confirmation_candle(symbol: str, direction: str) -> bool:
+    """
+    Fetch the last completed entry-TF candle and check its body direction.
+    Returns True if confirmed (or if verification fails — fail-open).
+    Results cached for _CONF_CACHE_TTL_SECONDS per symbol.
+    """
+    now_ts = datetime.now(timezone.utc).timestamp()
+    cached = _conf_cache.get(symbol)
+    if cached and now_ts - cached[0] < _CONF_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    try:
+        df = get_klines(symbol, ENTRY_TF, count=5)
+        if df is None or len(df) < 3:
+            _conf_cache[symbol] = (now_ts, True)
+            return True
+
+        completed = df.iloc[:-1]
+        last = completed.iloc[-1]
+        body = float(last["close"]) - float(last["open"])
+
+        if direction == "LONG":
+            confirmed = body > 0
+        else:
+            confirmed = body < 0
+
+        _conf_cache[symbol] = (now_ts, confirmed)
+        return confirmed
+
+    except Exception:
+        _conf_cache[symbol] = (now_ts, True)
+        return True
 
 
 async def check_triggers(app: Application, ws_manager: WsPriceManager) -> None:
@@ -105,10 +153,20 @@ async def check_triggers(app: Application, ws_manager: WsPriceManager) -> None:
             logger.debug("[TRIGGER] %s on cooldown — skip", symbol)
             continue
 
-        # Build signal from armed setup + live price
+        # Confirmation candle check
+        if REQUIRE_CONFIRMATION_AFTER_TOUCH:
+            confirmed = await asyncio.to_thread(_check_confirmation_candle, symbol, direction)
+            if not confirmed:
+                logger.info(
+                    "[QUALITY-REJECT] %s %s weak confirmation after touch — last candle body opposes direction",
+                    symbol, direction,
+                )
+                continue
+
+        # Build signal from armed setup + live price (quality gates applied inside)
         sig = strategy.calculate_signal_from_setup(setup, live_price)
         if sig is None:
-            logger.warning("[TRIGGER] calculate_signal_from_setup returned None for %s", symbol)
+            logger.info("[TRIGGER] %s %s rejected by quality gates", symbol, direction)
             continue
 
         if not _valid_trade_geometry(sig.direction, sig.entry_price, sig.tp_price, sig.sl_price):

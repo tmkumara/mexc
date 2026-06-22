@@ -165,12 +165,15 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         MACRO_TF, MAIN_TF, SETUP_TF, ENTRY_TF,
         EMA_MACRO, EMA_MAIN, EMA_SETUP, EMA_ENTRY_FAST, EMA_ENTRY_SLOW,
         VOLUME_PERIOD, VOLUME_MULTIPLIER,
-        MIN_RR, MAX_RR, MIN_SETUP_SCORE,
+        MIN_RR, MAX_RR, MIN_SETUP_SCORE, MIN_SIGNAL_SCORE,
+        MIN_ATR_SL_MULTIPLIER, MIN_SL_ROI_PCT, MAX_SL_ROI_PCT,
         MAX_ENTRY_DISTANCE_PCT,
         ARMED_SETUP_EXPIRE_MINUTES,
         SETUP_SCAN_CRON_MINUTES, TRIGGER_CHECK_SECONDS,
         MAX_CONCURRENT_SIGNALS, SIGNAL_COOLDOWN_MINUTES,
-        LEVERAGE,
+        LEVERAGE, COINGLASS_API_KEY,
+        TOP_N_COINS, COIN_POOL_MIN_VOLUME_USD, COIN_POOL_MIN_SELECTED,
+        REQUIRE_CONFIRMATION_AFTER_TOUCH,
     )
 
     state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
@@ -185,6 +188,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     ws_status = WS_MANAGER.status_str() if WS_MANAGER is not None else "not started"
     pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
+    cg_status = "SET" if COINGLASS_API_KEY else "not set"
 
     msg = "\n".join([
         "📡 <b>Scanner Status</b>",
@@ -197,12 +201,19 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Setup TF:    {_code(f'{SETUP_TF.upper()} close > EMA{EMA_SETUP}')}",
         f"Entry TF:    {_code(f'{ENTRY_TF} pullback near EMA{EMA_ENTRY_FAST}/EMA{EMA_ENTRY_SLOW}/SR')}",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"Min score:   {_code(MIN_SETUP_SCORE)}",
+        f"Setup score: {_code(f'>= {MIN_SETUP_SCORE} (arm)  >= {MIN_SIGNAL_SCORE} (fire)')}",
         f"Min RR:      {_code(MIN_RR)}",
         f"Max RR:      {_code(MAX_RR)}",
         f"Volume:      {_code(f'>= {VOLUME_MULTIPLIER}x {VOLUME_PERIOD}-bar avg')}",
+        f"ATR SL mult: {_code(f'>= {MIN_ATR_SL_MULTIPLIER}x ATR')}",
+        f"SL ROI:      {_code(f'{MIN_SL_ROI_PCT}% – {MAX_SL_ROI_PCT}% at {LEVERAGE}x')}",
+        f"Confirm:     {_code('ON' if REQUIRE_CONFIRMATION_AFTER_TOUCH else 'OFF')}",
         f"Max dist:    {_code(f'{MAX_ENTRY_DISTANCE_PCT}% from trigger (late signal guard)')}",
         f"Setup TTL:   {_code(f'{ARMED_SETUP_EXPIRE_MINUTES} min')}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"Pool size:   {_code(f'{len(coins)} / {TOP_N_COINS} (min {COIN_POOL_MIN_SELECTED})')}",
+        f"Min volume:  {_code(f'${COIN_POOL_MIN_VOLUME_USD:,.0f}')}",
+        f"CoinGlass:   {_code(cg_status)}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"Scan cron:   {_code(SETUP_SCAN_CRON_MINUTES)}",
         f"Trigger:     {_code(f'every {TRIGGER_CHECK_SECONDS}s via WebSocket')}",

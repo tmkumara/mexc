@@ -4,8 +4,9 @@ Smart MEXC Futures-only coin scanner.
 Purpose:
     - Build the coin pool using MEXC futures contract symbols only.
     - Avoid symbols not listed on MEXC futures.
-    - Avoid stock-token futures when CRYPTO_FUTURES_ONLY=True.
+    - Avoid stock-token futures and commodity/index futures when CRYPTO_FUTURES_ONLY=True.
     - Rank futures symbols using liquidity + recent activity.
+    - Backfill pool to COIN_POOL_MIN_SELECTED if smart ranking yields too few.
 """
 
 import logging
@@ -21,6 +22,7 @@ from config import (
     TOP_N_COINS,
     COINGLASS_API_KEY,
     COIN_POOL_MIN_VOLUME_USD,
+    COIN_POOL_MIN_SELECTED,
     ENABLE_SMART_COIN_RANKING,
     COIN_RANK_CANDIDATE_MULTIPLIER,
     COIN_RANK_MAX_CANDIDATES,
@@ -95,35 +97,44 @@ def _normalize_score(value: float, min_value: float, max_value: float) -> float:
 
 # ── futures contract filtering ────────────────────────────────────
 
+# Keywords that identify non-crypto contracts (stocks, indices, commodities, metals).
+# Checked against the full symbol string (upper-case, e.g. "NAS100_USDT").
+_NON_CRYPTO_KEYWORDS = (
+    # Equity / index futures
+    "STOCK",
+    "INDEX",
+    "ETF",
+    "NASDAQ",
+    "NYSE",
+    "NAS100",
+    "NAS",       # catches NAS100 variants
+    "SPX",
+    "DJI",
+    # Commodity / energy
+    "CRUDE",
+    "USOIL",
+    "BRENT",
+    "OIL",
+    # Precious metals
+    "GOLD",
+    "SILVER",
+    "XAU",
+    "XAG",
+    "XPT",
+    "XPD",
+)
+
+
 def _is_crypto_symbol(symbol: str) -> bool:
     """
-    Removes MEXC stock/index style contracts when CRYPTO_FUTURES_ONLY=True.
-
-    Examples removed:
-        CVNASTOCK_USDT
-        PANWSTOCK_USDT
-        WMTSTOCK_USDT
+    Returns False for MEXC stock/index/commodity style contracts.
+    Always returns True when CRYPTO_FUTURES_ONLY=False.
     """
     if not CRYPTO_FUTURES_ONLY:
         return True
 
-    blocked_keywords = (
-        "STOCK",
-        "INDEX",
-        "ETF",
-        "NASDAQ",
-        "NYSE",
-        "NAS100",
-        "SPX",
-        "DJI",
-        "CRUDE",
-        "USOIL",
-        "BRENT",
-    )
-
     upper = symbol.upper()
-
-    return not any(keyword in upper for keyword in blocked_keywords)
+    return not any(keyword in upper for keyword in _NON_CRYPTO_KEYWORDS)
 
 
 def _is_contract_active(contract: dict) -> bool:
@@ -141,8 +152,6 @@ def _is_contract_active(contract: dict) -> bool:
     if not _is_crypto_symbol(symbol):
         return False
 
-    # MEXC futures usually uses state=0 for active contracts.
-    # Be defensive because response fields can vary.
     state = contract.get("state")
 
     if state is not None:
@@ -180,6 +189,18 @@ def _fetch_valid_futures_symbols(tickers: dict[str, dict]) -> set[str]:
         logger.error("[COIN-FILTER] failed to fetch futures contracts: %s", e)
         return _cached_valid_futures
 
+    total_usdt_contracts = sum(
+        1 for c in contracts
+        if str(c.get("symbol", "")).upper().strip().endswith(f"_{QUOTE_CURRENCY}")
+    )
+
+    # Count how many are blocked as non-crypto
+    non_crypto_blocked = sum(
+        1 for c in contracts
+        if str(c.get("symbol", "")).upper().strip().endswith(f"_{QUOTE_CURRENCY}")
+        and not _is_crypto_symbol(str(c.get("symbol", "")).upper().strip())
+    )
+
     contract_symbols = {
         str(contract.get("symbol")).upper().strip()
         for contract in contracts
@@ -209,8 +230,11 @@ def _fetch_valid_futures_symbols(tickers: dict[str, dict]) -> set[str]:
     _cached_valid_futures = valid
 
     logger.info(
-        "[COIN-FILTER] contracts=%s active_%s_futures=%s tickers=%s valid=%s excluded=%s crypto_only=%s",
+        "[COIN-FILTER] contracts_total=%s usdt_contracts=%s non_crypto_blocked=%s "
+        "active_%s_futures=%s tickers_crypto=%s valid=%s excluded=%s crypto_only=%s",
         len(contracts),
+        total_usdt_contracts,
+        non_crypto_blocked,
         QUOTE_CURRENCY,
         len(contract_symbols),
         len(ticker_symbols),
@@ -328,6 +352,8 @@ def _fetch_mexc_volume_candidates(
         COIN_RANK_MAX_CANDIDATES,
     )
 
+    total_checked = 0
+    passed_volume = 0
     rows: list[tuple[str, float]] = []
 
     for symbol, ticker in tickers.items():
@@ -339,6 +365,8 @@ def _fetch_mexc_volume_candidates(
         if not _is_crypto_symbol(symbol):
             continue
 
+        total_checked += 1
+
         last_price = _ticker_last_price(ticker)
 
         if last_price < COIN_RANK_MIN_LAST_PRICE:
@@ -349,15 +377,18 @@ def _fetch_mexc_volume_candidates(
         if vol_usd < COIN_POOL_MIN_VOLUME_USD:
             continue
 
+        passed_volume += 1
         rows.append((symbol, vol_usd))
 
     rows.sort(key=lambda x: x[1], reverse=True)
     rows = rows[:max_candidates]
 
     logger.info(
-        "[COIN-RANK] MEXC futures volume candidates=%s min_volume=$%.2f",
-        len(rows),
+        "[COIN-RANK] MEXC volume scan: checked=%s passed_volume=%s (min=$%.0f) candidates=%s",
+        total_checked,
+        passed_volume,
         COIN_POOL_MIN_VOLUME_USD,
+        len(rows),
     )
 
     return rows
@@ -545,6 +576,17 @@ def _smart_rank_candidates(
 def refresh_coin_list() -> list[str]:
     global _cached_coins, _cached_scores, _last_refresh_at
 
+    logger.info(
+        "[COIN-RANK] config: TOP_N=%s MIN_SELECTED=%s MIN_VOL=$%.0f "
+        "COINGLASS=%s EXCLUDED=%s CRYPTO_ONLY=%s",
+        TOP_N_COINS,
+        COIN_POOL_MIN_SELECTED,
+        COIN_POOL_MIN_VOLUME_USD,
+        "SET" if COINGLASS_API_KEY else "EMPTY",
+        len(EXCLUDE_COINS),
+        CRYPTO_FUTURES_ONLY,
+    )
+
     try:
         tickers = get_tickers()
     except Exception as e:
@@ -584,17 +626,38 @@ def refresh_coin_list() -> list[str]:
         _cached_scores = [{"symbol": s, "score": 0.0} for s in symbols[:TOP_N_COINS]]
         _cached_coins = symbols[:TOP_N_COINS]
 
+    # Backfill to COIN_POOL_MIN_SELECTED if smart ranking returned too few
+    if len(_cached_coins) < COIN_POOL_MIN_SELECTED:
+        existing_set = set(_cached_coins)
+        needed = COIN_POOL_MIN_SELECTED - len(_cached_coins)
+        backfill_count = 0
+        for sym, _ in raw_candidates:
+            if sym not in existing_set:
+                _cached_coins.append(sym)
+                _cached_scores.append({"symbol": sym, "score": 0.0, "note": "backfill"})
+                existing_set.add(sym)
+                backfill_count += 1
+                if backfill_count >= needed:
+                    break
+        if backfill_count:
+            logger.info(
+                "[COIN-RANK] backfilled %d coins to meet COIN_POOL_MIN_SELECTED=%d (pool=%d)",
+                backfill_count,
+                COIN_POOL_MIN_SELECTED,
+                len(_cached_coins),
+            )
+
     _last_refresh_at = datetime.now(timezone.utc)
 
     if _cached_coins:
         top_preview = [
-            f"{row['symbol'].replace('_USDT', '')}:{row.get('score', 0)}"
+            f"{row['symbol'].replace('_USDT', '')}:{row.get('score', 0):.2f}"
             for row in _cached_scores[:10]
         ]
-
         logger.info(
-            "[COIN-RANK] selected %s futures coins | top=%s",
+            "[COIN-RANK] selected=%s/%s coins | top10=%s",
             len(_cached_coins),
+            TOP_N_COINS,
             top_preview,
         )
     else:

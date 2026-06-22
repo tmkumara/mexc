@@ -15,7 +15,7 @@ TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 COINGLASS_API_KEY: str = os.getenv("COINGLASS_API_KEY", "")
 
 # ── Coin pool ──────────────────────────────────────────────────────
-QUOTE_CURRENCY: str     = os.getenv("QUOTE_CURRENCY", "USDT")
+QUOTE_CURRENCY: str       = os.getenv("QUOTE_CURRENCY", "USDT")
 CRYPTO_FUTURES_ONLY: bool = os.getenv("CRYPTO_FUTURES_ONLY", "true").lower() == "true"
 
 EXCLUDE_COINS: set[str] = {
@@ -24,9 +24,10 @@ EXCLUDE_COINS: set[str] = {
     if coin.strip()
 }
 
-TOP_N_COINS: int            = int(os.getenv("TOP_N_COINS", "50"))
-COIN_POOL_MIN_VOLUME_USD: float = float(os.getenv("COIN_POOL_MIN_VOLUME_USD", "20000000"))
-COIN_REFRESH_HOURS: int     = int(os.getenv("COIN_REFRESH_HOURS", "6"))
+TOP_N_COINS: int               = int(os.getenv("TOP_N_COINS", "80"))
+COIN_POOL_MIN_VOLUME_USD: float = float(os.getenv("COIN_POOL_MIN_VOLUME_USD", "5000000"))
+COIN_POOL_MIN_SELECTED: int    = int(os.getenv("COIN_POOL_MIN_SELECTED", "20"))
+COIN_REFRESH_HOURS: int        = int(os.getenv("COIN_REFRESH_HOURS", "6"))
 
 # ── Smart coin ranking ─────────────────────────────────────────────
 ENABLE_SMART_COIN_RANKING: bool        = os.getenv("ENABLE_SMART_COIN_RANKING", "true").lower() == "true"
@@ -95,6 +96,21 @@ SL_ATR_MULTIPLIER: float    = float(os.getenv("SL_ATR_MULTIPLIER", "1.2"))
 
 # Minimum score to create an armed setup
 MIN_SETUP_SCORE: float      = float(os.getenv("MIN_SETUP_SCORE", "75"))
+
+# Minimum score to fire a live signal (higher bar than setup creation)
+MIN_SIGNAL_SCORE: float     = float(os.getenv("MIN_SIGNAL_SCORE", "85"))
+
+# ATR-based SL distance gate: reject signal if SL < ATR * this multiplier
+MIN_ATR_SL_MULTIPLIER: float = float(os.getenv("MIN_ATR_SL_MULTIPLIER", "2.0"))
+
+# Leveraged SL ROI bounds: reject if SL ROI (at LEVERAGE) is outside this range
+MIN_SL_ROI_PCT: float       = float(os.getenv("MIN_SL_ROI_PCT", "10.0"))
+MAX_SL_ROI_PCT: float       = float(os.getenv("MAX_SL_ROI_PCT", "25.0"))
+
+# Require a completed confirmation candle before firing on zone touch
+REQUIRE_CONFIRMATION_AFTER_TOUCH: bool = (
+    os.getenv("REQUIRE_CONFIRMATION_AFTER_TOUCH", "true").lower() == "true"
+)
 
 # Entry zone width around pullback level (±ATR × this multiplier)
 ENTRY_ZONE_ATR_MULTIPLIER: float = float(os.getenv("ENTRY_ZONE_ATR_MULTIPLIER", "0.25"))

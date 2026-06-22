@@ -50,6 +50,15 @@ from config import (
     ENABLE_LOG_BACKUP_ON_START,
     LOG_BACKUP_DIR,
     TOP_N_COINS,
+    COIN_POOL_MIN_VOLUME_USD,
+    COIN_POOL_MIN_SELECTED,
+    COINGLASS_API_KEY,
+    MIN_SETUP_SCORE,
+    MIN_SIGNAL_SCORE,
+    MIN_ATR_SL_MULTIPLIER,
+    MIN_SL_ROI_PCT,
+    MAX_SL_ROI_PCT,
+    REQUIRE_CONFIRMATION_AFTER_TOUCH,
 )
 
 
@@ -309,6 +318,18 @@ async def check_outcomes(app: Application) -> None:
 
 async def main():
     logger.info("Starting MEXC Signal Bot — MTF Trend Pullback + WebSocket Trigger")
+    logger.info(
+        "[CONFIG] coin pool: TOP_N=%s MIN_SELECTED=%s MIN_VOL=$%.0f COINGLASS=%s",
+        TOP_N_COINS, COIN_POOL_MIN_SELECTED, COIN_POOL_MIN_VOLUME_USD,
+        "SET" if COINGLASS_API_KEY else "EMPTY",
+    )
+    logger.info(
+        "[CONFIG] signal quality: SETUP_SCORE>=%s SIGNAL_SCORE>=%s "
+        "ATR_SL>=%.1fx SL_ROI=[%.0f%%,%.0f%%] CONFIRM=%s",
+        MIN_SETUP_SCORE, MIN_SIGNAL_SCORE,
+        MIN_ATR_SL_MULTIPLIER, MIN_SL_ROI_PCT, MAX_SL_ROI_PCT,
+        REQUIRE_CONFIRMATION_AFTER_TOUCH,
+    )
 
     db.init_db()
 

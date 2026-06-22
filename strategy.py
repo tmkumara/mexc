@@ -14,9 +14,11 @@ Signal flow:
         9. SL = swing low/high ± ATR buffer
        10. TP = trigger + risk * MIN_RR
        11. Score >= MIN_SETUP_SCORE → return ArmedSetup dict
+       12. atr_value stored in setup dict for fire-time quality gate
 
     calculate_signal_from_setup(setup, live_price)
         Called by trigger_engine when WebSocket price enters entry zone.
+        Applies quality gates: score, ATR-based SL distance, SL ROI bounds.
         Recalculates TP from actual live entry price.
         Returns Signal ready for Telegram broadcast.
 
@@ -55,6 +57,10 @@ from config import (
     MIN_RR,
     MAX_RR,
     MIN_SETUP_SCORE,
+    MIN_SIGNAL_SCORE,
+    MIN_ATR_SL_MULTIPLIER,
+    MIN_SL_ROI_PCT,
+    MAX_SL_ROI_PCT,
     ARMED_SETUP_EXPIRE_MINUTES,
     LEVERAGE,
 )
@@ -422,10 +428,10 @@ def detect_armed_setup(symbol: str) -> dict | None:
 
         logger.info(
             "[ARMED] %s %s | level=%s trigger=%.6g zone=%.6g-%.6g"
-            " SL=%.6g TP=%.6g RR=%.2f score=%.1f vol=%.1fx",
+            " SL=%.6g TP=%.6g RR=%.2f score=%.1f vol=%.1fx ATR=%.6g",
             direction, symbol,
             level_name, trigger_price, entry_low, entry_high,
-            sl_price, tp_price, rr, score, vol_ratio,
+            sl_price, tp_price, rr, score, vol_ratio, atr_value,
         )
 
         return {
@@ -438,6 +444,7 @@ def detect_armed_setup(symbol: str) -> dict | None:
             "tp_price":      round(tp_price,      8),
             "rr":            round(rr,            2),
             "score":         score,
+            "atr_value":     round(atr_value,     8),
             "setup_reason":  setup_reason,
             "trend_summary": trend_summary,
             "expires_at":    expires_at.isoformat(),
@@ -452,15 +459,26 @@ def detect_armed_setup(symbol: str) -> dict | None:
 
 def calculate_signal_from_setup(setup: dict, live_price: float) -> Signal | None:
     try:
-        direction  = setup["direction"]
-        sl_price   = float(setup["sl_price"])
+        symbol    = setup["symbol"]
+        direction = setup["direction"]
+        sl_price  = float(setup["sl_price"])
         entry_low  = float(setup["entry_low"])
         entry_high = float(setup["entry_high"])
         score      = float(setup.get("score", 0.0))
+        atr_value  = float(setup.get("atr_value", 0.0))
         trend_summary = setup.get("trend_summary", "")
 
         entry = live_price
 
+        # ── Quality gate 1: score ─────────────────────────────────
+        if score < MIN_SIGNAL_SCORE:
+            logger.info(
+                "[QUALITY-REJECT] %s %s score %.1f < required %.1f",
+                symbol, direction, score, MIN_SIGNAL_SCORE,
+            )
+            return None
+
+        # ── Quality gate 2: SL distance vs ATR ───────────────────
         if direction == "LONG":
             risk = entry - sl_price
         else:
@@ -469,10 +487,35 @@ def calculate_signal_from_setup(setup: dict, live_price: float) -> Signal | None
         if risk <= 0:
             logger.warning(
                 "[SIGNAL-REJECT] %s %s | risk <= 0 entry=%.6g sl=%.6g",
-                setup.get("symbol"), direction, entry, sl_price,
+                symbol, direction, entry, sl_price,
             )
             return None
 
+        if atr_value > 0 and risk < atr_value * MIN_ATR_SL_MULTIPLIER:
+            logger.info(
+                "[QUALITY-REJECT] %s %s SL distance %.6g < ATR*%.1f (%.6g)",
+                symbol, direction, risk, MIN_ATR_SL_MULTIPLIER, atr_value * MIN_ATR_SL_MULTIPLIER,
+            )
+            return None
+
+        # ── Quality gate 3: leveraged SL ROI bounds ───────────────
+        sl_roi_pct = risk / entry * 100.0 * LEVERAGE
+
+        if sl_roi_pct < MIN_SL_ROI_PCT:
+            logger.info(
+                "[QUALITY-REJECT] %s %s SL ROI %.1f%% < min %.1f%%",
+                symbol, direction, sl_roi_pct, MIN_SL_ROI_PCT,
+            )
+            return None
+
+        if sl_roi_pct > MAX_SL_ROI_PCT:
+            logger.info(
+                "[QUALITY-REJECT] %s %s SL ROI %.1f%% > max %.1f%%",
+                symbol, direction, sl_roi_pct, MAX_SL_ROI_PCT,
+            )
+            return None
+
+        # ── TP calculation ────────────────────────────────────────
         rr = min(MAX_RR, MIN_RR)
         if direction == "LONG":
             tp_price = entry + risk * rr
@@ -482,19 +525,17 @@ def calculate_signal_from_setup(setup: dict, live_price: float) -> Signal | None
         if not _valid_trade_geometry(direction, entry, tp_price, sl_price):
             logger.warning(
                 "[SIGNAL-REJECT] %s %s | invalid geometry entry=%.6g tp=%.6g sl=%.6g",
-                setup.get("symbol"), direction, entry, tp_price, sl_price,
+                symbol, direction, entry, tp_price, sl_price,
             )
             return None
 
         if direction == "LONG":
             tp_roi_pct = (tp_price - entry) / entry * 100.0 * LEVERAGE
-            sl_roi_pct = (entry - sl_price) / entry * 100.0 * LEVERAGE
         else:
             tp_roi_pct = (entry - tp_price) / entry * 100.0 * LEVERAGE
-            sl_roi_pct = (sl_price - entry) / entry * 100.0 * LEVERAGE
 
         return Signal(
-            symbol=setup["symbol"],
+            symbol=symbol,
             direction=direction,
             entry_price=round(entry, 8),
             tp_price=round(tp_price, 8),
