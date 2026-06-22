@@ -18,6 +18,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key:      ${{ secrets.SSH_PRIVATE_KEY }}
           port:     ${{ secrets.SSH_PORT || 22 }}
+          envs:     APP_ENV
           script: |
             set -e
             cd /opt/signals
@@ -25,6 +26,9 @@ jobs:
             echo "==> Pulling latest code..."
             git fetch origin main
             git reset --hard origin/main
+
+            echo "==> Writing .env..."
+            printf '%s' "$APP_ENV" > /opt/signals/.env
 
             echo "==> Installing dependencies..."
             source venv/bin/activate
@@ -38,3 +42,5 @@ jobs:
             echo "==> Status:"
             systemctl status mexc-bot --no-pager -l
             systemctl status mexc-dashboard --no-pager -l
+        env:
+          APP_ENV: ${{ secrets.APP_ENV }}
