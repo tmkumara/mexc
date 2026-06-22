@@ -113,6 +113,12 @@ def _is_crypto_symbol(symbol: str) -> bool:
         "ETF",
         "NASDAQ",
         "NYSE",
+        "NAS100",
+        "SPX",
+        "DJI",
+        "CRUDE",
+        "USOIL",
+        "BRENT",
     )
 
     upper = symbol.upper()
