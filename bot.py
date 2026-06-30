@@ -1,5 +1,5 @@
 """
-Telegram bot: commands and signal broadcast for MTF Trend Pullback strategy.
+Telegram bot: commands and signal broadcast for Trend Speed Analyzer strategy.
 
 Signal messages use HTML parse mode.
 """
@@ -60,27 +60,17 @@ def _italic(value) -> str:
 def format_signal(signal, signal_id: int) -> str:
     arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
     coin  = signal.symbol.replace("_", "/")
-    stars = "⭐⭐⭐" if signal.score >= 90 else "⭐⭐" if signal.score >= 75 else "⭐"
-
-    zone_str = (
-        f"{signal.entry_low:,.6g} – {signal.entry_high:,.6g}"
-        if signal.entry_low > 0 and signal.entry_high > 0
-        else "—"
-    )
 
     return "\n".join([
         f"{escape(arrow)} — {_bold(coin)} Futures",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"📡 Trigger:  WebSocket Live Price",
         f"📍 Entry:    {_code(f'{signal.entry_price:,.6g}')}",
-        f"📦 Zone:     {_code(zone_str)}",
         f"🎯 TP:       {_code(f'{signal.tp_price:,.6g}')}  {_italic(f'+{signal.tp_roi_pct:.1f}% ROI')}",
         f"🛑 SL:       {_code(f'{signal.sl_price:,.6g}')}  {_italic(f'-{signal.sl_roi_pct:.1f}% ROI')}",
-        f"📊 RR:       {_code(f'{signal.rr:.2g}')}",
-        f"🏅 Score:    {_code(f'{signal.score:.0f}/100')}  {stars}",
-        f"🧭 Trend:    {_italic(escape(signal.timeframe_summary))}",
-        f"⚡ Strategy: MTF Trend Pullback",
+        f"📊 RR:       {_code(f'1:{signal.rr:.2g}')}",
         f"⚡ Leverage: {_code(f'{signal.leverage}x')}  {_italic('Isolated')}",
+        f"🧭 Signal:   {_italic(escape(signal.timeframe_summary))}",
+        f"📈 Strategy: Trend Speed Analyzer (Zeiierman)",
         "━━━━━━━━━━━━━━━━━━━━",
         f"⏰ {_code(signal.generated_at.astimezone(LKT).strftime('%Y-%m-%d %H:%M LKT'))}",
         f"🆔 Signal ID: {_code(signal_id)}",
@@ -158,35 +148,32 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import coin_scanner
-    from main import WS_MANAGER
 
     from config import (
         STRATEGY_NAME,
-        MACRO_TF, MAIN_TF, SETUP_TF, ENTRY_TF,
-        EMA_MACRO, EMA_MAIN, EMA_SETUP, EMA_ENTRY_FAST, EMA_ENTRY_SLOW,
-        VOLUME_PERIOD, VOLUME_MULTIPLIER,
-        MIN_RR, MAX_RR, MIN_SETUP_SCORE, MIN_SIGNAL_SCORE,
-        MIN_ATR_SL_MULTIPLIER, MIN_SL_ROI_PCT, MAX_SL_ROI_PCT,
-        MAX_ENTRY_DISTANCE_PCT,
-        ARMED_SETUP_EXPIRE_MINUTES,
-        SETUP_SCAN_CRON_MINUTES, TRIGGER_CHECK_SECONDS,
+        SIGNAL_TF,
+        DYN_EMA_MAX_LENGTH, DYN_EMA_ACCEL_MULT,
+        ATR_PERIOD, SL_ATR_MULT,
+        REWARD_RATIO, MIN_STRUCTURE_RR,
+        MIN_TP_ROI_PCT, MAX_SL_ROI_PCT,
+        SETUP_SCAN_CRON_MINUTES, SETUP_SCAN_CRON_HOURS,
+        OUTCOME_CHECK_MINUTES,
         MAX_CONCURRENT_SIGNALS, SIGNAL_COOLDOWN_MINUTES,
+        MAX_DAILY_SIGNALS, MIN_DAILY_SIGNAL_GAP_MINUTES,
         LEVERAGE, COINGLASS_API_KEY,
         TOP_N_COINS, COIN_POOL_MIN_VOLUME_USD, COIN_POOL_MIN_SELECTED,
-        REQUIRE_CONFIRMATION_AFTER_TOUCH,
+        SIGNAL_EXPIRE_HOURS,
     )
 
     state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
     coins  = coin_scanner.get_cached_coins()
     active = db.count_active_signals()
-    armed  = db.count_armed_setups()
 
-    today_start  = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=tz.utc)
+    today_start   = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=tz.utc)
     signals_today = db.count_signals_since(today_start)
-    last_sig     = db.latest_signal_time()
-    last_sig_str = last_sig.astimezone(LKT).strftime("%H:%M LKT") if last_sig else "none"
+    last_sig      = db.latest_signal_time()
+    last_sig_str  = last_sig.astimezone(LKT).strftime("%H:%M LKT") if last_sig else "none"
 
-    ws_status = WS_MANAGER.status_str() if WS_MANAGER is not None else "not started"
     pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
     cg_status = "SET" if COINGLASS_API_KEY else "not set"
 
@@ -196,33 +183,25 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"State:       {_code(state)}",
         f"Strategy:    {_code(STRATEGY_NAME)}",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"Macro TF:    {_code(f'{MACRO_TF.upper()} close > EMA{EMA_MACRO}')}",
-        f"Main TF:     {_code(f'{MAIN_TF.upper()} close > EMA{EMA_MAIN}')}",
-        f"Setup TF:    {_code(f'{SETUP_TF.upper()} close > EMA{EMA_SETUP}')}",
-        f"Entry TF:    {_code(f'{ENTRY_TF} pullback near EMA{EMA_ENTRY_FAST}/EMA{EMA_ENTRY_SLOW}/SR')}",
+        f"Signal TF:   {_code(SIGNAL_TF.upper())}",
+        f"DynEMA len:  {_code(f'max={DYN_EMA_MAX_LENGTH}  accel×{DYN_EMA_ACCEL_MULT}')}",
+        f"SL:          {_code(f'ATR({ATR_PERIOD}) × {SL_ATR_MULT}')}",
+        f"RR:          {_code(f'1:{REWARD_RATIO:.2g}  (min {MIN_STRUCTURE_RR:.2g})')}",
+        f"TP ROI min:  {_code(f'>= {MIN_TP_ROI_PCT}% at {LEVERAGE}x')}",
+        f"SL ROI max:  {_code(f'<= {MAX_SL_ROI_PCT}% at {LEVERAGE}x')}",
+        f"Leverage:    {_code(f'{LEVERAGE}x  Isolated')}",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"Setup score: {_code(f'>= {MIN_SETUP_SCORE} (arm)  >= {MIN_SIGNAL_SCORE} (fire)')}",
-        f"Min RR:      {_code(MIN_RR)}",
-        f"Max RR:      {_code(MAX_RR)}",
-        f"Volume:      {_code(f'>= {VOLUME_MULTIPLIER}x {VOLUME_PERIOD}-bar avg')}",
-        f"ATR SL mult: {_code(f'>= {MIN_ATR_SL_MULTIPLIER}x ATR')}",
-        f"SL ROI:      {_code(f'{MIN_SL_ROI_PCT}% – {MAX_SL_ROI_PCT}% at {LEVERAGE}x')}",
-        f"Confirm:     {_code('ON' if REQUIRE_CONFIRMATION_AFTER_TOUCH else 'OFF')}",
-        f"Max dist:    {_code(f'{MAX_ENTRY_DISTANCE_PCT}% from trigger (late signal guard)')}",
-        f"Setup TTL:   {_code(f'{ARMED_SETUP_EXPIRE_MINUTES} min')}",
+        f"Scan cron:   {_code(f'{SETUP_SCAN_CRON_MINUTES}/{SETUP_SCAN_CRON_HOURS} (min/h)')}",
+        f"Outcome chk: {_code(f'every {OUTCOME_CHECK_MINUTES} min')}",
+        f"Cooldown:    {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
+        f"Expire:      {_code(f'{SIGNAL_EXPIRE_HOURS}h')}",
+        f"Daily cap:   {_code(f'{signals_today}/{MAX_DAILY_SIGNALS}  (min gap {MIN_DAILY_SIGNAL_GAP_MINUTES} min)')}",
+        f"Active:      {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"Pool size:   {_code(f'{len(coins)} / {TOP_N_COINS} (min {COIN_POOL_MIN_SELECTED})')}",
         f"Min volume:  {_code(f'${COIN_POOL_MIN_VOLUME_USD:,.0f}')}",
         f"CoinGlass:   {_code(cg_status)}",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"Scan cron:   {_code(SETUP_SCAN_CRON_MINUTES)}",
-        f"Trigger:     {_code(f'every {TRIGGER_CHECK_SECONDS}s via WebSocket')}",
-        f"Leverage:    {_code(f'{LEVERAGE}x')}",
-        f"Cooldown:    {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
-        f"Active:      {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
-        f"Armed:       {_code(f'{armed} setups waiting for trigger')}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"WebSocket:   {_code(ws_status)}",
         f"Today:       {_code(f'{signals_today} signals')}",
         f"Last signal: {_code(last_sig_str)}",
         "━━━━━━━━━━━━━━━━━━━━",

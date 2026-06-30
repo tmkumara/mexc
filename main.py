@@ -1,14 +1,13 @@
 """
-Main entry point — MTF Trend Pullback + Volume Confirmation + WebSocket Trigger.
+Main entry point — Trend Speed Analyzer (Zeiierman).
 
 Scheduler jobs:
-  Every 15 min   — REST setup scanner: detect armed setups
-  Every 2 sec    — WebSocket trigger engine: fire when price enters entry zone
-  Every 1 min    — outcome checker
-  Every 6h       — coin pool refresh
-  23:55 daily    — daily report
-  Mon 07:00      — weekly report
-  1st 07:00      — monthly report
+  Hourly at :02   — scanner: detect DynEMA crossover, fire signal on close
+  Every 1 min     — outcome checker
+  Every 6h        — coin pool refresh
+  23:55 daily     — daily report
+  Mon 07:00       — weekly report
+  1st 07:00       — monthly report
 """
 
 import asyncio
@@ -17,7 +16,7 @@ import shutil
 import sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -28,21 +27,22 @@ import database as db
 import strategy
 import bot as tg
 import coin_scanner
-from ws_manager import WsPriceManager
-from trigger_engine import check_triggers
 from mexc_client import get_klines
 from config import (
     LKT,
     LEVERAGE,
-    ENTRY_TF,
+    SIGNAL_TF,
     CANDLE_MINUTES,
     SIGNAL_EXPIRE_HOURS,
     COIN_REFRESH_HOURS,
     SETUP_SCAN_CRON_MINUTES,
-    TRIGGER_CHECK_SECONDS,
+    SETUP_SCAN_CRON_HOURS,
     OUTCOME_CHECK_MINUTES,
     MAX_CONCURRENT_SIGNALS,
     SIGNAL_COOLDOWN_MINUTES,
+    SIGNALS_PER_SCAN,
+    MAX_DAILY_SIGNALS,
+    MIN_DAILY_SIGNAL_GAP_MINUTES,
     SCAN_WORKERS,
     SCHEDULER_MISFIRE_GRACE_SECONDS,
     SCHEDULER_MAX_INSTANCES,
@@ -53,12 +53,7 @@ from config import (
     COIN_POOL_MIN_VOLUME_USD,
     COIN_POOL_MIN_SELECTED,
     COINGLASS_API_KEY,
-    MIN_SETUP_SCORE,
-    MIN_SIGNAL_SCORE,
-    MIN_ATR_SL_MULTIPLIER,
-    MIN_SL_ROI_PCT,
-    MAX_SL_ROI_PCT,
-    REQUIRE_CONFIRMATION_AFTER_TOUCH,
+    STRATEGY_NAME,
 )
 
 
@@ -66,8 +61,8 @@ def _backup_log_on_startup() -> None:
     if not ENABLE_LOG_BACKUP_ON_START:
         Path(LOG_FILE).touch(exist_ok=True)
         return
-    log_path  = Path(LOG_FILE)
-    archive   = Path(LOG_BACKUP_DIR)
+    log_path = Path(LOG_FILE)
+    archive  = Path(LOG_BACKUP_DIR)
     archive.mkdir(parents=True, exist_ok=True)
     if log_path.exists() and log_path.stat().st_size > 0:
         ts = datetime.now(LKT).strftime("%Y%m%d_%H%M%S")
@@ -93,48 +88,25 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
-logging.getLogger("websockets").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
 
-# ── WebSocket price manager (module-level singleton) ──────────────
+# ── Geometry guard ────────────────────────────────────────────────
 
-WS_MANAGER: WsPriceManager | None = None
-WS_TASK: asyncio.Task | None = None
-
-
-async def _start_ws_manager(coins: list[str]) -> None:
-    global WS_MANAGER, WS_TASK
-    symbols = list(dict.fromkeys(coins[:TOP_N_COINS]))
-    if not symbols:
-        logger.warning("[WS-PRICE] No symbols for WebSocket — price-triggered signals disabled")
-        return
-    WS_MANAGER = WsPriceManager(symbols)
-    WS_TASK = asyncio.create_task(WS_MANAGER.start(), name="ws_price_manager")
-    logger.info("[WS-PRICE] Started price manager for %d symbols", len(symbols))
+def _valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
+    if entry <= 0 or tp <= 0 or sl <= 0:
+        return False
+    if direction == "LONG":
+        return tp > entry > sl
+    if direction == "SHORT":
+        return tp < entry < sl
+    return False
 
 
-async def _stop_ws_manager() -> None:
-    global WS_MANAGER, WS_TASK
-    if WS_MANAGER is not None:
-        try:
-            await WS_MANAGER.stop()
-        except Exception:
-            pass
-    if WS_TASK is not None:
-        WS_TASK.cancel()
-        try:
-            await WS_TASK
-        except (asyncio.CancelledError, Exception):
-            pass
-    WS_MANAGER = None
-    WS_TASK = None
+# ── Signal scanner ────────────────────────────────────────────────
 
-
-# ── REST setup scanner ────────────────────────────────────────────
-
-async def scan_for_armed_setups(app: Application) -> None:
+async def scan_and_fire_signals(app: Application) -> None:
     if tg.paused:
         logger.info("[SCAN] Paused — skipping")
         return
@@ -144,26 +116,50 @@ async def scan_for_armed_setups(app: Application) -> None:
         logger.warning("[SCAN] Empty coin pool — skipping")
         return
 
-    now = datetime.now(timezone.utc)
+    now            = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
+    today_start    = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
 
-    # Skip coins that already have an active armed setup or are on signal cooldown
+    # Daily cap
+    signals_today = db.count_signals_since(today_start)
+    if signals_today >= MAX_DAILY_SIGNALS:
+        logger.info("[SCAN] Daily cap reached (%d/%d) — skipping", signals_today, MAX_DAILY_SIGNALS)
+        return
+
+    # Min gap between signals
+    last_sig = db.latest_signal_time()
+    if last_sig is not None:
+        gap_seconds = (now - last_sig).total_seconds()
+        if gap_seconds < MIN_DAILY_SIGNAL_GAP_MINUTES * 60:
+            logger.info(
+                "[SCAN] Min gap not met (%.0f / %d min) — skipping",
+                gap_seconds / 60, MIN_DAILY_SIGNAL_GAP_MINUTES,
+            )
+            return
+
+    # Concurrent signal cap
+    active_signals = db.count_active_signals()
+    slots = MAX_CONCURRENT_SIGNALS - active_signals
+    if slots <= 0:
+        logger.info("[SCAN] %d/%d active signals — no slots", active_signals, MAX_CONCURRENT_SIGNALS)
+        return
+
+    # Skip coins on cooldown
     to_scan: list[str] = []
     for symbol in coins:
-        if db.armed_setup_exists(symbol):
-            continue
         if db.signal_exists_for_coin(symbol, cooldown_since):
             continue
         to_scan.append(symbol)
 
-    logger.info("[SCAN] %d/%d coins eligible after filters", len(to_scan), len(coins))
+    logger.info("[SCAN] Scanning %d/%d coins (active=%d slots=%d today=%d/%d)",
+                len(to_scan), len(coins), active_signals, slots, signals_today, MAX_DAILY_SIGNALS)
 
     if not to_scan:
         return
 
-    def _detect(symbol: str):
+    def _scan(symbol: str):
         try:
-            return strategy.detect_armed_setup(symbol)
+            return strategy.scan_symbol(symbol)
         except Exception as e:
             logger.error("[SCAN] %s error: %s", symbol, e, exc_info=True)
             return None
@@ -171,34 +167,55 @@ async def scan_for_armed_setups(app: Application) -> None:
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as executor:
         results = await loop.run_in_executor(
-            None, lambda: list(executor.map(_detect, to_scan))
+            None, lambda: list(executor.map(_scan, to_scan))
         )
 
-    saved = 0
-    for setup in results:
-        if setup is None:
+    fired = 0
+    signals_capped = MAX_DAILY_SIGNALS - signals_today
+
+    for sig in results:
+        if sig is None:
             continue
-        setup_id = db.save_armed_setup(setup)
-        if setup_id:
-            saved += 1
-            logger.info(
-                "[SCAN] Saved armed setup #%d | %s %s zone=%.6g-%.6g score=%.1f",
-                setup_id, setup["symbol"], setup["direction"],
-                setup["entry_low"], setup["entry_high"], setup["score"],
+        if fired >= min(slots, SIGNALS_PER_SCAN, signals_capped):
+            break
+
+        # Re-check cooldown (race guard for parallel results)
+        if db.signal_exists_for_coin(sig.symbol, cooldown_since):
+            logger.debug("[SCAN] %s cooldown hit after parallel scan", sig.symbol)
+            continue
+
+        # Geometry validation (skill requirement)
+        if not _valid_trade_geometry(sig.direction, sig.entry_price, sig.tp_price, sig.sl_price):
+            logger.error(
+                "[SIGNAL-BLOCK] Invalid geometry %s %s entry=%.8g tp=%.8g sl=%.8g",
+                sig.symbol, sig.direction, sig.entry_price, sig.tp_price, sig.sl_price,
+            )
+            continue
+
+        try:
+            signal_id = db.save_signal(
+                symbol=sig.symbol,
+                direction=sig.direction,
+                entry_price=sig.entry_price,
+                tp_price=sig.tp_price,
+                sl_price=sig.sl_price,
+                leverage=sig.leverage,
+                generated_at=sig.generated_at,
             )
 
-    logger.info("[SCAN] Done — %d/%d setups saved", saved, len([r for r in results if r]))
+            await tg.broadcast_signal(app, sig, signal_id)
+            fired += 1
 
+            logger.info(
+                "[SCAN] Fired #%d | %s %s @ %.6g TP=%.6g SL=%.6g RR=%.1f",
+                signal_id, sig.symbol, sig.direction,
+                sig.entry_price, sig.tp_price, sig.sl_price, sig.rr,
+            )
 
-# ── WebSocket trigger dispatcher ──────────────────────────────────
+        except Exception as e:
+            logger.error("[SCAN] Failed to fire signal for %s: %s", sig.symbol, e, exc_info=True)
 
-async def run_trigger_check(app: Application) -> None:
-    if WS_MANAGER is None:
-        return
-    try:
-        await check_triggers(app, WS_MANAGER)
-    except Exception as e:
-        logger.error("[TRIGGER-DISPATCH] %s", e, exc_info=True)
+    logger.info("[SCAN] Done — %d signal(s) fired", fired)
 
 
 # ── Outcome checker ───────────────────────────────────────────────
@@ -225,28 +242,23 @@ def _calculate_pnl_roi(
     return price_move_pct * LEVERAGE
 
 
-def _valid_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
-    if entry <= 0 or tp <= 0 or sl <= 0:
-        return False
-    if direction == "LONG":
-        return tp > entry > sl
-    if direction == "SHORT":
-        return tp < entry < sl
-    return False
-
-
 async def check_outcomes(app: Application) -> None:
     pending = db.get_pending_signals()
     now = datetime.now(timezone.utc)
 
     for sig in pending:
-        symbol     = sig["symbol"]
-        direction  = sig["direction"]
-        tp_price   = sig["tp_price"]
-        sl_price   = sig["sl_price"]
+        symbol      = sig["symbol"]
+        direction   = sig["direction"]
+        tp_price    = sig["tp_price"]
+        sl_price    = sig["sl_price"]
         entry_price = sig["entry_price"]
 
-        if not _valid_geometry(direction, entry_price, tp_price, sl_price):
+        # Geometry guard before outcome check (skill requirement)
+        if not _valid_trade_geometry(direction, entry_price, tp_price, sl_price):
+            logger.error(
+                "[OUTCOME-BLOCK] Invalid signal geometry #%s %s %s entry=%.8g tp=%.8g sl=%.8g",
+                sig["id"], symbol, direction, entry_price, tp_price, sl_price,
+            )
             db.update_signal_outcome(sig["id"], "expired", 0.0)
             continue
 
@@ -267,7 +279,7 @@ async def check_outcomes(app: Application) -> None:
         fetch_count = int(elapsed_min / CANDLE_MINUTES) + 3
 
         try:
-            df = get_klines(symbol, ENTRY_TF, count=fetch_count)
+            df = get_klines(symbol, SIGNAL_TF, count=fetch_count)
             if df is None or df.empty or len(df) < 2:
                 continue
         except Exception as e:
@@ -285,7 +297,7 @@ async def check_outcomes(app: Application) -> None:
             open_ = float(df["open"].iloc[i])
             close = float(df["close"].iloc[i])
 
-            hit_tp = (high >= tp_price) if direction == "LONG" else (low <= tp_price)
+            hit_tp = (high >= tp_price) if direction == "LONG" else (low  <= tp_price)
             hit_sl = (low  <= sl_price) if direction == "LONG" else (high >= sl_price)
 
             if hit_tp and hit_sl:
@@ -317,18 +329,17 @@ async def check_outcomes(app: Application) -> None:
 # ── Main ──────────────────────────────────────────────────────────
 
 async def main():
-    logger.info("Starting MEXC Signal Bot — MTF Trend Pullback + WebSocket Trigger")
+    logger.info("Starting MEXC Signal Bot — %s", STRATEGY_NAME)
     logger.info(
         "[CONFIG] coin pool: TOP_N=%s MIN_SELECTED=%s MIN_VOL=$%.0f COINGLASS=%s",
         TOP_N_COINS, COIN_POOL_MIN_SELECTED, COIN_POOL_MIN_VOLUME_USD,
         "SET" if COINGLASS_API_KEY else "EMPTY",
     )
     logger.info(
-        "[CONFIG] signal quality: SETUP_SCORE>=%s SIGNAL_SCORE>=%s "
-        "ATR_SL>=%.1fx SL_ROI=[%.0f%%,%.0f%%] CONFIRM=%s",
-        MIN_SETUP_SCORE, MIN_SIGNAL_SCORE,
-        MIN_ATR_SL_MULTIPLIER, MIN_SL_ROI_PCT, MAX_SL_ROI_PCT,
-        REQUIRE_CONFIRMATION_AFTER_TOUCH,
+        "[CONFIG] signal TF=%s scan=%s/%s daily_cap=%d gap=%dmin cooldown=%dmin slots=%d",
+        SIGNAL_TF, SETUP_SCAN_CRON_MINUTES, SETUP_SCAN_CRON_HOURS,
+        MAX_DAILY_SIGNALS, MIN_DAILY_SIGNAL_GAP_MINUTES,
+        SIGNAL_COOLDOWN_MINUTES, MAX_CONCURRENT_SIGNALS,
     )
 
     db.init_db()
@@ -336,8 +347,6 @@ async def main():
     logger.info("Loading coin pool...")
     coins = coin_scanner.refresh_coin_list()
     logger.info("Coin pool: %d coins", len(coins))
-
-    await _start_ws_manager(coins)
 
     app = tg.build_app()
 
@@ -350,20 +359,12 @@ async def main():
         },
     )
 
-    # Setup scanner every 15 minutes
+    # Signal scanner (hourly at :02 by default, aligns to 1h candle close)
     scheduler.add_job(
-        scan_for_armed_setups,
-        CronTrigger(minute=SETUP_SCAN_CRON_MINUTES),
+        scan_and_fire_signals,
+        CronTrigger(hour=SETUP_SCAN_CRON_HOURS, minute=SETUP_SCAN_CRON_MINUTES),
         args=[app],
-        id="setup_scanner",
-    )
-
-    # WebSocket trigger check every 2 seconds
-    scheduler.add_job(
-        run_trigger_check,
-        IntervalTrigger(seconds=TRIGGER_CHECK_SECONDS),
-        args=[app],
-        id="trigger_engine",
+        id="signal_scanner",
     )
 
     # Outcome checker every minute
@@ -391,15 +392,15 @@ async def main():
     async def _monthly(app=app):
         await tg.auto_monthly_report(type("ctx", (), {"application": app})())
 
-    scheduler.add_job(_daily,   CronTrigger(hour=23, minute=55),             id="daily_report")
-    scheduler.add_job(_weekly,  CronTrigger(day_of_week="mon", hour=7),      id="weekly_report")
-    scheduler.add_job(_monthly, CronTrigger(day=1, hour=7),                  id="monthly_report")
+    scheduler.add_job(_daily,   CronTrigger(hour=23, minute=55),        id="daily_report")
+    scheduler.add_job(_weekly,  CronTrigger(day_of_week="mon", hour=7), id="weekly_report")
+    scheduler.add_job(_monthly, CronTrigger(day=1, hour=7),             id="monthly_report")
 
     scheduler.start()
 
     logger.info(
-        "Scheduler started — scan=%s trigger=%ds outcome=%dm",
-        SETUP_SCAN_CRON_MINUTES, TRIGGER_CHECK_SECONDS, OUTCOME_CHECK_MINUTES,
+        "Scheduler started — scan=%s/%s outcome=%dm",
+        SETUP_SCAN_CRON_MINUTES, SETUP_SCAN_CRON_HOURS, OUTCOME_CHECK_MINUTES,
     )
 
     async with app:
@@ -414,7 +415,6 @@ async def main():
         except (KeyboardInterrupt, SystemExit):
             pass
         finally:
-            await _stop_ws_manager()
             scheduler.shutdown(wait=False)
             await app.updater.stop()
             await app.stop()
