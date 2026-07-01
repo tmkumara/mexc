@@ -288,6 +288,31 @@ def scan_symbol(symbol: str) -> Signal | None:
             logger.info("[REJECT] %s SHORT crossover but speed=%.4f not negative", symbol, curr_speed)
             return None
 
+        # Trendspeed magnitude gate — rejects weak/stalling crosses
+        _mag = abs(curr_speed) / curr_close if curr_close != 0.0 else 0.0
+        if _mag < SPEED_REL_THRESHOLD:
+            logger.info(
+                "[REJECT] %s %s speed magnitude %.7f below threshold %.7f",
+                symbol, direction, _mag, SPEED_REL_THRESHOLD,
+            )
+            return None
+
+        # Trendspeed acceleration gate — momentum must be building
+        if SPEED_ACCEL_ENABLED:
+            prev_speed = float(trendspeed.iloc[-2])
+            if direction == "LONG" and curr_speed <= prev_speed:
+                logger.info(
+                    "[REJECT] %s LONG speed decelerating (%.4f <= %.4f)",
+                    symbol, curr_speed, prev_speed,
+                )
+                return None
+            if direction == "SHORT" and curr_speed >= prev_speed:
+                logger.info(
+                    "[REJECT] %s SHORT speed decelerating (%.4f >= %.4f)",
+                    symbol, curr_speed, prev_speed,
+                )
+                return None
+
         # BTC 1h macro gate — altcoin direction must align with BTC DynEMA trend
         if BTC_GATE_ENABLED:
             btc_close, btc_dema = _get_btc_dema()
@@ -339,6 +364,13 @@ def scan_symbol(symbol: str) -> Signal | None:
             tp_roi_pct = (tp_price - entry) / entry * 100.0 * LEVERAGE
         else:
             tp_roi_pct = (entry - tp_price) / entry * 100.0 * LEVERAGE
+
+        if tp_roi_pct < MIN_TP_ROI_PCT:
+            logger.info(
+                "[REJECT] %s %s TP ROI %.1f%% below min %.1f%%",
+                symbol, direction, tp_roi_pct, MIN_TP_ROI_PCT,
+            )
+            return None
 
         rr = REWARD_RATIO
 
