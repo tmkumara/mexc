@@ -36,10 +36,21 @@ from config import (
     MIN_SL_ROI_PCT,
     MAX_SL_ROI_PCT,
     LEVERAGE,
+    MIN_TP_ROI_PCT,
+    SPEED_REL_THRESHOLD,
+    SPEED_ACCEL_ENABLED,
+    BTC_SYMBOL,
+    BTC_TF,
+    BTC_KLINE_COUNT,
+    BTC_GATE_ENABLED,
+    BTC_RANGING_PCT,
 )
 
 logger = logging.getLogger(__name__)
 
+# BTC DynEMA cache — refreshed once per scan cycle (14-min TTL)
+_btc_cache: dict = {"dema": None, "close": None, "ts": 0.0}
+_BTC_CACHE_TTL = 14 * 60  # seconds — expires just before next 15m scan window
 
 # ── Signal dataclass ──────────────────────────────────────────────
 
@@ -205,6 +216,33 @@ def _valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) ->
     return False
 
 
+def _get_btc_dema() -> tuple[float | None, float | None]:
+    """
+    Return (btc_close, btc_dema) using a 14-min module-level cache.
+    Fetches BTC_TF klines once per 15m scan window, not once per coin.
+    Returns (None, None) on any failure — gate is fail-open.
+    """
+    global _btc_cache
+    now_ts = datetime.now(timezone.utc).timestamp()
+    if _btc_cache["dema"] is not None and now_ts - _btc_cache["ts"] < _BTC_CACHE_TTL:
+        return _btc_cache["close"], _btc_cache["dema"]
+    try:
+        df = get_klines(BTC_SYMBOL, BTC_TF, count=BTC_KLINE_COUNT)
+        if df is None or df.empty or len(df) < 210:
+            logger.warning("[BTC-GATE] Insufficient BTC klines (%d) — gate open", 0 if df is None else len(df))
+            return None, None
+        close    = df["close"].astype(float)
+        dema     = _compute_dyn_ema(close, DYN_EMA_MAX_LENGTH, DYN_EMA_ACCEL_MULT)
+        btc_close = float(close.iloc[-1])
+        btc_dema  = float(dema.iloc[-1])
+        _btc_cache = {"dema": btc_dema, "close": btc_close, "ts": now_ts}
+        logger.debug("[BTC-GATE] Cache refreshed close=%.6g dema=%.6g", btc_close, btc_dema)
+        return btc_close, btc_dema
+    except Exception as e:
+        logger.warning("[BTC-GATE] Fetch failed: %s — gate open", e)
+        return None, None
+
+
 # ── Public: scan one symbol ───────────────────────────────────────
 
 def scan_symbol(symbol: str) -> Signal | None:
@@ -249,6 +287,26 @@ def scan_symbol(symbol: str) -> Signal | None:
         if direction == "SHORT" and curr_speed >= 0:
             logger.info("[REJECT] %s SHORT crossover but speed=%.4f not negative", symbol, curr_speed)
             return None
+
+        # BTC 1h macro gate — altcoin direction must align with BTC DynEMA trend
+        if BTC_GATE_ENABLED:
+            btc_close, btc_dema = _get_btc_dema()
+            if btc_close is not None and btc_dema is not None:
+                ranging_margin = btc_dema * (BTC_RANGING_PCT / 100.0)
+                btc_bullish    = btc_close > btc_dema + ranging_margin
+                btc_bearish    = btc_close < btc_dema - ranging_margin
+                if direction == "LONG" and btc_bearish:
+                    logger.info(
+                        "[REJECT] %s LONG blocked — BTC bearish close=%.6g dema=%.6g",
+                        symbol, btc_close, btc_dema,
+                    )
+                    return None
+                if direction == "SHORT" and btc_bullish:
+                    logger.info(
+                        "[REJECT] %s SHORT blocked — BTC bullish close=%.6g dema=%.6g",
+                        symbol, btc_close, btc_dema,
+                    )
+                    return None
 
         # ATR-based stop loss
         atr_val = float(_atr_series(completed, ATR_PERIOD).iloc[-1])
