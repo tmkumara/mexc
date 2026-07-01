@@ -61,7 +61,7 @@ STRATEGY_NAME: str = os.getenv(
 )
 
 # Signal timeframe — must be a valid MEXC interval
-SIGNAL_TF: str          = os.getenv("SIGNAL_TF", "1h")
+SIGNAL_TF: str          = os.getenv("SIGNAL_TF", "15m")
 SIGNAL_KLINE_COUNT: int = int(os.getenv("SIGNAL_KLINE_COUNT", "300"))
 
 # Dynamic EMA parameters (matches Pine Script defaults)
@@ -70,36 +70,47 @@ DYN_EMA_ACCEL_MULT: float = float(os.getenv("DYN_EMA_ACCEL_MULT", "5.0"))
 
 # ATR stop-loss
 ATR_PERIOD: int     = int(os.getenv("ATR_PERIOD", "14"))
-SL_ATR_MULT: float  = float(os.getenv("SL_ATR_MULT", "1.0"))
+SL_ATR_MULT: float  = float(os.getenv("SL_ATR_MULT", "0.5"))
 
 # Risk / reward
 REWARD_RATIO: float     = float(os.getenv("REWARD_RATIO", "2.0"))
 MIN_STRUCTURE_RR: float = float(os.getenv("MIN_STRUCTURE_RR", "2.0"))
 
 # ROI quality gates (applied at 20x leverage)
-MIN_TP_ROI_PCT: float  = float(os.getenv("MIN_TP_ROI_PCT",  "30.0"))
-MAX_SL_ROI_PCT: float  = float(os.getenv("MAX_SL_ROI_PCT",  "35.0"))
-MIN_SL_ROI_PCT: float  = float(os.getenv("MIN_SL_ROI_PCT",   "5.0"))
+MIN_TP_ROI_PCT: float  = float(os.getenv("MIN_TP_ROI_PCT",  "8.0"))
+MAX_SL_ROI_PCT: float  = float(os.getenv("MAX_SL_ROI_PCT",  "15.0"))
+MIN_SL_ROI_PCT: float  = float(os.getenv("MIN_SL_ROI_PCT",   "2.0"))
+
+# ── BTC macro gate ─────────────────────────────────────────────────
+BTC_SYMBOL: str        = os.getenv("BTC_SYMBOL", "BTC_USDT")
+BTC_TF: str            = os.getenv("BTC_TF", "1h")
+BTC_KLINE_COUNT: int   = int(os.getenv("BTC_KLINE_COUNT", "300"))
+BTC_GATE_ENABLED: bool = os.getenv("BTC_GATE_ENABLED", "true").lower() == "true"
+BTC_RANGING_PCT: float = float(os.getenv("BTC_RANGING_PCT", "0.10"))
+
+# ── Trendspeed filter ──────────────────────────────────────────────
+SPEED_REL_THRESHOLD: float = float(os.getenv("SPEED_REL_THRESHOLD", "0.0002"))
+SPEED_ACCEL_ENABLED: bool  = os.getenv("SPEED_ACCEL_ENABLED", "true").lower() == "true"
 
 # ── Trade params ───────────────────────────────────────────────────
 LEVERAGE: int = int(os.getenv("LEVERAGE", "20"))
 
 # ── Scheduler ──────────────────────────────────────────────────────
-# Default: scan at minute 2 of every hour (aligns to 1h candle close)
-SETUP_SCAN_CRON_MINUTES: str = os.getenv("SETUP_SCAN_CRON_MINUTES", "2")
+# Default: scan every 15 minutes (aligns to 15m candle close)
+SETUP_SCAN_CRON_MINUTES: str = os.getenv("SETUP_SCAN_CRON_MINUTES", "*/15")
 SETUP_SCAN_CRON_HOURS: str   = os.getenv("SETUP_SCAN_CRON_HOURS",   "*")
 OUTCOME_CHECK_MINUTES: int   = int(os.getenv("OUTCOME_CHECK_MINUTES", "1"))
 COIN_REFRESH_CRON_HOURS: str = os.getenv("COIN_REFRESH_CRON_HOURS", f"*/{COIN_REFRESH_HOURS}")
 
 SIGNALS_PER_SCAN: int        = int(os.getenv("SIGNALS_PER_SCAN",        "1"))
-MAX_CONCURRENT_SIGNALS: int  = int(os.getenv("MAX_CONCURRENT_SIGNALS",  "3"))
-SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "240"))
+MAX_CONCURRENT_SIGNALS: int  = int(os.getenv("MAX_CONCURRENT_SIGNALS",  "5"))
+SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "60"))
 SIGNAL_EXPIRE_HOURS: int     = int(os.getenv("SIGNAL_EXPIRE_HOURS",     "6"))
 SCAN_WORKERS: int            = int(os.getenv("SCAN_WORKERS",            "4"))
 
 # Daily signal cap
-MAX_DAILY_SIGNALS: int              = int(os.getenv("MAX_DAILY_SIGNALS",              "5"))
-MIN_DAILY_SIGNAL_GAP_MINUTES: int   = int(os.getenv("MIN_DAILY_SIGNAL_GAP_MINUTES",   "60"))
+MAX_DAILY_SIGNALS: int              = int(os.getenv("MAX_DAILY_SIGNALS",              "10"))
+MIN_DAILY_SIGNAL_GAP_MINUTES: int   = int(os.getenv("MIN_DAILY_SIGNAL_GAP_MINUTES",   "6"))
 
 # ── APScheduler ────────────────────────────────────────────────────
 SCHEDULER_MISFIRE_GRACE_SECONDS: int = int(os.getenv("SCHEDULER_MISFIRE_GRACE_SECONDS", "30"))
