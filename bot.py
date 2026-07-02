@@ -1,5 +1,5 @@
 """
-Telegram bot: commands and signal broadcast for Trend Speed Analyzer strategy.
+Telegram bot: commands and signal broadcast for VP-OB Confluence strategy.
 
 Signal messages use HTML parse mode.
 """
@@ -14,7 +14,7 @@ from telegram.constants import ParseMode
 
 import database as db
 import reports
-from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, LKT
+from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, LKT, STRATEGY_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ def format_signal(signal, signal_id: int) -> str:
         f"📊 RR:       {_code(f'1:{signal.rr:.2g}')}",
         f"⚡ Leverage: {_code(f'{signal.leverage}x')}  {_italic('Isolated')}",
         f"🧭 Signal:   {_italic(escape(signal.timeframe_summary))}",
-        f"📈 Strategy: Trend Speed Analyzer (Zeiierman)",
+        f"📈 Strategy: {STRATEGY_NAME}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"⏰ {_code(signal.generated_at.astimezone(LKT).strftime('%Y-%m-%d %H:%M LKT'))}",
         f"🆔 Signal ID: {_code(signal_id)}",

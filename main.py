@@ -1,8 +1,8 @@
 """
-Main entry point — Trend Speed Analyzer (Zeiierman).
+Main entry point — VP-OB Confluence (4H Volume Profile + 1H Order Block).
 
 Scheduler jobs:
-  Hourly at :02   — scanner: detect DynEMA crossover, fire signal on close
+  Hourly at :01   — scanner: arm/monitor Order Block setups, fire signal on retest
   Every 1 min     — outcome checker
   Every 6h        — coin pool refresh
   23:55 daily     — daily report
@@ -32,6 +32,7 @@ from config import (
     LKT,
     LEVERAGE,
     SIGNAL_TF,
+    OB_TF,
     CANDLE_MINUTES,
     SIGNAL_EXPIRE_HOURS,
     COIN_REFRESH_HOURS,
@@ -116,7 +117,8 @@ async def scan_and_fire_signals(app: Application) -> None:
         logger.warning("[SCAN] Empty coin pool — skipping")
         return
 
-    now            = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    db.expire_old_armed_setups(now)
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
     today_start    = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
 
@@ -182,6 +184,8 @@ async def scan_and_fire_signals(app: Application) -> None:
         # Re-check cooldown (race guard for parallel results)
         if db.signal_exists_for_coin(sig.symbol, cooldown_since):
             logger.debug("[SCAN] %s cooldown hit after parallel scan", sig.symbol)
+            if sig.armed_setup_id is not None:
+                db.mark_armed_setup_missed(sig.armed_setup_id, "cooldown hit after parallel scan")
             continue
 
         # Geometry validation (skill requirement)
@@ -190,6 +194,8 @@ async def scan_and_fire_signals(app: Application) -> None:
                 "[SIGNAL-BLOCK] Invalid geometry %s %s entry=%.8g tp=%.8g sl=%.8g",
                 sig.symbol, sig.direction, sig.entry_price, sig.tp_price, sig.sl_price,
             )
+            if sig.armed_setup_id is not None:
+                db.mark_armed_setup_missed(sig.armed_setup_id, "geometry invalid post-scan")
             continue
 
         try:
@@ -203,6 +209,9 @@ async def scan_and_fire_signals(app: Application) -> None:
                 generated_at=sig.generated_at,
             )
 
+            if sig.armed_setup_id is not None:
+                db.mark_armed_setup_fired(sig.armed_setup_id, signal_id)
+
             await tg.broadcast_signal(app, sig, signal_id)
             fired += 1
 
@@ -214,6 +223,8 @@ async def scan_and_fire_signals(app: Application) -> None:
 
         except Exception as e:
             logger.error("[SCAN] Failed to fire signal for %s: %s", sig.symbol, e, exc_info=True)
+            if sig.armed_setup_id is not None:
+                db.mark_armed_setup_missed(sig.armed_setup_id, f"post-scan save failed: {e}")
 
     logger.info("[SCAN] Done — %d signal(s) fired", fired)
 
@@ -279,7 +290,7 @@ async def check_outcomes(app: Application) -> None:
         fetch_count = int(elapsed_min / CANDLE_MINUTES) + 3
 
         try:
-            df = get_klines(symbol, SIGNAL_TF, count=fetch_count)
+            df = get_klines(symbol, OB_TF, count=fetch_count)
             if df is None or df.empty or len(df) < 2:
                 continue
         except Exception as e:
@@ -336,8 +347,8 @@ async def main():
         "SET" if COINGLASS_API_KEY else "EMPTY",
     )
     logger.info(
-        "[CONFIG] signal TF=%s scan=%s/%s daily_cap=%d gap=%dmin cooldown=%dmin slots=%d",
-        SIGNAL_TF, SETUP_SCAN_CRON_MINUTES, SETUP_SCAN_CRON_HOURS,
+        "[CONFIG] OB TF=%s scan=%s/%s daily_cap=%d gap=%dmin cooldown=%dmin slots=%d",
+        OB_TF, SETUP_SCAN_CRON_MINUTES, SETUP_SCAN_CRON_HOURS,
         MAX_DAILY_SIGNALS, MIN_DAILY_SIGNAL_GAP_MINUTES,
         SIGNAL_COOLDOWN_MINUTES, MAX_CONCURRENT_SIGNALS,
     )
