@@ -219,7 +219,11 @@ def _try_arm_setup(symbol: str) -> None:
     events = detect_bos_choch(ob_window, swings)
     obs = find_order_blocks(ob_window, events, atr, displacement_atr_mult=OB_DISPLACEMENT_ATR_MULT)
 
-    matching = [ob for ob in obs if ob.direction == bias]
+    latest_bar = len(ob_window) - 1
+    matching = [
+        ob for ob in obs
+        if ob.direction == bias and (latest_bar - ob.formed_at_bar) <= OB_MAX_AGE_BARS
+    ]
     if not matching:
         return
 
