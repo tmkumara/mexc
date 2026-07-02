@@ -194,7 +194,7 @@ def get_klines(symbol: str, interval: str, count: int = 100) -> pd.DataFrame:
 
     raw = data.get("data", {})
 
-    return _parse_kline_response(raw)
+    return _parse_kline_response(raw).tail(count)
 
 
 def get_current_price(symbol: str) -> float | None:
