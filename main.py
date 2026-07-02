@@ -31,7 +31,6 @@ from mexc_client import get_klines
 from config import (
     LKT,
     LEVERAGE,
-    SIGNAL_TF,
     OB_TF,
     CANDLE_MINUTES,
     SIGNAL_EXPIRE_HOURS,
