@@ -121,64 +121,68 @@ async def scan_and_fire_signals(app: Application) -> None:
     cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
     today_start    = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
 
-    # Daily cap
-    signals_today = db.count_signals_since(today_start)
-    if signals_today >= MAX_DAILY_SIGNALS:
-        logger.info("[SCAN] Daily cap reached (%d/%d) — skipping", signals_today, MAX_DAILY_SIGNALS)
-        return
-
-    # Min gap between signals
-    last_sig = db.latest_signal_time()
-    if last_sig is not None:
-        gap_seconds = (now - last_sig).total_seconds()
-        if gap_seconds < MIN_DAILY_SIGNAL_GAP_MINUTES * 60:
-            logger.info(
-                "[SCAN] Min gap not met (%.0f / %d min) — skipping",
-                gap_seconds / 60, MIN_DAILY_SIGNAL_GAP_MINUTES,
-            )
-            return
-
-    # Concurrent signal cap
-    active_signals = db.count_active_signals()
-    slots = MAX_CONCURRENT_SIGNALS - active_signals
-    if slots <= 0:
-        logger.info("[SCAN] %d/%d active signals — no slots", active_signals, MAX_CONCURRENT_SIGNALS)
-        return
-
-    # Skip coins on cooldown
-    to_scan: list[str] = []
-    for symbol in coins:
-        if db.signal_exists_for_coin(symbol, cooldown_since):
-            continue
-        to_scan.append(symbol)
-
-    logger.info("[SCAN] Scanning %d/%d coins (active=%d slots=%d today=%d/%d)",
-                len(to_scan), len(coins), active_signals, slots, signals_today, MAX_DAILY_SIGNALS)
-
-    if not to_scan:
-        return
-
-    def _scan(symbol: str):
+    # Phase 2 (monitor) always runs for every pooled coin, regardless of the
+    # firing-budget throttle below -- an armed setup's retest candle is only
+    # visible for one cycle, so it must never go unmonitored just because we
+    # can't fire right now (daily cap / min gap / no slots).
+    def _monitor(symbol: str):
         try:
-            return strategy.scan_symbol(symbol)
+            return strategy.monitor_symbol(symbol)
         except Exception as e:
-            logger.error("[SCAN] %s error: %s", symbol, e, exc_info=True)
+            logger.error("[MONITOR] %s error: %s", symbol, e, exc_info=True)
             return None
 
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as executor:
-        results = await loop.run_in_executor(
-            None, lambda: list(executor.map(_scan, to_scan))
+        monitor_results = await loop.run_in_executor(
+            None, lambda: list(executor.map(_monitor, coins))
         )
 
-    fired = 0
-    signals_capped = MAX_DAILY_SIGNALS - signals_today
+    candidates = [sig for sig in monitor_results if sig is not None]
 
-    for sig in results:
-        if sig is None:
-            continue
+    # Daily cap
+    signals_today = db.count_signals_since(today_start)
+    daily_cap_reached = signals_today >= MAX_DAILY_SIGNALS
+
+    # Min gap between signals
+    last_sig = db.latest_signal_time()
+    gap_ok = True
+    if last_sig is not None:
+        gap_seconds = (now - last_sig).total_seconds()
+        gap_ok = gap_seconds >= MIN_DAILY_SIGNAL_GAP_MINUTES * 60
+
+    # Concurrent signal cap
+    active_signals = db.count_active_signals()
+    slots = MAX_CONCURRENT_SIGNALS - active_signals
+
+    budget_ok = not daily_cap_reached and gap_ok and slots > 0
+
+    if not budget_ok:
+        if candidates:
+            logger.info(
+                "[SCAN] %d retest(s) confirmed but firing budget exhausted "
+                "(daily=%d/%d gap_ok=%s slots=%d) — dropping",
+                len(candidates), signals_today, MAX_DAILY_SIGNALS, gap_ok, slots,
+            )
+            for sig in candidates:
+                if sig.armed_setup_id is not None:
+                    db.mark_armed_setup_missed(sig.armed_setup_id, "firing budget exhausted")
+        elif daily_cap_reached:
+            logger.info("[SCAN] Daily cap reached (%d/%d) — no new arming this cycle", signals_today, MAX_DAILY_SIGNALS)
+        elif not gap_ok:
+            logger.info("[SCAN] Min gap not met — no new arming this cycle")
+        else:
+            logger.info("[SCAN] %d/%d active signals — no slots, no new arming this cycle", active_signals, MAX_CONCURRENT_SIGNALS)
+        return
+
+    signals_capped = MAX_DAILY_SIGNALS - signals_today
+    fired = 0
+
+    for sig in candidates:
         if fired >= min(slots, SIGNALS_PER_SCAN, signals_capped):
-            break
+            if sig.armed_setup_id is not None:
+                db.mark_armed_setup_missed(sig.armed_setup_id, "firing budget exhausted mid-cycle")
+            continue
 
         # Re-check cooldown (race guard for parallel results)
         if db.signal_exists_for_coin(sig.symbol, cooldown_since):
@@ -225,7 +229,26 @@ async def scan_and_fire_signals(app: Application) -> None:
             if sig.armed_setup_id is not None:
                 db.mark_armed_setup_missed(sig.armed_setup_id, f"post-scan save failed: {e}")
 
-    logger.info("[SCAN] Done — %d signal(s) fired", fired)
+    to_scan = [symbol for symbol in coins if not db.signal_exists_for_coin(symbol, cooldown_since)]
+
+    logger.info(
+        "[SCAN] Arming — %d/%d coins (active=%d slots=%d today=%d/%d fired_this_cycle=%d)",
+        len(to_scan), len(coins), active_signals, slots, signals_today, MAX_DAILY_SIGNALS, fired,
+    )
+
+    if to_scan:
+        def _arm(symbol: str):
+            try:
+                strategy.arm_symbol(symbol)
+            except Exception as e:
+                logger.error("[ARM] %s error: %s", symbol, e, exc_info=True)
+
+        with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as executor:
+            await loop.run_in_executor(
+                None, lambda: list(executor.map(_arm, to_scan))
+            )
+
+    logger.info("[SCAN] Done — %d signal(s) fired this cycle", fired)
 
 
 # ── Outcome checker ───────────────────────────────────────────────

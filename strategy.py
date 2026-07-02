@@ -466,18 +466,30 @@ def _monitor_setup(symbol: str, setup: dict) -> Signal | None:
 
 # ── Public: scan one symbol ───────────────────────────────────────
 
-def scan_symbol(symbol: str) -> Signal | None:
+def monitor_symbol(symbol: str) -> Signal | None:
     """
-    If a setup is already armed for this symbol, monitor it for retest/
-    invalidation/expiry. Otherwise, try to arm a new one. Returns a Signal
-    only when an armed setup fires this cycle.
+    Check only an already-armed setup for this symbol (retest / invalidation
+    / expiry). Does not arm a new setup. Safe to call every cycle regardless
+    of any firing-budget throttle in the caller, so a retest candle is never
+    silently unmonitored just because the caller can't fire right now.
     """
     try:
         existing = db.get_armed_setup_by_symbol(symbol)
         if existing is not None:
             return _monitor_setup(symbol, existing)
-        _try_arm_setup(symbol)
         return None
     except Exception as e:
-        logger.error("Error scanning %s: %s", symbol, e, exc_info=True)
+        logger.error("Error monitoring %s: %s", symbol, e, exc_info=True)
         return None
+
+
+def arm_symbol(symbol: str) -> None:
+    """
+    Try to arm a new setup for this symbol if none is currently armed. Does
+    not check for or fire retests -- call monitor_symbol for that.
+    """
+    try:
+        if db.get_armed_setup_by_symbol(symbol) is None:
+            _try_arm_setup(symbol)
+    except Exception as e:
+        logger.error("Error arming %s: %s", symbol, e, exc_info=True)
