@@ -1,7 +1,6 @@
 import pandas as pd
-import pytest
 
-from order_blocks import find_swings, detect_bos_choch, find_order_blocks
+from order_blocks import find_swings, detect_bos_choch, find_order_blocks, StructureEvent
 
 
 def _make_df() -> pd.DataFrame:
@@ -67,3 +66,27 @@ def test_find_order_blocks_skips_weak_displacement_without_fvg():
     obs = find_order_blocks(df, events, atr, displacement_atr_mult=1.5)
 
     assert obs == []
+
+
+def test_find_order_blocks_detects_via_fvg_when_displacement_weak():
+    rows = [
+        # open,  high,  low,   close, volume
+        (100.0,  100.2, 99.5,  99.9,  100),   # bar0: filler (unused by walk-back)
+        (100.0,  100.2, 99.0,  99.5,  100),   # bar1: OB candle (bearish, close<open)
+        (99.6,   100.0, 99.4,  99.8,  100),   # bar2: interior candle (bullish/neutral)
+        (100.6,  101.0, 100.5, 100.9, 100),   # bar3: breakout candle (bullish) -- low=100.5 > highs[1]=100.2 -> FVG
+    ]
+    df = pd.DataFrame(rows, columns=["open", "high", "low", "close", "volume"])
+    events = [StructureEvent(bar_index=3, direction="LONG", kind="BOS")]
+    atr = pd.Series([5.0, 5.0, 5.0, 5.0])  # large ATR -> displacement gate alone fails (move=1.4 < 1.5*5.0=7.5)
+
+    obs = find_order_blocks(df, events, atr, displacement_atr_mult=1.5)
+
+    assert len(obs) == 1
+    ob = obs[0]
+    assert ob.direction == "LONG"
+    assert ob.formed_at_bar == 1
+    assert ob.event_bar_index == 3
+    assert abs(ob.low - 99.0) < 1e-9
+    assert abs(ob.high - 100.2) < 1e-9
+    assert ob.structure_event == "BOS"
