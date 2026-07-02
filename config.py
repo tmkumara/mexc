@@ -54,32 +54,46 @@ MIN_24H_VOLUME_USD: float            = float(os.getenv("MIN_24H_VOLUME_USD", str
 MAX_SPREAD_PCT: float                = float(os.getenv("MAX_SPREAD_PCT", "0.35"))
 MIN_PRICE_CHANGE_24H_PCT: float      = float(os.getenv("MIN_PRICE_CHANGE_24H_PCT", "0.0"))
 
-# ── Strategy: Trend Speed Analyzer (Zeiierman) ─────────────────────
+# ── Strategy: VP-OB Confluence (4H Volume Profile + 1H Order Block) ─
 STRATEGY_NAME: str = os.getenv(
     "STRATEGY_NAME",
-    "Trend Speed Analyzer (Zeiierman)",
+    "VP-OB Confluence (4H VP + 1H Order Block)",
 )
 
-# Signal timeframe — must be a valid MEXC interval
-SIGNAL_TF: str          = os.getenv("SIGNAL_TF", "15m")
-SIGNAL_KLINE_COUNT: int = int(os.getenv("SIGNAL_KLINE_COUNT", "300"))
+# ── Volume Profile (bias + TP targets) ──────────────────────────────
+VP_TF: str               = os.getenv("VP_TF", "4h")
+VP_KLINE_COUNT: int      = int(os.getenv("VP_KLINE_COUNT", "40"))
+VP_LOOKBACK_BARS: int    = int(os.getenv("VP_LOOKBACK_BARS", "30"))
+VP_BINS: int             = int(os.getenv("VP_BINS", "40"))
+VP_VALUE_AREA_PCT: float = float(os.getenv("VP_VALUE_AREA_PCT", "0.70"))
+VP_HVN_MULT: float       = float(os.getenv("VP_HVN_MULT", "1.5"))
+VP_LVN_MULT: float       = float(os.getenv("VP_LVN_MULT", "0.4"))
 
-# Dynamic EMA parameters (matches Pine Script defaults)
+# ── Order Blocks (entry zone) ────────────────────────────────────────
+OB_TF: str                      = os.getenv("OB_TF", "1h")
+OB_KLINE_COUNT: int              = int(os.getenv("OB_KLINE_COUNT", "200"))
+OB_SWING_LENGTH: int             = int(os.getenv("OB_SWING_LENGTH", "6"))
+OB_DISPLACEMENT_ATR_MULT: float  = float(os.getenv("OB_DISPLACEMENT_ATR_MULT", "1.5"))
+OB_MAX_AGE_BARS: int              = int(os.getenv("OB_MAX_AGE_BARS", "40"))
+OB_CONFLUENCE_ATR_MULT: float    = float(os.getenv("OB_CONFLUENCE_ATR_MULT", "0.5"))
+OB_BODY_RATIO_MIN: float         = float(os.getenv("OB_BODY_RATIO_MIN", "0.50"))
+OB_VOLUME_MIN_MULT: float        = float(os.getenv("OB_VOLUME_MIN_MULT", "1.5"))
+OB_VOLUME_MA_BARS: int           = int(os.getenv("OB_VOLUME_MA_BARS", "20"))
+
+# Dynamic EMA parameters (used only by the BTC 1h macro gate below)
 DYN_EMA_MAX_LENGTH: int   = int(os.getenv("DYN_EMA_MAX_LENGTH", "50"))
 DYN_EMA_ACCEL_MULT: float = float(os.getenv("DYN_EMA_ACCEL_MULT", "5.0"))
 
-# ATR stop-loss
-ATR_PERIOD: int     = int(os.getenv("ATR_PERIOD", "14"))
-SL_ATR_MULT: float  = float(os.getenv("SL_ATR_MULT", "0.5"))
+# ATR period (shared: OB displacement, SL buffer, BTC gate) + SL buffer
+ATR_PERIOD: int           = int(os.getenv("ATR_PERIOD", "14"))
+SL_ATR_BUFFER_MULT: float = float(os.getenv("SL_ATR_BUFFER_MULT", "0.35"))
 
-# Risk / reward
-REWARD_RATIO: float     = float(os.getenv("REWARD_RATIO", "2.0"))
-MIN_STRUCTURE_RR: float = float(os.getenv("MIN_STRUCTURE_RR", "2.0"))
-
-# ROI quality gates (applied at 20x leverage)
-MIN_TP_ROI_PCT: float  = float(os.getenv("MIN_TP_ROI_PCT",  "8.0"))
-MAX_SL_ROI_PCT: float  = float(os.getenv("MAX_SL_ROI_PCT",  "15.0"))
-MIN_SL_ROI_PCT: float  = float(os.getenv("MIN_SL_ROI_PCT",   "2.0"))
+# Risk / reward / quality gates (applied at 20x leverage)
+MIN_STRUCTURE_RR: float  = float(os.getenv("MIN_STRUCTURE_RR", "2.00"))
+MIN_TP_ROI_PCT: float    = float(os.getenv("MIN_TP_ROI_PCT",  "45.0"))
+TARGET_TP_ROI_PCT: float = float(os.getenv("TARGET_TP_ROI_PCT", "50.0"))
+MAX_SL_ROI_PCT: float    = float(os.getenv("MAX_SL_ROI_PCT",  "28.0"))
+MIN_SETUP_SCORE: float   = float(os.getenv("MIN_SETUP_SCORE", "90.0"))
 
 # ── BTC macro gate ─────────────────────────────────────────────────
 BTC_SYMBOL: str        = os.getenv("BTC_SYMBOL", "BTC_USDT")
@@ -88,29 +102,25 @@ BTC_KLINE_COUNT: int   = int(os.getenv("BTC_KLINE_COUNT", "300"))
 BTC_GATE_ENABLED: bool = os.getenv("BTC_GATE_ENABLED", "true").lower() == "true"
 BTC_RANGING_PCT: float = float(os.getenv("BTC_RANGING_PCT", "0.10"))
 
-# ── Trendspeed filter ──────────────────────────────────────────────
-SPEED_REL_THRESHOLD: float = float(os.getenv("SPEED_REL_THRESHOLD", "0.0002"))
-SPEED_ACCEL_ENABLED: bool  = os.getenv("SPEED_ACCEL_ENABLED", "true").lower() == "true"
-
 # ── Trade params ───────────────────────────────────────────────────
 LEVERAGE: int = int(os.getenv("LEVERAGE", "20"))
 
 # ── Scheduler ──────────────────────────────────────────────────────
-# Default: scan every 15 minutes (aligns to 15m candle close)
-SETUP_SCAN_CRON_MINUTES: str = os.getenv("SETUP_SCAN_CRON_MINUTES", "*/15")
+# Default: scan hourly at :01 (aligns to 1H candle close)
+SETUP_SCAN_CRON_MINUTES: str = os.getenv("SETUP_SCAN_CRON_MINUTES", "1")
 SETUP_SCAN_CRON_HOURS: str   = os.getenv("SETUP_SCAN_CRON_HOURS",   "*")
 OUTCOME_CHECK_MINUTES: int   = int(os.getenv("OUTCOME_CHECK_MINUTES", "1"))
 COIN_REFRESH_CRON_HOURS: str = os.getenv("COIN_REFRESH_CRON_HOURS", f"*/{COIN_REFRESH_HOURS}")
 
 SIGNALS_PER_SCAN: int        = int(os.getenv("SIGNALS_PER_SCAN",        "1"))
 MAX_CONCURRENT_SIGNALS: int  = int(os.getenv("MAX_CONCURRENT_SIGNALS",  "5"))
-SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "60"))
-SIGNAL_EXPIRE_HOURS: int     = int(os.getenv("SIGNAL_EXPIRE_HOURS",     "6"))
+SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "240"))
+SIGNAL_EXPIRE_HOURS: int     = int(os.getenv("SIGNAL_EXPIRE_HOURS",     "48"))
 SCAN_WORKERS: int            = int(os.getenv("SCAN_WORKERS",            "4"))
 
 # Daily signal cap
-MAX_DAILY_SIGNALS: int              = int(os.getenv("MAX_DAILY_SIGNALS",              "10"))
-MIN_DAILY_SIGNAL_GAP_MINUTES: int   = int(os.getenv("MIN_DAILY_SIGNAL_GAP_MINUTES",   "6"))
+MAX_DAILY_SIGNALS: int              = int(os.getenv("MAX_DAILY_SIGNALS",              "3"))
+MIN_DAILY_SIGNAL_GAP_MINUTES: int   = int(os.getenv("MIN_DAILY_SIGNAL_GAP_MINUTES",   "180"))
 
 # ── APScheduler ────────────────────────────────────────────────────
 SCHEDULER_MISFIRE_GRACE_SECONDS: int = int(os.getenv("SCHEDULER_MISFIRE_GRACE_SECONDS", "30"))
@@ -127,12 +137,12 @@ MEXC_BASE_URL: str = os.getenv("MEXC_BASE_URL", "https://contract.mexc.com/api/v
 # ── Database ───────────────────────────────────────────────────────
 DB_PATH: str = os.getenv("DB_PATH", "signals.db")
 
-# ── Candle minutes (derived from SIGNAL_TF) ────────────────────────
+# ── Candle minutes (derived from OB_TF) ────────────────────────────
 _TF_MINUTES: dict[str, int] = {
     "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
     "1h": 60, "4h": 240, "1d": 1440,
 }
-CANDLE_MINUTES: int = int(os.getenv("CANDLE_MINUTES", str(_TF_MINUTES.get(SIGNAL_TF, 60))))
+CANDLE_MINUTES: int = int(os.getenv("CANDLE_MINUTES", str(_TF_MINUTES.get(OB_TF, 60))))
 
 # ── MEXC interval map ──────────────────────────────────────────────
 MEXC_INTERVAL_MAP: dict[str, str] = {
