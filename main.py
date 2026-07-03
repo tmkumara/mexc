@@ -392,10 +392,14 @@ async def main():
         },
     )
 
-    # Signal scanner (hourly at :02 by default, aligns to 1h candle close)
+    # Signal scanner (hourly at :01 by default, aligns to 1h candle close)
+    # timezone must be explicit here -- a standalone CronTrigger object passed
+    # to add_job() does NOT inherit the scheduler's timezone (only the 'cron'
+    # string-alias form does), so without this it silently falls back to the
+    # server's local system timezone instead of UTC.
     scheduler.add_job(
         scan_and_fire_signals,
-        CronTrigger(hour=SETUP_SCAN_CRON_HOURS, minute=SETUP_SCAN_CRON_MINUTES),
+        CronTrigger(hour=SETUP_SCAN_CRON_HOURS, minute=SETUP_SCAN_CRON_MINUTES, timezone="UTC"),
         args=[app],
         id="signal_scanner",
     )
