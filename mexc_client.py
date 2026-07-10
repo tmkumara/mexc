@@ -216,3 +216,32 @@ def get_current_price(symbol: str) -> float | None:
         return None
 
     return None
+
+
+def get_ticker(symbol: str) -> dict | None:
+    """
+    Return {"fair_price", "hold_vol", "funding_rate"} for a symbol from
+    GET /contract/ticker, or None if the symbol isn't present or a required
+    field is missing.
+    """
+    try:
+        data = _get("/contract/ticker", params={"symbol": symbol})
+        tickers = data.get("data")
+
+        if isinstance(tickers, list):
+            row = next((t for t in tickers if t.get("symbol") == symbol), None)
+        elif isinstance(tickers, dict):
+            row = tickers
+        else:
+            row = None
+
+        if not row:
+            return None
+
+        return {
+            "fair_price": float(row["fairPrice"]),
+            "hold_vol": float(row["holdVol"]),
+            "funding_rate": float(row.get("fundingRate", 0.0)),
+        }
+    except Exception:
+        return None
