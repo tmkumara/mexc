@@ -1,10 +1,13 @@
 """
-Main entry point — VP-OB Confluence (4H Volume Profile + 1H Order Block).
+Main entry point — Liquidation-Aware 1m Scalp (v14).
 
-Scheduler jobs:
-  Hourly at :01   — scanner: arm/monitor Order Block setups, fire signal on retest
+Scheduler jobs / background tasks:
+  Every SCALP_SCAN_INTERVAL_MINUTES (default 1m) — scanner: arm/monitor scalp
+                                                    setups, fire signal when
+                                                    the liquidity filter clears
   Every 1 min     — outcome checker
   Every 6h        — coin pool refresh
+  Continuous      — open-interest poll loop (staggered across pooled coins)
   23:55 daily     — daily report
   Mon 07:00       — weekly report
   1st 07:00       — monthly report
@@ -31,12 +34,12 @@ from mexc_client import get_klines
 from config import (
     LKT,
     LEVERAGE,
-    OB_TF,
+    SCALP_TF,
     CANDLE_MINUTES,
     SIGNAL_EXPIRE_HOURS,
     COIN_REFRESH_HOURS,
-    SETUP_SCAN_CRON_MINUTES,
-    SETUP_SCAN_CRON_HOURS,
+    SCALP_SCAN_INTERVAL_MINUTES,
+    OI_POLL_SEC,
     OUTCOME_CHECK_MINUTES,
     MAX_CONCURRENT_SIGNALS,
     SIGNAL_COOLDOWN_MINUTES,
@@ -312,7 +315,7 @@ async def check_outcomes(app: Application) -> None:
         fetch_count = int(elapsed_min / CANDLE_MINUTES) + 3
 
         try:
-            df = get_klines(symbol, OB_TF, count=fetch_count)
+            df = get_klines(symbol, SCALP_TF, count=fetch_count)
             if df is None or df.empty or len(df) < 2:
                 continue
         except Exception as e:
@@ -359,6 +362,37 @@ async def check_outcomes(app: Application) -> None:
             logger.error("Failed to notify %s for %s: %s", outcome, symbol, e)
 
 
+# ── Open-interest poll loop ───────────────────────────────────────
+
+async def poll_open_interest_loop() -> None:
+    """
+    Continuously refreshes each pooled coin's LiqEstimator with fresh
+    open-interest/price/funding data, staggering requests across
+    OI_POLL_SEC so pooled coins don't all hit the ticker endpoint at once.
+    """
+    from mexc_client import get_ticker
+
+    while True:
+        coins = coin_scanner.get_cached_coins()
+        if not coins:
+            await asyncio.sleep(OI_POLL_SEC)
+            continue
+
+        per_symbol_delay = max(OI_POLL_SEC / len(coins), 0.25)
+
+        for symbol in coins:
+            try:
+                ticker = get_ticker(symbol)
+                if ticker is not None:
+                    estimator = strategy.get_estimator(symbol)
+                    estimator.on_oi_sample(ticker["hold_vol"] * ticker["fair_price"], ticker["fair_price"])
+                    estimator.decay_clusters()
+                    strategy.update_ticker_cache(symbol, ticker["fair_price"], ticker["funding_rate"])
+            except Exception as e:
+                logger.error("[OI-POLL] %s error: %s", symbol, e, exc_info=True)
+            await asyncio.sleep(per_symbol_delay)
+
+
 # ── Main ──────────────────────────────────────────────────────────
 
 async def main():
@@ -369,8 +403,8 @@ async def main():
         "SET" if COINGLASS_API_KEY else "EMPTY",
     )
     logger.info(
-        "[CONFIG] OB TF=%s scan=%s/%s daily_cap=%d gap=%dmin cooldown=%dmin slots=%d",
-        OB_TF, SETUP_SCAN_CRON_MINUTES, SETUP_SCAN_CRON_HOURS,
+        "[CONFIG] scalp TF=%s scan_interval=%dmin daily_cap=%d gap=%dmin cooldown=%dmin slots=%d",
+        SCALP_TF, SCALP_SCAN_INTERVAL_MINUTES,
         MAX_DAILY_SIGNALS, MIN_DAILY_SIGNAL_GAP_MINUTES,
         SIGNAL_COOLDOWN_MINUTES, MAX_CONCURRENT_SIGNALS,
     )
@@ -392,14 +426,10 @@ async def main():
         },
     )
 
-    # Signal scanner (hourly at :01 by default, aligns to 1h candle close)
-    # timezone must be explicit here -- a standalone CronTrigger object passed
-    # to add_job() does NOT inherit the scheduler's timezone (only the 'cron'
-    # string-alias form does), so without this it silently falls back to the
-    # server's local system timezone instead of UTC.
+    # Signal scanner -- every SCALP_SCAN_INTERVAL_MINUTES, aligns to 1m candle close.
     scheduler.add_job(
         scan_and_fire_signals,
-        CronTrigger(hour=SETUP_SCAN_CRON_HOURS, minute=SETUP_SCAN_CRON_MINUTES, timezone="UTC"),
+        IntervalTrigger(minutes=SCALP_SCAN_INTERVAL_MINUTES),
         args=[app],
         id="signal_scanner",
     )
@@ -434,10 +464,11 @@ async def main():
     scheduler.add_job(_monthly, CronTrigger(day=1, hour=7),             id="monthly_report")
 
     scheduler.start()
+    oi_poll_task = asyncio.create_task(poll_open_interest_loop(), name="oi_poll")
 
     logger.info(
-        "Scheduler started — scan=%s/%s outcome=%dm",
-        SETUP_SCAN_CRON_MINUTES, SETUP_SCAN_CRON_HOURS, OUTCOME_CHECK_MINUTES,
+        "Scheduler started — scan every %dm, outcome every %dm, OI poll every %ds",
+        SCALP_SCAN_INTERVAL_MINUTES, OUTCOME_CHECK_MINUTES, OI_POLL_SEC,
     )
 
     async with app:
@@ -453,6 +484,7 @@ async def main():
             pass
         finally:
             scheduler.shutdown(wait=False)
+            oi_poll_task.cancel()
             await app.updater.stop()
             await app.stop()
             await app.shutdown()
