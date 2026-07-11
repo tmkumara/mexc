@@ -138,6 +138,7 @@ TP is placed just before the magnet cluster, capped at
 ### Tuning constants (config.py)
 
 ```python
+LEVERAGE              = 20   # bot's own position leverage
 EMA_FAST, EMA_MID, EMA_SLOW = 9, 21, 50
 RSI_PERIOD = 14
 RSI_LONG_MIN, RSI_LONG_MAX   = 50, 68

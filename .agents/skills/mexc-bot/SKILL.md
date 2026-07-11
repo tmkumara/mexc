@@ -113,7 +113,7 @@ Add geometry validation in both:
 Default target:
 
 ```text
-Leverage: 10x (configurable per LEVERAGE_TIERS)
+Leverage: 20x (the bot's own position leverage; separate from LEVERAGE_TIERS which models other traders' liquidation distribution)
 RR: 1.5+
 Target margin profit: 12%
 Max SL in price %: 0.32%
@@ -122,6 +122,7 @@ Max SL in price %: 0.32%
 Preferred config values (v14 Liquidation-Aware Scalp):
 
 ```env
+LEVERAGE=20
 LEVERAGE_TIERS={10: 0.20, 20: 0.25, 25: 0.20, 50: 0.20, 75: 0.10, 100: 0.05}
 MMR_BUFFER=0.006
 
