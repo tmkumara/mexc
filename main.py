@@ -21,6 +21,8 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta, date
 
+import pandas as pd
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -31,12 +33,14 @@ import strategy
 import bot as tg
 import coin_scanner
 from mexc_client import get_klines
+from outcome_replay import replay_outcome
 from config import (
     LKT,
     LEVERAGE,
     SCALP_TF,
     CANDLE_MINUTES,
     SIGNAL_EXPIRE_HOURS,
+    BREAKEVEN_TRIGGER_PCT,
     COIN_REFRESH_HOURS,
     SCALP_SCAN_INTERVAL_MINUTES,
     OI_POLL_SEC,
@@ -323,36 +327,33 @@ async def check_outcomes(app: Application) -> None:
             continue
 
         entry_candle_cutoff = (generated - timedelta(minutes=CANDLE_MINUTES)).replace(tzinfo=None)
-        outcome = None
 
-        for i in range(len(df) - 1):
-            if df.index[i] <= entry_candle_cutoff:
-                continue
-            high  = float(df["high"].iloc[i])
-            low   = float(df["low"].iloc[i])
-            open_ = float(df["open"].iloc[i])
-            close = float(df["close"].iloc[i])
+        existing_trigger_ts = None
+        if sig.get("breakeven_triggered_at"):
+            # Stored via triggered_at.isoformat() where triggered_at is a
+            # naive pandas Timestamp (df.index[i] -- kline timestamps are
+            # naive throughout this codebase, same convention as
+            # entry_candle_cutoff above), so this parses back naive with
+            # no tz_localize needed.
+            existing_trigger_ts = pd.Timestamp(sig["breakeven_triggered_at"])
 
-            hit_tp = (high >= tp_price) if direction == "LONG" else (low  <= tp_price)
-            hit_sl = (low  <= sl_price) if direction == "LONG" else (high >= sl_price)
+        outcome, newly_triggered_at, closed_at_breakeven = replay_outcome(
+            direction, entry_price, tp_price, sl_price,
+            df, entry_candle_cutoff, existing_trigger_ts, BREAKEVEN_TRIGGER_PCT,
+        )
 
-            if hit_tp and hit_sl:
-                outcome = "win" if (
-                    (direction == "LONG"  and close >= open_) or
-                    (direction == "SHORT" and close <= open_)
-                ) else "loss"
-                break
-            if hit_tp:
-                outcome = "win"
-                break
-            if hit_sl:
-                outcome = "loss"
-                break
+        if newly_triggered_at is not None and existing_trigger_ts is None:
+            db.mark_signal_breakeven_triggered(sig["id"], newly_triggered_at)
+            try:
+                await tg.notify_breakeven_trigger(app, sig, closing_now=(outcome is not None))
+            except Exception as e:
+                logger.error("Failed to notify breakeven trigger for %s: %s", symbol, e)
 
         if outcome is None:
             continue
 
-        pnl = _calculate_pnl_roi(direction, outcome, entry_price, tp_price, sl_price)
+        effective_sl_for_pnl = entry_price if closed_at_breakeven else sl_price
+        pnl = _calculate_pnl_roi(direction, outcome, entry_price, tp_price, effective_sl_for_pnl)
         db.update_signal_outcome(sig["id"], outcome, pnl)
         logger.info("Signal %s %s (%s) %+.1f%%", sig["id"], outcome.upper(), symbol, pnl)
 
