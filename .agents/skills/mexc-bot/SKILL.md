@@ -1,7 +1,7 @@
 
 ---
 name: mexc-bot
-description: Use this skill when working on the MEXC Futures signal bot, strategy.py, config.py, main.py, database.py, bot.py, webui.py, candle cache, WebSocket candles, signal firing, TP/SL/RR bugs, SMC strategy tuning, and deployment commands.
+description: Use this skill when working on the MEXC Futures signal bot, strategy.py, config.py, main.py, database.py, bot.py, webui.py, candle cache, WebSocket candles, signal firing, TP/SL/RR bugs, liquidation-aware scalp strategy tuning, and deployment commands.
 ---
 
 # MEXC Futures Signal Bot Skill
@@ -14,19 +14,14 @@ The user wants safe, high-quality trading signal logic, not random frequent aler
 
 Build and maintain a MEXC Futures Telegram signal bot using:
 
-- MTF SMC strategy
-- 1D macro filter
-- 4H trend filter
-- 1H structure bias
-- 15m entry confirmation
-- Liquidity sweep
-- Displacement candle
-- Order block retest
-- MSS break confirmation
+- Liquidation-Aware 1m Scalp strategy (v14)
+- 1m EMA(9/21/50) stack + rolling VWAP side + RSI zone + volume confirmation (base signal)
+- Liquidation-cluster filter (estimated from free OI data via `liq_estimator.py`)
+- Two-phase arm/monitor workflow (`_try_arm_setup` / `_monitor_setup`)
 - Strict TP/SL validation
 - 20x leverage
-- Target 1:2 RR
-- Target around +50% ROI per TP
+- Target RR >= MIN_RR (currently 1.5)
+- Target margin profit per TP: TARGET_MARGIN_PROFIT (currently 12%)
 - Around 1–3 quality signals per day
 
 Do not promise guaranteed profit or guaranteed 80% win rate. Focus on risk validation, correctness, and high-quality filtering.
@@ -188,85 +183,61 @@ def _valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) ->
     return False
 ```
 
-Add quality validation in `strategy.py`:
+Quality (RR) gating is NOT a separate `_trade_quality_ok` helper in v14 -- it lives
+inline inside `_evaluate_liquidity()` in `strategy.py`:
 
 ```python
-def _trade_quality_ok(
-    direction: str,
-    entry: float,
-    tp: float,
-    sl: float,
-    leverage: int,
-) -> tuple[bool, float, float, float]:
-    if not _valid_trade_geometry(direction, entry, tp, sl):
-        return False, 0.0, 0.0, 0.0
+if not _valid_trade_geometry(direction, price, tp, sl):
+    return False, None, None, "invalid trade geometry"
 
-    if direction == "LONG":
-        risk_pct = (entry - sl) / entry * 100.0
-        reward_pct = (tp - entry) / entry * 100.0
-    else:
-        risk_pct = (sl - entry) / entry * 100.0
-        reward_pct = (entry - tp) / entry * 100.0
-
-    if risk_pct <= 0 or reward_pct <= 0:
-        return False, 0.0, 0.0, 0.0
-
-    rr = reward_pct / risk_pct
-    tp_roi = reward_pct * leverage
-    sl_roi = risk_pct * leverage
-
-    ok = (
-        rr >= MIN_STRUCTURE_RR
-        and tp_roi >= MIN_TP_ROI_PCT
-        and sl_roi <= MAX_SL_ROI_PCT
-    )
-
-    return ok, round(tp_roi, 1), round(sl_roi, 1), round(rr, 2)
+rr = abs(tp - price) / abs(price - sl)
+if rr < MIN_RR:
+    return False, None, None, f"RR {rr:.2f} below minimum {MIN_RR}"
 ```
+
+`MIN_STRUCTURE_RR`, `MIN_TP_ROI_PCT`, and `MAX_SL_ROI_PCT` do not exist in
+`config.py` -- do not reintroduce them. Risk/reward sizing is driven by
+`TARGET_MARGIN_PROFIT`, `MIN_RR`, and `MAX_SL_PRICE_PCT` instead (see
+`strategy._roi()` for the ROI% conversion used for display/DB fields).
 
 ## Strategy.py Instructions
 
 When editing `strategy.py`:
 
 * Do not rewrite the whole file unless asked.
-* Keep the MTF SMC structure.
-* Keep MSS break confirmation.
-* Keep revalidation before fire.
-* Keep BTC filter.
-* Keep ATR, volume, and EMA filters.
+* Keep the two-phase arm/monitor model (`_try_arm_setup` arms on the base
+  signal + liquidity filter; `_monitor_setup` re-checks every 1m cycle and
+  fires when the filter clears).
+* Keep the EMA(9/21/50) + rolling VWAP side + RSI zone + volume-confirmation
+  base signal (`_base_signal`).
+* Keep the liquidity-cluster filter (`_evaluate_liquidity`, backed by
+  `liq_estimator.py`'s `LiqEstimator`).
+* Keep revalidation before fire (base signal + liquidity filter both
+  re-run in `_monitor_setup` before a `Signal` is returned).
+* Keep `_valid_trade_geometry`.
 * Fix only the broken calculation or quality guard.
 * Add detailed logs for rejected trades.
+* There is no MTF SMC structure, MSS break confirmation, BTC macro filter,
+  Order Block detection, or ATR-based stop/buffer logic in v14 -- these were
+  deliberately removed. Do not reintroduce them.
 
 Important final-entry checks:
 
-Before returning `Signal(...)`, enforce:
+Before returning a `Signal(...)` (or arming a setup), enforce trade geometry
+(see `_evaluate_liquidity`, which already does this before computing RR):
 
 ```python
-if not _valid_trade_geometry(direction, entry, tp_price, final_sl_price):
-    logger.warning(
-        "[ENTRY-REJECT] %s %s invalid geometry entry=%.8g tp=%.8g sl=%.8g",
-        symbol, direction, entry, tp_price, final_sl_price,
-    )
-    return "WAIT", None
+if not _valid_trade_geometry(direction, price, tp, sl):
+    return False, None, None, "invalid trade geometry"
 ```
 
-Then enforce ROI quality:
+Then enforce RR quality inline (no separate `_trade_quality_ok` helper --
+see "Required Helper Functions" above):
 
 ```python
-quality_ok, checked_tp_roi, checked_sl_roi, checked_rr = _trade_quality_ok(
-    direction=direction,
-    entry=entry,
-    tp=tp_price,
-    sl=final_sl_price,
-    leverage=LEVERAGE,
-)
-
-if not quality_ok:
-    logger.info(
-        "[ENTRY-REJECT] %s %s quality failed rr=%.2f tp_roi=%.1f sl_roi=%.1f",
-        symbol, direction, checked_rr, checked_tp_roi, checked_sl_roi,
-    )
-    return "WAIT", None
+rr = abs(tp - price) / abs(price - sl)
+if rr < MIN_RR:
+    return False, None, None, f"RR {rr:.2f} below minimum {MIN_RR}"
 ```
 
 ## Main.py Instructions
@@ -357,7 +328,7 @@ Telegram message must be clear and safe.
 Show:
 
 ```text
-20x | RR 1:2 | TP ≈ +50% ROI
+20x | RR 1:MIN_RR (currently 1.5) | TP ≈ +TARGET_MARGIN_PROFIT margin profit (currently 12%)
 ```
 
 Fix outcome labels:
@@ -374,22 +345,25 @@ Never format a win as `+-8.0%`.
 Dashboard should show:
 
 * Strategy name.
-* 1D / 4H / 1H / 15m timeframes.
-* RR target.
-* TP ROI target.
-* SL ROI cap.
+* Scalp timeframe (1m base signal, `SCALP_TF`).
+* RR minimum.
+* Target margin profit (TP).
+* Max SL price %.
 * Max daily signals.
 * Signal gap.
 
 Add config values:
 
 ```python
-"min_tp_roi_pct": _safe_config_value("MIN_TP_ROI_PCT", "—"),
-"target_tp_roi_pct": _safe_config_value("TARGET_TP_ROI_PCT", "—"),
-"max_sl_roi_pct": _safe_config_value("MAX_SL_ROI_PCT", "—"),
+"min_rr": _safe_config_value("MIN_RR", "—"),
+"target_margin_profit": _safe_config_value("TARGET_MARGIN_PROFIT", "—"),
+"max_sl_price_pct": _safe_config_value("MAX_SL_PRICE_PCT", "—"),
 "max_daily_signals": _safe_config_value("MAX_DAILY_SIGNALS", "—"),
 "min_daily_signal_gap_minutes": _safe_config_value("MIN_DAILY_SIGNAL_GAP_MINUTES", "—"),
 ```
+
+Note: `MIN_TP_ROI_PCT`, `TARGET_TP_ROI_PCT`, and `MAX_SL_ROI_PCT` do not
+exist in `config.py` -- do not reintroduce them.
 
 ## Clear DB Instructions
 
@@ -455,7 +429,7 @@ A change is acceptable only if:
 * LONG cannot save unless TP > entry and SL < entry.
 * SHORT cannot save unless TP < entry and SL > entry.
 * No outcome can mark WIN with negative ROI.
-* Every fired signal has RR >= 2.0.
+* Every fired signal has RR >= MIN_RR (currently 1.5).
 * Every fired signal has TP ROI >= configured minimum.
 * Every fired signal has SL ROI <= configured maximum.
 * Daily signal cap works.
