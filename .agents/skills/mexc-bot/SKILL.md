@@ -430,8 +430,7 @@ A change is acceptable only if:
 * SHORT cannot save unless TP < entry and SL > entry.
 * No outcome can mark WIN with negative ROI.
 * Every fired signal has RR >= MIN_RR (currently 1.5).
-* Every fired signal has TP ROI >= configured minimum.
-* Every fired signal has SL ROI <= configured maximum.
+* Every fired signal's SL price move is <= MAX_SL_PRICE_PCT.
 * Daily signal cap works.
 * Signal gap works.
 * Telegram and Web UI show correct risk model.
