@@ -1,3 +1,13 @@
+> **Current strategy (v14, `feature/liq-scalp-v14`): Liquidation-Aware 1m Scalp.**
+> EMA(9/21/50) + rolling VWAP + RSI + volume base signal on 1m candles,
+> gated by a free open-interest-derived liquidation-cluster estimator
+> (`liq_estimator.py`). See `CLAUDE.md` for the full architecture and
+> `docs/superpowers/plans/2026-07-11-liquidation-aware-scalp-v14.md` for
+> the implementation plan. The write-up below is retained for historical
+> reference only and does not describe the currently running strategy.
+
+---
+
 Below is the **mapped and improved strategy explanation** based on the Daily Price Action article.
 
 The article’s main idea is:
