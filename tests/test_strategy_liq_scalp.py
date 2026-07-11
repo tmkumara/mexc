@@ -62,8 +62,8 @@ def test_evaluate_liquidity_long_passes_with_magnet_above():
     est = _estimator_with_magnet_both_sides()
     ok, tp, sl, reason = _evaluate_liquidity("LONG", 100.0, funding=0.0, estimator=est)
     assert ok is True
-    assert tp == pytest.approx(100.6)
-    assert sl == pytest.approx(99.68)
+    assert tp == pytest.approx(100.675)
+    assert sl == pytest.approx(99.55)
     assert "RR" in reason
 
 
@@ -71,8 +71,8 @@ def test_evaluate_liquidity_short_passes_with_magnet_below():
     est = _estimator_with_magnet_both_sides()
     ok, tp, sl, reason = _evaluate_liquidity("SHORT", 100.0, funding=0.0, estimator=est)
     assert ok is True
-    assert tp == pytest.approx(99.4)
-    assert sl == pytest.approx(100.32)
+    assert tp == pytest.approx(99.325)
+    assert sl == pytest.approx(100.45)
 
 
 def test_evaluate_liquidity_vetoes_when_no_magnet():

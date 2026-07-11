@@ -75,7 +75,7 @@ SCALP_VOLUME_MIN_MULT: float  = float(os.getenv("SCALP_VOLUME_MIN_MULT", "1.3"))
 SCALP_VOLUME_MA_BARS: int     = int(os.getenv("SCALP_VOLUME_MA_BARS", "20"))
 
 # ── Profit target / risk (price move = margin target / leverage) ───
-TARGET_MARGIN_PROFIT: float  = float(os.getenv("TARGET_MARGIN_PROFIT", "0.12"))
+TARGET_MARGIN_PROFIT: float  = float(os.getenv("TARGET_MARGIN_PROFIT", "0.135"))
 MIN_RR: float                 = float(os.getenv("MIN_RR", "1.5"))
 MAX_SL_PRICE_PCT: float       = float(os.getenv("MAX_SL_PRICE_PCT", "0.0045"))
 BREAKEVEN_TRIGGER_PCT: float  = float(os.getenv("BREAKEVEN_TRIGGER_PCT", "0.5"))
