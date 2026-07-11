@@ -77,7 +77,8 @@ SCALP_VOLUME_MA_BARS: int     = int(os.getenv("SCALP_VOLUME_MA_BARS", "20"))
 # ── Profit target / risk (price move = margin target / leverage) ───
 TARGET_MARGIN_PROFIT: float  = float(os.getenv("TARGET_MARGIN_PROFIT", "0.12"))
 MIN_RR: float                 = float(os.getenv("MIN_RR", "1.5"))
-MAX_SL_PRICE_PCT: float       = float(os.getenv("MAX_SL_PRICE_PCT", "0.0032"))
+MAX_SL_PRICE_PCT: float       = float(os.getenv("MAX_SL_PRICE_PCT", "0.0045"))
+BREAKEVEN_TRIGGER_PCT: float  = float(os.getenv("BREAKEVEN_TRIGGER_PCT", "0.5"))
 
 # ── Liquidation cluster estimator (see liq_estimator.py) ────────────
 _LEVERAGE_TIERS_DEFAULT = "10:0.20,20:0.25,25:0.20,50:0.20,75:0.10,100:0.05"
