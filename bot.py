@@ -121,7 +121,7 @@ async def notify_breakeven_trigger(app: Application, signal_db: dict, closing_no
         f"Breakeven: {_code(f'{entry:,.6g}')}",
     ]
     if closing_now:
-        lines.append(_italic("Note: this trade has already closed at breakeven by the time this alert was checked."))
+        lines.append(_italic("Note: this trade already resolved by the time this alert was checked — see the outcome message below for the result."))
     lines.append(f"🆔 ID: {_code(signal_db['id'])}")
 
     await _send_html(app, "\n".join(lines))
@@ -206,7 +206,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"EMA stack:   {_code(f'{EMA_FAST}/{EMA_MID}/{EMA_SLOW}')}",
         f"SL cap:      {_code(f'{MAX_SL_PRICE_PCT * 100:.2f}% price')}",
         f"RR min:      {_code(f'1:{MIN_RR:.2g}')}",
-        f"TP target:   {_code(f'{TARGET_MARGIN_PROFIT * 100:.0f}% margin @ {LEVERAGE}x')}",
+        f"TP target:   {_code(f'{TARGET_MARGIN_PROFIT * 100:.1f}% margin @ {LEVERAGE}x')}",
         f"Leverage:    {_code(f'{LEVERAGE}x  Isolated')}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"Scan every:  {_code(f'{SCALP_SCAN_INTERVAL_MINUTES}min')}",
