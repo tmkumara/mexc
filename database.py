@@ -61,6 +61,7 @@ def init_db():
         for col, definition in [
             ("placed",    "INTEGER NOT NULL DEFAULT 1"),
             ("placed_at", "TEXT"),
+            ("breakeven_triggered_at", "TEXT"),
         ]:
             try:
                 con.execute(f"ALTER TABLE signals ADD COLUMN {col} {definition}")
@@ -134,6 +135,15 @@ def update_signal_outcome(signal_id: int, status: str, pnl_roi: float):
             SET status = ?, pnl_roi = ?, closed_at = ?
             WHERE id = ? AND status = 'pending'
         """, (status, pnl_roi, closed_at, signal_id))
+
+
+def mark_signal_breakeven_triggered(signal_id: int, triggered_at: datetime) -> None:
+    with _conn() as con:
+        con.execute("""
+            UPDATE signals
+            SET breakeven_triggered_at = ?
+            WHERE id = ? AND breakeven_triggered_at IS NULL
+        """, (triggered_at.isoformat(), signal_id))
 
 
 def count_active_signals() -> int:
