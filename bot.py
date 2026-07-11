@@ -14,7 +14,7 @@ from telegram.constants import ParseMode
 
 import database as db
 import reports
-from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, LKT, STRATEGY_NAME
+from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, LKT, STRATEGY_NAME, BREAKEVEN_TRIGGER_PCT
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +105,26 @@ async def notify_outcome(app: Application, signal_db: dict) -> None:
         f"🆔 ID: {_code(signal_db['id'])}",
     ])
     await _send_html(app, msg)
+
+
+async def notify_breakeven_trigger(app: Application, signal_db: dict, closing_now: bool = False) -> None:
+    direction = signal_db["direction"]
+    symbol    = signal_db["symbol"].replace("_", "/")
+    entry     = signal_db["entry_price"]
+    arrow     = "🟢" if direction == "LONG" else "🔴"
+
+    lines = [
+        f"🔒 {_bold('Breakeven Trigger')}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"{arrow} {escape(direction)} — {_bold(symbol)}",
+        f"Price reached {int(BREAKEVEN_TRIGGER_PCT * 100)}% to target — move your stop to breakeven now.",
+        f"Breakeven: {_code(f'{entry:,.6g}')}",
+    ]
+    if closing_now:
+        lines.append(_italic("Note: this trade has already closed at breakeven by the time this alert was checked."))
+    lines.append(f"🆔 ID: {_code(signal_db['id'])}")
+
+    await _send_html(app, "\n".join(lines))
 
 
 # ── commands ──────────────────────────────────────────────────────
