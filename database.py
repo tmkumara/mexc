@@ -62,6 +62,12 @@ def init_db():
             ("placed",    "INTEGER NOT NULL DEFAULT 1"),
             ("placed_at", "TEXT"),
             ("breakeven_triggered_at", "TEXT"),
+            ("strategy_name", "TEXT"),
+            ("score", "REAL"),
+            ("rr", "REAL"),
+            ("entry_timeframe", "TEXT"),
+            ("trend_timeframe", "TEXT"),
+            ("setup_reason", "TEXT"),
         ]:
             try:
                 con.execute(f"ALTER TABLE signals ADD COLUMN {col} {definition}")
@@ -115,15 +121,25 @@ def save_signal(
     sl_price: float,
     leverage: int,
     generated_at: datetime,
+    strategy_name: str = "",
+    score: float = 0.0,
+    rr: float = 0.0,
+    entry_timeframe: str = "",
+    trend_timeframe: str = "",
+    setup_reason: str = "",
 ) -> int:
     ts = generated_at.isoformat()
     with _conn() as con:
         cur = con.execute("""
             INSERT INTO signals
               (symbol, direction, entry_price, tp_price, sl_price,
-               leverage, status, placed, generated_at, placed_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?)
-        """, (symbol, direction, entry_price, tp_price, sl_price, leverage, ts, ts))
+               leverage, status, placed, generated_at, placed_at,
+               strategy_name, score, rr, entry_timeframe, trend_timeframe, setup_reason)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            symbol, direction, entry_price, tp_price, sl_price, leverage, ts, ts,
+            strategy_name, score, rr, entry_timeframe, trend_timeframe, setup_reason,
+        ))
         return cur.lastrowid
 
 
@@ -150,6 +166,17 @@ def count_active_signals() -> int:
     with _conn() as con:
         row = con.execute("SELECT COUNT(*) FROM signals WHERE status = 'pending'").fetchone()
         return row[0]
+
+
+def count_active_signals_by_direction(direction: str) -> int:
+    with _conn() as con:
+        row = con.execute("""
+            SELECT COUNT(*)
+            FROM signals
+            WHERE status = 'pending'
+              AND direction = ?
+        """, (direction,)).fetchone()
+        return int(row[0])
 
 
 def get_pending_signals() -> list[dict]:
