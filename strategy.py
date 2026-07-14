@@ -91,7 +91,7 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
         if i == 0:
             final_upper[i] = basic_upper[i]
             final_lower[i] = basic_lower[i]
-            direction[i] = 1 if close_v[i] >= hl2[i] else -1
+            direction[i] = 1
             supertrend[i] = final_lower[i] if direction[i] == 1 else final_upper[i]
             continue
 
