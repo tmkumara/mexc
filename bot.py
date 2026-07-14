@@ -14,7 +14,7 @@ from telegram.constants import ParseMode
 
 import database as db
 import reports
-from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, LKT, STRATEGY_NAME, BREAKEVEN_TRIGGER_PCT
+from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, LKT, STRATEGY_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -65,11 +65,11 @@ def format_signal(signal, signal_id: int) -> str:
         f"{escape(arrow)} — {_bold(coin)} Futures",
         "━━━━━━━━━━━━━━━━━━━━",
         f"📍 Entry:    {_code(f'{signal.entry_price:,.6g}')}",
-        f"🎯 TP:       {_code(f'{signal.tp_price:,.6g}')}  {_italic(f'+{signal.tp_roi_pct:.1f}% ROI')}",
-        f"🛑 SL:       {_code(f'{signal.sl_price:,.6g}')}  {_italic(f'-{signal.sl_roi_pct:.1f}% ROI')}",
-        f"📊 RR:       {_code(f'1:{signal.rr:.2g}')}",
+        f"🎯 TP:       {_code(f'{signal.tp_price:,.6g}')}  {_italic(f'+{signal.tp_roi_pct:.1f}% gross ROI')}",
+        f"🛑 SL:       {_code(f'{signal.sl_price:,.6g}')}  {_italic(f'-{signal.sl_roi_pct:.1f}% gross ROI')}",
+        f"📊 RR:       {_code(f'1:{signal.rr:.3g}')}",
         f"⚡ Leverage: {_code(f'{signal.leverage}x')}  {_italic('Isolated')}",
-        f"🧭 Signal:   {_italic(escape(signal.timeframe_summary))}",
+        f"🧭 Setup:    {_italic(escape(signal.timeframe_summary))}",
         f"📈 Strategy: {STRATEGY_NAME}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"⏰ {_code(signal.generated_at.astimezone(LKT).strftime('%Y-%m-%d %H:%M LKT'))}",
@@ -105,26 +105,6 @@ async def notify_outcome(app: Application, signal_db: dict) -> None:
         f"🆔 ID: {_code(signal_db['id'])}",
     ])
     await _send_html(app, msg)
-
-
-async def notify_breakeven_trigger(app: Application, signal_db: dict, closing_now: bool = False) -> None:
-    direction = signal_db["direction"]
-    symbol    = signal_db["symbol"].replace("_", "/")
-    entry     = signal_db["entry_price"]
-    arrow     = "🟢" if direction == "LONG" else "🔴"
-
-    lines = [
-        f"🔒 {_bold('Breakeven Trigger')}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"{arrow} {escape(direction)} — {_bold(symbol)}",
-        f"Price reached {int(BREAKEVEN_TRIGGER_PCT * 100)}% to target — move your stop to breakeven now.",
-        f"Breakeven: {_code(f'{entry:,.6g}')}",
-    ]
-    if closing_now:
-        lines.append(_italic("Note: this trade already resolved by the time this alert was checked — see the outcome message below for the result."))
-    lines.append(f"🆔 ID: {_code(signal_db['id'])}")
-
-    await _send_html(app, "\n".join(lines))
 
 
 # ── commands ──────────────────────────────────────────────────────
@@ -171,13 +151,15 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     from config import (
         STRATEGY_NAME,
-        SCALP_TF,
-        EMA_FAST, EMA_MID, EMA_SLOW,
-        MAX_SL_PRICE_PCT, TARGET_MARGIN_PROFIT,
+        TREND_TF, ENTRY_TF,
+        TREND_EMA_PERIOD, ENTRY_EMA_PERIOD,
+        RSI_LONG_MIN, RSI_LONG_MAX, RSI_SHORT_MIN, RSI_SHORT_MAX,
+        MAX_SL_ROI_PCT, TARGET_ROI_PCT,
         MIN_RR,
-        SCALP_SCAN_INTERVAL_MINUTES,
+        SCAN_INTERVAL_MINUTES,
         OUTCOME_CHECK_MINUTES,
-        MAX_CONCURRENT_SIGNALS, SIGNAL_COOLDOWN_MINUTES,
+        MAX_CONCURRENT_SIGNALS, MAX_ACTIVE_LONG_SIGNALS, MAX_ACTIVE_SHORT_SIGNALS,
+        SIGNAL_COOLDOWN_MINUTES,
         MAX_DAILY_SIGNALS, MIN_DAILY_SIGNAL_GAP_MINUTES,
         LEVERAGE, COINGLASS_API_KEY,
         TOP_N_COINS, COIN_POOL_MIN_VOLUME_USD, COIN_POOL_MIN_SELECTED,
@@ -186,7 +168,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
     coins  = coin_scanner.get_cached_coins()
-    active = db.count_active_signals()
+    active_long  = db.count_active_signals_by_direction("LONG")
+    active_short = db.count_active_signals_by_direction("SHORT")
 
     today_start   = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=tz.utc)
     signals_today = db.count_signals_since(today_start)
@@ -202,19 +185,20 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"State:       {_code(state)}",
         f"Strategy:    {_code(STRATEGY_NAME)}",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"Scalp TF:    {_code(SCALP_TF)}",
-        f"EMA stack:   {_code(f'{EMA_FAST}/{EMA_MID}/{EMA_SLOW}')}",
-        f"SL cap:      {_code(f'{MAX_SL_PRICE_PCT * 100:.2f}% price')}",
+        f"Trend TF:    {_code(TREND_TF)}  (EMA{TREND_EMA_PERIOD} + Supertrend)",
+        f"Entry TF:    {_code(ENTRY_TF)}  (EMA{ENTRY_EMA_PERIOD} + Supertrend)",
+        f"RSI ranges:  {_code(f'L {RSI_LONG_MIN:.0f}-{RSI_LONG_MAX:.0f} / S {RSI_SHORT_MIN:.0f}-{RSI_SHORT_MAX:.0f}')}",
+        f"SL cap:      {_code(f'{MAX_SL_ROI_PCT:.0f}% ROI')}",
         f"RR min:      {_code(f'1:{MIN_RR:.2g}')}",
-        f"TP target:   {_code(f'{TARGET_MARGIN_PROFIT * 100:.1f}% margin @ {LEVERAGE}x')}",
+        f"TP target:   {_code(f'{TARGET_ROI_PCT:.0f}% ROI @ {LEVERAGE}x')}",
         f"Leverage:    {_code(f'{LEVERAGE}x  Isolated')}",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"Scan every:  {_code(f'{SCALP_SCAN_INTERVAL_MINUTES}min')}",
+        f"Scan every:  {_code(f'{SCAN_INTERVAL_MINUTES}min')}",
         f"Outcome chk: {_code(f'every {OUTCOME_CHECK_MINUTES} min')}",
         f"Cooldown:    {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
         f"Expire:      {_code(f'{SIGNAL_EXPIRE_HOURS}h')}",
         f"Daily cap:   {_code(f'{signals_today}/{MAX_DAILY_SIGNALS}  (min gap {MIN_DAILY_SIGNAL_GAP_MINUTES} min)')}",
-        f"Active:      {_code(f'{active}/{MAX_CONCURRENT_SIGNALS} signals')}",
+        f"Active:      {_code(f'{active_long}/{MAX_ACTIVE_LONG_SIGNALS} LONG, {active_short}/{MAX_ACTIVE_SHORT_SIGNALS} SHORT')}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"Pool size:   {_code(f'{len(coins)} / {TOP_N_COINS} (min {COIN_POOL_MIN_SELECTED})')}",
         f"Min volume:  {_code(f'${COIN_POOL_MIN_VOLUME_USD:,.0f}')}",
