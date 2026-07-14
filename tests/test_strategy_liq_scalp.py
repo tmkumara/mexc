@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from liq_estimator import LiqEstimator
-from strategy import _base_signal, _evaluate_liquidity, _valid_trade_geometry
+from strategy import _base_signal_ema_confluence as _base_signal, _evaluate_liquidity, _valid_trade_geometry
 
 
 def _build_df(pattern: list[float], n_bars: int = 60, base_vol: float = 100.0, spike_vol: float = 500.0) -> pd.DataFrame:

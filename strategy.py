@@ -32,9 +32,14 @@ import pandas as pd
 import database as db
 from liq_estimator import LiqEstimator
 from mexc_client import get_klines
+from typing import Callable
+
+import nw_kernel
 from config import (
+    BASE_SIGNAL,
     SCALP_TF,
     SCALP_KLINE_COUNT,
+    NW_KLINE_COUNT,
     EMA_FAST,
     EMA_MID,
     EMA_SLOW,
@@ -45,6 +50,14 @@ from config import (
     RSI_SHORT_MAX,
     SCALP_VOLUME_MIN_MULT,
     SCALP_VOLUME_MA_BARS,
+    NW_H,
+    NW_R,
+    NW_LAG,
+    NW_SMOOTH,
+    EMA_RIBBON_FAST,
+    EMA_RIBBON_MID,
+    EMA_RIBBON_SLOW,
+    EMA_RIBBON_TREND,
     TARGET_MARGIN_PROFIT,
     MIN_RR,
     MAX_SL_PRICE_PCT,
@@ -152,7 +165,7 @@ def _rolling_vwap(high: np.ndarray, low: np.ndarray, close: np.ndarray, volume: 
     return np.cumsum(typical * volume) / np.maximum(np.cumsum(volume), 1e-12)
 
 
-def _base_signal(df: pd.DataFrame) -> str | None:
+def _base_signal_ema_confluence(df: pd.DataFrame) -> str | None:
     """EMA 9/21/50 stack + rolling VWAP side + RSI zone + volume confirmation."""
     close = df["close"].astype(float).to_numpy()
     if len(close) < EMA_SLOW + 5:
@@ -174,6 +187,25 @@ def _base_signal(df: pd.DataFrame) -> str | None:
     if e_fast < e_mid < e_slow and price < vwap and RSI_SHORT_MIN < r < RSI_SHORT_MAX and vol_ok:
         return "SHORT"
     return None
+
+
+def _base_signal_nw_ribbon(df: pd.DataFrame) -> str | None:
+    """Nadaraya-Watson kernel slope-turn, gated by the EMA 20/50/100/200 ribbon."""
+    closes = df["close"].astype(float).to_numpy()
+    direction = nw_kernel.base_signal_nw(
+        closes, h=NW_H, r=NW_R, lag=NW_LAG, smooth=NW_SMOOTH,
+        fast=EMA_RIBBON_FAST, mid=EMA_RIBBON_MID, slow=EMA_RIBBON_SLOW, trend=EMA_RIBBON_TREND,
+    )
+    return direction.upper() if direction else None
+
+
+_BASE_SIGNAL_FNS: dict[str, Callable[[pd.DataFrame], str | None]] = {
+    "ema_confluence": _base_signal_ema_confluence,
+    "nw_ribbon": _base_signal_nw_ribbon,
+}
+_base_signal = _BASE_SIGNAL_FNS[BASE_SIGNAL]
+_KLINE_COUNT = SCALP_KLINE_COUNT if BASE_SIGNAL == "ema_confluence" else NW_KLINE_COUNT
+_MIN_BARS = (EMA_SLOW + 6) if BASE_SIGNAL == "ema_confluence" else (EMA_RIBBON_TREND + 6)
 
 
 # ── liquidity filter ─────────────────────────────────────────────────
@@ -264,8 +296,8 @@ def _try_arm_setup(symbol: str) -> None:
     if db.armed_setup_exists(symbol):
         return
 
-    df = get_klines(symbol, SCALP_TF, count=SCALP_KLINE_COUNT)
-    if df is None or df.empty or len(df) < EMA_SLOW + 6:
+    df = get_klines(symbol, SCALP_TF, count=_KLINE_COUNT)
+    if df is None or df.empty or len(df) < _MIN_BARS:
         return
     window = df.iloc[:-1]   # last CLOSED 1m bar only
 
@@ -293,7 +325,7 @@ def _try_arm_setup(symbol: str) -> None:
             "rr": rr,
             "score": _score_from_rr(rr),
             "setup_reason": reason,
-            "trend_summary": f"1m base signal + liq filter passed | funding {funding * 100:.4f}%",
+            "trend_summary": f"1m {BASE_SIGNAL} + liq filter passed | funding {funding * 100:.4f}%",
             "expires_at": expires_at.isoformat(),
         })
         logger.info("[SCALP-ARM] %s %s price=%.6g tp=%.6g sl=%.6g rr=%.2f (%s)",
@@ -317,7 +349,7 @@ def _try_arm_setup(symbol: str) -> None:
         "rr": round(provisional_rr, 2),
         "score": 0.0,
         "setup_reason": reason,
-        "trend_summary": f"1m base signal (awaiting liq filter) | funding {funding * 100:.4f}%",
+        "trend_summary": f"1m {BASE_SIGNAL} (awaiting liq filter) | funding {funding * 100:.4f}%",
         "expires_at": expires_at.isoformat(),
     })
     logger.info("[SCALP-WAIT] %s %s price=%.6g veto=%s", symbol, direction, price, reason)
@@ -336,8 +368,8 @@ def _monitor_setup(symbol: str, setup: dict) -> Signal | None:
         logger.info("[SCALP-EXPIRE] %s setup #%s aged out", symbol, setup["id"])
         return None
 
-    df = get_klines(symbol, SCALP_TF, count=SCALP_KLINE_COUNT)
-    if df is None or df.empty or len(df) < EMA_SLOW + 6:
+    df = get_klines(symbol, SCALP_TF, count=_KLINE_COUNT)
+    if df is None or df.empty or len(df) < _MIN_BARS:
         return None
     window = df.iloc[:-1]
 
@@ -368,7 +400,7 @@ def _monitor_setup(symbol: str, setup: dict) -> Signal | None:
         leverage=LEVERAGE,
         tp_roi_pct=tp_roi,
         sl_roi_pct=sl_roi,
-        timeframe_summary=f"1m liq-scalp | {reason}",
+        timeframe_summary=f"1m {BASE_SIGNAL} liq-scalp | {reason}",
         generated_at=datetime.now(timezone.utc),
         rr=rr,
         score=_score_from_rr(rr),
