@@ -208,6 +208,28 @@ _KLINE_COUNT = SCALP_KLINE_COUNT if BASE_SIGNAL == "ema_confluence" else NW_KLIN
 _MIN_BARS = (EMA_SLOW + 6) if BASE_SIGNAL == "ema_confluence" else (EMA_RIBBON_TREND + 6)
 
 
+def _still_active_ema_confluence(df: pd.DataFrame, direction: str) -> bool:
+    return _base_signal_ema_confluence(df) == direction
+
+
+def _still_active_nw_ribbon(df: pd.DataFrame, direction: str) -> bool:
+    """Re-confirm only the EMA ribbon bias -- nw_signal's slope-turn is a
+    one-bar pulse that fades immediately, so re-demanding a fresh pulse every
+    monitor cycle would invalidate every setup before it could ever fire."""
+    closes = df["close"].astype(float).to_numpy()
+    bias = nw_kernel.ema_ribbon_bias(
+        closes, fast=EMA_RIBBON_FAST, mid=EMA_RIBBON_MID, slow=EMA_RIBBON_SLOW, trend=EMA_RIBBON_TREND,
+    )
+    return bias == direction.lower()
+
+
+_STILL_ACTIVE_FNS: dict[str, Callable[[pd.DataFrame, str], bool]] = {
+    "ema_confluence": _still_active_ema_confluence,
+    "nw_ribbon": _still_active_nw_ribbon,
+}
+_still_active = _STILL_ACTIVE_FNS[BASE_SIGNAL]
+
+
 # ── liquidity filter ─────────────────────────────────────────────────
 
 def _stop_below(price: float, clusters: list[tuple[float, str, float]]) -> float | None:
@@ -373,7 +395,7 @@ def _monitor_setup(symbol: str, setup: dict) -> Signal | None:
         return None
     window = df.iloc[:-1]
 
-    if _base_signal(window) != direction:
+    if not _still_active(window, direction):
         db.mark_armed_setup_invalidated(setup["id"], "base signal no longer active")
         logger.info("[SCALP-INVALIDATE] %s %s base signal dropped", symbol, direction)
         return None

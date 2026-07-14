@@ -3,7 +3,13 @@ import pandas as pd
 import pytest
 
 from liq_estimator import LiqEstimator
-from strategy import _base_signal_ema_confluence as _base_signal, _evaluate_liquidity, _valid_trade_geometry
+from strategy import (
+    _base_signal_ema_confluence as _base_signal,
+    _evaluate_liquidity,
+    _valid_trade_geometry,
+    _still_active_ema_confluence,
+    _still_active_nw_ribbon,
+)
 
 
 def _build_df(pattern: list[float], n_bars: int = 60, base_vol: float = 100.0, spike_vol: float = 500.0) -> pd.DataFrame:
@@ -98,3 +104,31 @@ def test_valid_trade_geometry():
     assert _valid_trade_geometry("LONG", entry=100.0, tp=99.0, sl=101.0) is False
     assert _valid_trade_geometry("SHORT", entry=100.0, tp=99.0, sl=101.0) is True
     assert _valid_trade_geometry("SHORT", entry=100.0, tp=101.0, sl=99.0) is False
+
+
+def test_still_active_ema_confluence_true_when_signal_still_matches():
+    df = _build_df([4, 4, -5])
+    assert _still_active_ema_confluence(df, "LONG") is True
+
+
+def test_still_active_ema_confluence_false_when_signal_no_longer_matches():
+    df = _build_df([4, 4, -5])
+    assert _still_active_ema_confluence(df, "SHORT") is False
+
+
+def test_still_active_nw_ribbon_true_when_ribbon_still_agrees():
+    closes = 100 + np.cumsum(np.full(250, 0.3))
+    df = pd.DataFrame({"close": closes})
+    assert _still_active_nw_ribbon(df, "LONG") is True
+
+
+def test_still_active_nw_ribbon_false_when_ribbon_disagrees():
+    closes = 100 + np.cumsum(np.full(250, 0.3))
+    df = pd.DataFrame({"close": closes})
+    assert _still_active_nw_ribbon(df, "SHORT") is False
+
+
+def test_still_active_nw_ribbon_false_when_ribbon_neutral():
+    closes = np.full(250, 100.0)
+    df = pd.DataFrame({"close": closes})
+    assert _still_active_nw_ribbon(df, "LONG") is False
