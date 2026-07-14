@@ -134,6 +134,8 @@ from config import (
     VOLUME_MA_PERIOD, MIN_VOLUME_MULTIPLIER,
     PULLBACK_LOOKBACK_BARS, MAX_EMA_DISTANCE_PCT, MAX_CONFIRMATION_CANDLE_ATR,
     SL_ATR_BUFFER_MULTIPLIER, LEVERAGE, TP_PRICE_PCT, MAX_SL_PRICE_PCT, MIN_RR,
+    ENABLE_BTC_FILTER, BTC_FILTER_SYMBOL, BTC_FILTER_TF,
+    BTC_MAX_OPPOSING_MOVE_PCT, BTC_MAX_SINGLE_CANDLE_MOVE_PCT, BTC_MAX_THREE_CANDLE_MOVE_PCT,
 )
 
 
@@ -356,6 +358,16 @@ def evaluate_symbol(symbol: str, btc_context: "BtcContext | None" = None) -> Sig
             logger.debug("[REJECT] %s %s", symbol, reason)
             return None
 
+        if ENABLE_BTC_FILTER:
+            ctx = btc_context if btc_context is not None else build_btc_context()
+            if ctx is None:
+                logger.debug("[REJECT] %s BTC context unavailable", symbol)
+                return None
+            btc_ok, btc_reason = _btc_filter_ok(direction, ctx)
+            if not btc_ok:
+                logger.debug("[REJECT] %s %s %s", symbol, direction, btc_reason)
+                return None
+
         entry = details["close"]
         tp_sl = _calculate_tp_sl(direction, entry, details)
         if tp_sl is None:
@@ -401,4 +413,54 @@ def evaluate_symbol(symbol: str, btc_context: "BtcContext | None" = None) -> Sig
         return None
 
 
-# ── BTC market safety filter: added in Task 6 ──
+# ── BTC market safety filter ─────────────────────────────────────────
+
+def build_btc_context() -> BtcContext | None:
+    df = get_market_klines(BTC_FILTER_SYMBOL, BTC_FILTER_TF, count=TREND_KLINE_COUNT)
+    if df is None or df.empty:
+        return None
+    closed = df.iloc[:-1].copy()
+    if len(closed) < TREND_EMA_PERIOD + 5:
+        return None
+
+    ema200 = calculate_ema(closed["close"], TREND_EMA_PERIOD)
+    st = calculate_supertrend(closed, TREND_SUPERTREND_ATR_PERIOD, TREND_SUPERTREND_MULTIPLIER)
+
+    latest_close = float(closed["close"].iloc[-1])
+    previous_close = float(closed["close"].iloc[-2])
+    close_three_bars_ago = float(closed["close"].iloc[-4])
+
+    one_candle_move_pct = (latest_close - previous_close) / previous_close * 100.0
+    three_candle_move_pct = (latest_close - close_three_bars_ago) / close_three_bars_ago * 100.0
+
+    return BtcContext(
+        close=latest_close,
+        ema_200=float(ema200.iloc[-1]),
+        supertrend_direction=int(st["supertrend_direction"].iloc[-1]),
+        one_candle_move_pct=one_candle_move_pct,
+        three_candle_move_pct=three_candle_move_pct,
+    )
+
+
+def _btc_filter_ok(direction: str, btc: BtcContext) -> tuple[bool, str]:
+    if abs(btc.one_candle_move_pct) > BTC_MAX_SINGLE_CANDLE_MOVE_PCT:
+        return False, "blocked due to extreme BTC volatility"
+    if abs(btc.three_candle_move_pct) > BTC_MAX_THREE_CANDLE_MOVE_PCT:
+        return False, "blocked due to extreme BTC volatility"
+
+    if direction == "LONG":
+        if not (
+            btc.close > btc.ema_200
+            and btc.supertrend_direction == 1
+            and btc.three_candle_move_pct >= -BTC_MAX_OPPOSING_MOVE_PCT
+        ):
+            return False, "blocked by BTC bearish trend"
+    else:
+        if not (
+            btc.close < btc.ema_200
+            and btc.supertrend_direction == -1
+            and btc.three_candle_move_pct <= BTC_MAX_OPPOSING_MOVE_PCT
+        ):
+            return False, "blocked by BTC bullish trend"
+
+    return True, ""
