@@ -173,3 +173,62 @@ Same approach as the `ema_confluence` local verification done earlier: run `pyth
 (server bot stopped first) with `BASE_SIGNAL=nw_ribbon` and the same temporary gap/cooldown overrides,
 watch logs for `[SCALP-ARM]` / `[SCALP-SIGNAL]` / `[SCAN] Fired` lines to confirm the pipeline fires
 correctly end-to-end, then run `pytest` for the new/updated unit tests.
+
+## Addendum: monitor-phase re-confirmation must be signal-specific
+
+Discovered during the live verification run (2026-07-14, first attempt): `nw_ribbon` setups armed
+with a **fully-cleared liquidity filter** (real RR 1.50 levels) were invalidated on the very next
+monitor cycle, every time.
+
+Root cause: `main.py` runs Phase 2 (monitor, over all coins) before Phase 1 (arm) each scan cycle
+(`main.py:135-146` then `main.py:239-255`) — so a setup armed in cycle *N* is first checked by
+`_monitor_setup` in cycle *N+1*, never the same cycle. `_monitor_setup`'s re-confirmation
+(`if _base_signal(window) != direction: invalidate`) works for `ema_confluence` because its
+condition (EMA stack + VWAP + RSI + volume) is a snapshot that can hold true across several
+consecutive bars. `nw_kernel.nw_signal`, by contrast, is a **one-bar pulse**: it returns
+`"bullish_change"`/`"bearish_change"` only on the exact bar the smoothed kernel's slope flips, then
+`None` on every following bar (there is no new "turn" to detect a second time). Re-demanding that
+exact pulse on the very next cycle's re-confirmation check means every `nw_ribbon` setup — even one
+whose liquidity filter cleared instantly — is invalidated one cycle after arming, before it can ever
+reach a fire. This is structural, not rare bad luck; it was observed on every armed `nw_ribbon`
+setup in the verification run (`AVAX_USDT`, `BSB_USDT` provisionally, `DRAM_USDT`/`NVIDIA_USDT` with
+real cleared levels — all four invalidated the cycle immediately after arming).
+
+**Resolution (user-approved):** make the monitor-phase re-confirmation check itself
+`BASE_SIGNAL`-dispatched, matching the existing `_BASE_SIGNAL_FNS` pattern:
+
+- `ema_confluence`: re-confirmation is unchanged — still requires `_base_signal_ema_confluence(df)
+  == direction` (the original snapshot re-check).
+- `nw_ribbon`: re-confirmation instead checks only that `nw_kernel.ema_ribbon_bias(...)` still
+  agrees with the armed direction — the initial **arm** still requires the actual slope-turn pulse
+  (`_try_arm_setup` is unchanged), but **monitor** no longer demands a fresh pulse every cycle, only
+  that the broader trend hasn't reversed.
+
+New dispatch, alongside the existing `_BASE_SIGNAL_FNS`:
+
+```python
+def _still_active_ema_confluence(df: pd.DataFrame, direction: str) -> bool:
+    return _base_signal_ema_confluence(df) == direction
+
+
+def _still_active_nw_ribbon(df: pd.DataFrame, direction: str) -> bool:
+    closes = df["close"].astype(float).to_numpy()
+    bias = nw_kernel.ema_ribbon_bias(
+        closes, fast=EMA_RIBBON_FAST, mid=EMA_RIBBON_MID, slow=EMA_RIBBON_SLOW, trend=EMA_RIBBON_TREND,
+    )
+    return bias == direction.lower()
+
+
+_STILL_ACTIVE_FNS: dict[str, Callable[[pd.DataFrame, str], bool]] = {
+    "ema_confluence": _still_active_ema_confluence,
+    "nw_ribbon": _still_active_nw_ribbon,
+}
+_still_active = _STILL_ACTIVE_FNS[BASE_SIGNAL]
+```
+
+`_monitor_setup`'s invalidation check changes from `if _base_signal(window) != direction:` to
+`if not _still_active(window, direction):` — the only line that changes in `_monitor_setup`.
+
+This is implemented as Task 5 in the plan (added after the fact — Tasks 1-4 were already complete
+and reviewed when this was discovered). The verification run (Task 4) is re-executed after Task 5
+lands, to confirm `nw_ribbon` can now actually survive to a `[SCAN] Fired` line.

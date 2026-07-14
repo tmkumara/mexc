@@ -738,6 +738,189 @@ rm -f run_local_nw.out.log
 
 Do not commit any log files. Restart the server's `mexc-bot` service if it was stopped in Step 1.
 
+**Result of first run (2026-07-14):** confirmed a real defect — see Task 5 below. `nw_ribbon`
+armed setups (including ones with a fully-cleared liquidity filter) were invalidated on the very
+next monitor cycle, every time, before ever reaching a fire. Task 5 fixes this; Task 4's steps are
+re-run after Task 5 lands (see Task 5's final step).
+
+---
+
+### Task 5: Make monitor-phase re-confirmation signal-specific
+
+**Why:** discovered via Task 4's live run, documented in the design spec's "Addendum" section
+(`docs/superpowers/specs/2026-07-14-nw-ribbon-base-signal-design.md`). `main.py` runs Phase 2
+(monitor, over all coins) before Phase 1 (arm) each cycle (`main.py:135-146` then
+`main.py:239-255`), so a setup armed in cycle *N* is first checked by `_monitor_setup` in cycle
+*N+1*. `nw_kernel.nw_signal` is a one-bar pulse (fires only on the exact turn bar, `None`
+afterward), so `_monitor_setup`'s re-confirmation (`_base_signal(window) != direction` →
+invalidate) killed every `nw_ribbon` setup one cycle after arming — including setups whose
+liquidity filter had already fully cleared — because the pulse had already faded by the next
+check. `ema_confluence` is unaffected: its condition is a snapshot that holds across several bars,
+which is why this was never visible before `nw_ribbon` existed.
+
+**Files:**
+- Modify: `strategy.py` (new dispatch functions after the existing `_BASE_SIGNAL_FNS` block; one
+  changed line inside `_monitor_setup`)
+- Modify: `tests/test_strategy_liq_scalp.py` (import line + 5 new tests)
+
+**Interfaces:**
+- Consumes: `_base_signal_ema_confluence` (Task 3), `nw_kernel.ema_ribbon_bias` (Task 1),
+  `EMA_RIBBON_FAST/MID/SLOW/TREND` (Task 2, already imported into `strategy.py` by Task 3).
+- Produces: `strategy._still_active_ema_confluence(df: pd.DataFrame, direction: str) -> bool`,
+  `strategy._still_active_nw_ribbon(df: pd.DataFrame, direction: str) -> bool` — used only inside
+  `_monitor_setup`, no other module needs these.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `tests/test_strategy_liq_scalp.py`, the import line currently reads (after Task 3's fix):
+
+```python
+from strategy import _base_signal_ema_confluence as _base_signal, _evaluate_liquidity, _valid_trade_geometry
+```
+
+Replace with:
+
+```python
+from strategy import (
+    _base_signal_ema_confluence as _base_signal,
+    _evaluate_liquidity,
+    _valid_trade_geometry,
+    _still_active_ema_confluence,
+    _still_active_nw_ribbon,
+)
+```
+
+Then append these tests to the end of the file (after `test_valid_trade_geometry`):
+
+```python
+def test_still_active_ema_confluence_true_when_signal_still_matches():
+    df = _build_df([4, 4, -5])
+    assert _still_active_ema_confluence(df, "LONG") is True
+
+
+def test_still_active_ema_confluence_false_when_signal_no_longer_matches():
+    df = _build_df([4, 4, -5])
+    assert _still_active_ema_confluence(df, "SHORT") is False
+
+
+def test_still_active_nw_ribbon_true_when_ribbon_still_agrees():
+    closes = 100 + np.cumsum(np.full(250, 0.3))
+    df = pd.DataFrame({"close": closes})
+    assert _still_active_nw_ribbon(df, "LONG") is True
+
+
+def test_still_active_nw_ribbon_false_when_ribbon_disagrees():
+    closes = 100 + np.cumsum(np.full(250, 0.3))
+    df = pd.DataFrame({"close": closes})
+    assert _still_active_nw_ribbon(df, "SHORT") is False
+
+
+def test_still_active_nw_ribbon_false_when_ribbon_neutral():
+    closes = np.full(250, 100.0)
+    df = pd.DataFrame({"close": closes})
+    assert _still_active_nw_ribbon(df, "LONG") is False
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `pytest tests/test_strategy_liq_scalp.py -v`
+Expected: collection error / `ImportError: cannot import name '_still_active_ema_confluence'` —
+the functions don't exist in `strategy.py` yet.
+
+- [ ] **Step 3: Add the new dispatch to `strategy.py`**
+
+The dispatch block currently reads:
+
+```python
+_BASE_SIGNAL_FNS: dict[str, Callable[[pd.DataFrame], str | None]] = {
+    "ema_confluence": _base_signal_ema_confluence,
+    "nw_ribbon": _base_signal_nw_ribbon,
+}
+_base_signal = _BASE_SIGNAL_FNS[BASE_SIGNAL]
+_KLINE_COUNT = SCALP_KLINE_COUNT if BASE_SIGNAL == "ema_confluence" else NW_KLINE_COUNT
+_MIN_BARS = (EMA_SLOW + 6) if BASE_SIGNAL == "ema_confluence" else (EMA_RIBBON_TREND + 6)
+```
+
+Replace with (appending the new dispatch immediately after, nothing above this changes):
+
+```python
+_BASE_SIGNAL_FNS: dict[str, Callable[[pd.DataFrame], str | None]] = {
+    "ema_confluence": _base_signal_ema_confluence,
+    "nw_ribbon": _base_signal_nw_ribbon,
+}
+_base_signal = _BASE_SIGNAL_FNS[BASE_SIGNAL]
+_KLINE_COUNT = SCALP_KLINE_COUNT if BASE_SIGNAL == "ema_confluence" else NW_KLINE_COUNT
+_MIN_BARS = (EMA_SLOW + 6) if BASE_SIGNAL == "ema_confluence" else (EMA_RIBBON_TREND + 6)
+
+
+def _still_active_ema_confluence(df: pd.DataFrame, direction: str) -> bool:
+    return _base_signal_ema_confluence(df) == direction
+
+
+def _still_active_nw_ribbon(df: pd.DataFrame, direction: str) -> bool:
+    """Re-confirm only the EMA ribbon bias -- nw_signal's slope-turn is a
+    one-bar pulse that fades immediately, so re-demanding a fresh pulse every
+    monitor cycle would invalidate every setup before it could ever fire."""
+    closes = df["close"].astype(float).to_numpy()
+    bias = nw_kernel.ema_ribbon_bias(
+        closes, fast=EMA_RIBBON_FAST, mid=EMA_RIBBON_MID, slow=EMA_RIBBON_SLOW, trend=EMA_RIBBON_TREND,
+    )
+    return bias == direction.lower()
+
+
+_STILL_ACTIVE_FNS: dict[str, Callable[[pd.DataFrame, str], bool]] = {
+    "ema_confluence": _still_active_ema_confluence,
+    "nw_ribbon": _still_active_nw_ribbon,
+}
+_still_active = _STILL_ACTIVE_FNS[BASE_SIGNAL]
+```
+
+- [ ] **Step 4: Update `_monitor_setup`'s invalidation check**
+
+This line:
+
+```python
+    if _base_signal(window) != direction:
+        db.mark_armed_setup_invalidated(setup["id"], "base signal no longer active")
+        logger.info("[SCALP-INVALIDATE] %s %s base signal dropped", symbol, direction)
+        return None
+```
+
+becomes:
+
+```python
+    if not _still_active(window, direction):
+        db.mark_armed_setup_invalidated(setup["id"], "base signal no longer active")
+        logger.info("[SCALP-INVALIDATE] %s %s base signal dropped", symbol, direction)
+        return None
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `pytest tests/test_strategy_liq_scalp.py -v`
+Expected: all tests PASS, including the 5 new ones.
+
+- [ ] **Step 6: Run the full test suite**
+
+Run: `pytest -v`
+Expected: all tests PASS (no regressions in `ema_confluence`'s behavior — its re-confirmation path
+is unchanged, just renamed/wrapped).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add strategy.py tests/test_strategy_liq_scalp.py
+git commit -m "fix: monitor-phase re-confirmation for nw_ribbon checks ribbon bias, not the one-bar pulse"
+```
+
+- [ ] **Step 8: Re-run Task 4's live verification**
+
+Repeat Task 4's Steps 1-5 exactly (confirm server bot stopped, run locally with
+`BASE_SIGNAL=nw_ribbon` + loosened throttling, watch logs, confirm at least one `[SCAN] Fired #N`
+line, stop and clean up). This time, an `nw_ribbon` setup that clears the liquidity filter should
+survive past the next monitor cycle (ribbon bias persists across many bars, unlike the pulse) and
+should be able to reach a fire.
+
 ---
 
 ## Post-plan
