@@ -121,5 +121,284 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
     )
 
 
-# ── evaluate_symbol pipeline: added in Task 4 ──
+# ── evaluate_symbol pipeline ─────────────────────────────────────────
+
+from market_data import get_market_klines
+from config import (
+    TREND_TF, ENTRY_TF, TREND_KLINE_COUNT, ENTRY_KLINE_COUNT,
+    TREND_EMA_PERIOD, ENTRY_EMA_PERIOD,
+    RSI_PERIOD, RSI_LONG_MIN, RSI_LONG_MAX, RSI_SHORT_MIN, RSI_SHORT_MAX,
+    ATR_PERIOD,
+    TREND_SUPERTREND_ATR_PERIOD, TREND_SUPERTREND_MULTIPLIER,
+    ENTRY_SUPERTREND_ATR_PERIOD, ENTRY_SUPERTREND_MULTIPLIER,
+    VOLUME_MA_PERIOD, MIN_VOLUME_MULTIPLIER,
+    PULLBACK_LOOKBACK_BARS, MAX_EMA_DISTANCE_PCT, MAX_CONFIRMATION_CANDLE_ATR,
+    SL_ATR_BUFFER_MULTIPLIER, LEVERAGE, TP_PRICE_PCT, MAX_SL_PRICE_PCT, MIN_RR,
+)
+
+
+def valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
+    if entry <= 0 or tp <= 0 or sl <= 0:
+        return False
+    if direction == "LONG":
+        return tp > entry > sl
+    if direction == "SHORT":
+        return tp < entry < sl
+    return False
+
+
+def direction_slot_available(direction: str, active_long: int, active_short: int) -> bool:
+    """Pure correlation-limit check -- at most one pending signal per direction."""
+    from config import MAX_ACTIVE_LONG_SIGNALS, MAX_ACTIVE_SHORT_SIGNALS
+    if direction == "LONG":
+        return active_long < MAX_ACTIVE_LONG_SIGNALS
+    return active_short < MAX_ACTIVE_SHORT_SIGNALS
+
+
+def _ema_slope_ok(ema: pd.Series, direction: str, tolerance: float = 1e-9) -> bool:
+    current = ema.iloc[-1]
+    three_bars_ago = ema.iloc[-4]
+    if direction == "LONG":
+        return current >= three_bars_ago - tolerance
+    return current <= three_bars_ago + tolerance
+
+
+def _detect_trend(df_15m: pd.DataFrame) -> str | None:
+    ema200 = calculate_ema(df_15m["close"], TREND_EMA_PERIOD)
+    st = calculate_supertrend(df_15m, TREND_SUPERTREND_ATR_PERIOD, TREND_SUPERTREND_MULTIPLIER)
+    close = float(df_15m["close"].iloc[-1])
+    st_dir = int(st["supertrend_direction"].iloc[-1])
+
+    if close > float(ema200.iloc[-1]) and st_dir == 1 and _ema_slope_ok(ema200, "LONG"):
+        return "LONG"
+    if close < float(ema200.iloc[-1]) and st_dir == -1 and _ema_slope_ok(ema200, "SHORT"):
+        return "SHORT"
+    return None
+
+
+def _detect_pullback_and_confirmation(df_5m: pd.DataFrame, direction: str) -> tuple[bool, str, dict]:
+    """
+    Indexing convention (df_5m already closed-candles-only, so -1 is the
+    latest COMPLETED candle):
+      -1        confirmation candle
+      -4..-2    PULLBACK_LOOKBACK_BARS prior completed candles (pullback window)
+      -5        candle immediately before the pullback window, used to
+                confirm price was already on the correct side of EMA20
+                before the pullback began
+    """
+    ema20 = calculate_ema(df_5m["close"], ENTRY_EMA_PERIOD)
+    rsi = calculate_rsi(df_5m["close"], RSI_PERIOD)
+    atr = calculate_atr(df_5m, ATR_PERIOD)
+    st = calculate_supertrend(df_5m, ENTRY_SUPERTREND_ATR_PERIOD, ENTRY_SUPERTREND_MULTIPLIER)
+
+    close = float(df_5m["close"].iloc[-1])
+    open_ = float(df_5m["open"].iloc[-1])
+    high = float(df_5m["high"].iloc[-1])
+    low = float(df_5m["low"].iloc[-1])
+    ema20_last = float(ema20.iloc[-1])
+    rsi_last = float(rsi.iloc[-1])
+    atr_last = float(atr.iloc[-1])
+    st_dir_last = int(st["supertrend_direction"].iloc[-1])
+    vol_last = float(df_5m["volume"].iloc[-1])
+    vol_avg = float(df_5m["volume"].iloc[-(VOLUME_MA_PERIOD + 1):-1].mean())
+
+    pullback_lows = df_5m["low"].iloc[-(PULLBACK_LOOKBACK_BARS + 1):-1]
+    pullback_highs = df_5m["high"].iloc[-(PULLBACK_LOOKBACK_BARS + 1):-1]
+    pullback_ema = ema20.iloc[-(PULLBACK_LOOKBACK_BARS + 1):-1]
+    pre_pullback_close = float(df_5m["close"].iloc[-(PULLBACK_LOOKBACK_BARS + 2)])
+    pre_pullback_ema = float(ema20.iloc[-(PULLBACK_LOOKBACK_BARS + 2)])
+
+    rsi_min, rsi_max = (RSI_LONG_MIN, RSI_LONG_MAX) if direction == "LONG" else (RSI_SHORT_MIN, RSI_SHORT_MAX)
+
+    if direction == "LONG":
+        if pre_pullback_close <= pre_pullback_ema:
+            return False, "no prior uptrend above EMA20 before pullback", {}
+        if not bool((pullback_lows <= pullback_ema).any()):
+            return False, "no EMA20 pullback", {}
+        if not (close > ema20_last):
+            return False, "confirmation candle did not reclaim EMA20", {}
+        if not (close > open_):
+            return False, "confirmation candle not bullish", {}
+        if st_dir_last != 1:
+            return False, "5m supertrend not bullish", {}
+    else:
+        if pre_pullback_close >= pre_pullback_ema:
+            return False, "no prior downtrend below EMA20 before pullback", {}
+        if not bool((pullback_highs >= pullback_ema).any()):
+            return False, "no EMA20 pullback", {}
+        if not (close < ema20_last):
+            return False, "confirmation candle did not reclaim EMA20", {}
+        if not (close < open_):
+            return False, "confirmation candle not bearish", {}
+        if st_dir_last != -1:
+            return False, "5m supertrend not bearish", {}
+
+    if not (rsi_min <= rsi_last <= rsi_max):
+        return False, f"RSI {rsi_last:.1f} outside {direction.lower()} range", {}
+    if vol_avg <= 0 or not (vol_last >= MIN_VOLUME_MULTIPLIER * vol_avg):
+        ratio = (vol_last / vol_avg) if vol_avg else 0.0
+        return False, f"volume ratio {ratio:.2f} below {MIN_VOLUME_MULTIPLIER}", {}
+
+    candle_range = high - low
+    if atr_last <= 0 or candle_range > MAX_CONFIRMATION_CANDLE_ATR * atr_last:
+        return False, f"confirmation candle {candle_range / atr_last if atr_last else float('inf'):.2f} ATR", {}
+
+    if direction == "LONG":
+        distance_from_ema_pct = (close - ema20_last) / close
+    else:
+        distance_from_ema_pct = (ema20_last - close) / close
+    if distance_from_ema_pct > MAX_EMA_DISTANCE_PCT:
+        return False, f"price {distance_from_ema_pct * 100:.2f}% from EMA20 (chasing)", {}
+
+    details = {
+        "close": close,
+        "ema20": ema20_last,
+        "rsi": rsi_last,
+        "atr": atr_last,
+        "volume_ratio": vol_last / vol_avg if vol_avg else 0.0,
+        "recent_lows": pullback_lows,
+        "recent_highs": pullback_highs,
+    }
+    return True, "", details
+
+
+def _calculate_tp_sl(direction: str, entry: float, details: dict) -> tuple[float, float] | None:
+    atr_last = details["atr"]
+    if direction == "LONG":
+        tp = entry * (1 + TP_PRICE_PCT)
+        recent_low = float(details["recent_lows"].min())
+        structural_sl = recent_low - atr_last * SL_ATR_BUFFER_MULTIPLIER
+        if structural_sl >= entry:
+            return None
+        if (entry - structural_sl) / entry > MAX_SL_PRICE_PCT:
+            return None
+        return tp, structural_sl
+    else:
+        tp = entry * (1 - TP_PRICE_PCT)
+        recent_high = float(details["recent_highs"].max())
+        structural_sl = recent_high + atr_last * SL_ATR_BUFFER_MULTIPLIER
+        if structural_sl <= entry:
+            return None
+        if (structural_sl - entry) / entry > MAX_SL_PRICE_PCT:
+            return None
+        return tp, structural_sl
+
+
+def _calc_rr(direction: str, entry: float, tp: float, sl: float) -> float:
+    reward = abs(tp - entry)
+    risk = abs(entry - sl)
+    return reward / risk if risk > 0 else 0.0
+
+
+def _roi_pct(direction: str, entry: float, tp: float, sl: float) -> tuple[float, float]:
+    if direction == "LONG":
+        tp_roi = (tp - entry) / entry * 100.0 * LEVERAGE
+        sl_roi = (entry - sl) / entry * 100.0 * LEVERAGE
+    else:
+        tp_roi = (entry - tp) / entry * 100.0 * LEVERAGE
+        sl_roi = (sl - entry) / entry * 100.0 * LEVERAGE
+    return round(tp_roi, 2), round(sl_roi, 2)
+
+
+def _score_candidate(direction: str, details: dict, rr: float) -> float:
+    score = 25.0  # 15m trend alignment -- already gated true/false upstream
+    score += 20.0  # 5m Supertrend alignment -- already gated
+
+    distance_pct = abs(details["close"] - details["ema20"]) / details["close"]
+    reclaim_quality = max(0.0, 1.0 - (distance_pct / MAX_EMA_DISTANCE_PCT))
+    score += 20.0 * reclaim_quality
+
+    vol_ratio = details["volume_ratio"]
+    vol_quality = min(1.0, max(0.0, (vol_ratio - MIN_VOLUME_MULTIPLIER) / (2.0 - MIN_VOLUME_MULTIPLIER)))
+    score += 15.0 * vol_quality
+
+    rsi = details["rsi"]
+    ideal_lo, ideal_hi = (55.0, 62.0) if direction == "LONG" else (38.0, 45.0)
+    if ideal_lo <= rsi <= ideal_hi:
+        rsi_quality = 1.0
+    else:
+        dist = min(abs(rsi - ideal_lo), abs(rsi - ideal_hi))
+        rsi_quality = max(0.0, 1.0 - dist / 15.0)
+    score += 10.0 * rsi_quality
+
+    rr_quality = min(1.0, max(0.0, (rr - MIN_RR) / (2.0 - MIN_RR))) if MIN_RR < 2.0 else (1.0 if rr >= MIN_RR else 0.0)
+    score += 10.0 * rr_quality
+
+    return round(min(100.0, max(0.0, score)), 1)
+
+
+def evaluate_symbol(symbol: str, btc_context: "BtcContext | None" = None) -> Signal | None:
+    try:
+        raw_15m = get_market_klines(symbol, TREND_TF, count=TREND_KLINE_COUNT)
+        raw_5m = get_market_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
+
+        if raw_15m is None or raw_15m.empty or raw_5m is None or raw_5m.empty:
+            logger.debug("[REJECT] %s missing candle data", symbol)
+            return None
+
+        closed_15m = raw_15m.iloc[:-1].copy()
+        closed_5m = raw_5m.iloc[:-1].copy()
+
+        if len(closed_15m) < TREND_EMA_PERIOD + 5:
+            logger.debug("[REJECT] %s insufficient 15m candle history", symbol)
+            return None
+        if len(closed_5m) < ENTRY_EMA_PERIOD + PULLBACK_LOOKBACK_BARS + 10:
+            logger.debug("[REJECT] %s insufficient 5m candle history", symbol)
+            return None
+
+        direction = _detect_trend(closed_15m)
+        if direction is None:
+            logger.debug("[REJECT] %s no 15m trend", symbol)
+            return None
+
+        ok, reason, details = _detect_pullback_and_confirmation(closed_5m, direction)
+        if not ok:
+            logger.debug("[REJECT] %s %s", symbol, reason)
+            return None
+
+        entry = details["close"]
+        tp_sl = _calculate_tp_sl(direction, entry, details)
+        if tp_sl is None:
+            logger.debug("[REJECT] %s structural stop too wide", symbol)
+            return None
+        tp, sl = tp_sl
+
+        if not valid_trade_geometry(direction, entry, tp, sl):
+            logger.debug("[REJECT] %s invalid trade geometry", symbol)
+            return None
+
+        rr = _calc_rr(direction, entry, tp, sl)
+        if rr < MIN_RR:
+            logger.debug("[REJECT] %s RR %.2f below %.2f", symbol, rr, MIN_RR)
+            return None
+
+        tp_roi, sl_roi = _roi_pct(direction, entry, tp, sl)
+        score = _score_candidate(direction, details, rr)
+
+        logger.info(
+            "[CANDIDATE] %s %s score=%.1f entry=%.6g tp=%.6g sl=%.6g rr=%.2f",
+            symbol, direction, score, entry, tp, sl, rr,
+        )
+
+        return Signal(
+            symbol=symbol,
+            direction=direction,
+            entry_price=round(entry, 8),
+            tp_price=round(tp, 8),
+            sl_price=round(sl, 8),
+            leverage=LEVERAGE,
+            tp_roi_pct=tp_roi,
+            sl_roi_pct=sl_roi,
+            timeframe_summary=f"15m {direction.lower()} trend + 5m EMA20 pullback reclaim",
+            generated_at=datetime.now(timezone.utc),
+            rr=round(rr, 2),
+            score=score,
+            entry_low=entry,
+            entry_high=entry,
+        )
+    except Exception as e:
+        logger.error("[EVAL-ERROR] %s: %s", symbol, e, exc_info=True)
+        return None
+
+
 # ── BTC market safety filter: added in Task 6 ──
