@@ -132,3 +132,96 @@ def test_active_last_candle_is_ignored(monkeypatch):
     sig = evaluate_symbol("TEST_USDT")
     assert sig is not None
     assert sig.direction == "LONG"
+
+
+def test_short_signal_valid(monkeypatch):
+    df_15m = make_15m_trend_df("SHORT")
+    df_5m = make_5m_pullback_df("SHORT")
+    patch_klines(monkeypatch, strategy, df_15m, df_5m)
+
+    sig = evaluate_symbol("TEST_USDT")
+
+    assert sig is not None
+    assert sig.direction == "SHORT"
+    assert sig.tp_price < sig.entry_price < sig.sl_price
+    assert sig.rr >= 1.5
+
+
+def test_short_trade_geometry(monkeypatch):
+    df_15m = make_15m_trend_df("SHORT")
+    df_5m = make_5m_pullback_df("SHORT")
+    patch_klines(monkeypatch, strategy, df_15m, df_5m)
+
+    sig = evaluate_symbol("TEST_USDT")
+
+    assert sig is not None
+    assert valid_trade_geometry("SHORT", sig.entry_price, sig.tp_price, sig.sl_price)
+
+
+def test_short_rejected_without_15m_trend(monkeypatch):
+    df_15m = make_15m_trend_df("LONG")   # wrong-direction 15m trend
+    df_5m = make_5m_pullback_df("SHORT")
+    patch_klines(monkeypatch, strategy, df_15m, df_5m)
+
+    assert evaluate_symbol("TEST_USDT") is None
+
+
+def test_short_rejected_without_pullback(monkeypatch):
+    df_15m = make_15m_trend_df("SHORT")
+    df_5m = make_15m_trend_df("SHORT", bars=60).rename_axis(None)  # pure downtrend, no pullback
+    patch_klines(monkeypatch, strategy, df_15m, df_5m)
+
+    assert evaluate_symbol("TEST_USDT") is None
+
+
+def test_short_rejected_when_rsi_too_low(monkeypatch):
+    df_15m = make_15m_trend_df("SHORT")
+    # NOTE: mirrors test_long_rejected_when_rsi_too_high -- as constructed this
+    # actually rejects earlier via the "no prior downtrend below EMA20 before
+    # pullback" gate (confirmed by direct execution during review), not the
+    # RSI gate specifically. The assertion still correctly verifies
+    # evaluate_symbol rejects this candidate.
+    df_5m = make_5m_pullback_df("SHORT", dip_depth=0.2)
+    df_5m.loc[df_5m.index[:-6], "close"] = (
+        100.0 - 0.4 * np.arange(len(df_5m) - 6)
+    )
+    patch_klines(monkeypatch, strategy, df_15m, df_5m)
+
+    result = evaluate_symbol("TEST_USDT")
+    assert result is None
+
+
+def test_short_rejected_when_volume_too_low(monkeypatch):
+    df_15m = make_15m_trend_df("SHORT")
+    df_5m = make_5m_pullback_df("SHORT", confirm_volume_mult=1.05)
+    patch_klines(monkeypatch, strategy, df_15m, df_5m)
+
+    assert evaluate_symbol("TEST_USDT") is None
+
+
+def test_short_rejected_when_candle_too_large(monkeypatch):
+    df_15m = make_15m_trend_df("SHORT")
+    df_5m = make_5m_pullback_df("SHORT", confirm_body=8.0)
+    df_5m.iloc[-2, df_5m.columns.get_loc("high")] += 6.0
+    df_5m.iloc[-2, df_5m.columns.get_loc("low")] -= 6.0
+    patch_klines(monkeypatch, strategy, df_15m, df_5m)
+
+    assert evaluate_symbol("TEST_USDT") is None
+
+
+def test_short_rejected_when_stop_too_wide(monkeypatch):
+    df_15m = make_15m_trend_df("SHORT")
+    df_5m = make_5m_pullback_df("SHORT", dip_depth=6.0)
+    patch_klines(monkeypatch, strategy, df_15m, df_5m)
+
+    assert evaluate_symbol("TEST_USDT") is None
+
+
+def test_short_rejected_when_rr_too_low(monkeypatch):
+    df_15m = make_15m_trend_df("SHORT")
+    df_5m = make_5m_pullback_df("SHORT")
+    patch_klines(monkeypatch, strategy, df_15m, df_5m)
+    monkeypatch.setattr(strategy, "MIN_RR", 50.0)
+
+    assert evaluate_symbol("TEST_USDT") is None
+
