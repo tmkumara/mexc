@@ -60,6 +60,9 @@ STRATEGY_NAME: str = os.getenv(
     "Liquidation-Aware 1m Scalp (v14)",
 )
 
+# ── Base signal selection ───────────────────────────────────────────
+BASE_SIGNAL: str = os.getenv("BASE_SIGNAL", "ema_confluence")   # "ema_confluence" | "nw_ribbon"
+
 # ── Base signal (1m EMA/RSI/VWAP/volume) ────────────────────────────
 SCALP_TF: str               = os.getenv("SCALP_TF", "1m")
 SCALP_KLINE_COUNT: int      = int(os.getenv("SCALP_KLINE_COUNT", "100"))
@@ -73,6 +76,19 @@ RSI_SHORT_MIN: float          = float(os.getenv("RSI_SHORT_MIN", "32"))
 RSI_SHORT_MAX: float          = float(os.getenv("RSI_SHORT_MAX", "50"))
 SCALP_VOLUME_MIN_MULT: float  = float(os.getenv("SCALP_VOLUME_MIN_MULT", "1.3"))
 SCALP_VOLUME_MA_BARS: int     = int(os.getenv("SCALP_VOLUME_MA_BARS", "20"))
+
+# ── Base signal (nw_ribbon: Nadaraya-Watson kernel + EMA ribbon) ────
+# Only used when BASE_SIGNAL=nw_ribbon. NW_KLINE_COUNT is separate from
+# SCALP_KLINE_COUNT so ema_confluence's cumulative-VWAP anchor never shifts.
+NW_H: float            = float(os.getenv("NW_H", "8.0"))
+NW_R: float            = float(os.getenv("NW_R", "8.0"))
+NW_LAG: int            = int(os.getenv("NW_LAG", "2"))
+NW_SMOOTH: bool        = os.getenv("NW_SMOOTH", "false").lower() == "true"
+EMA_RIBBON_FAST: int   = int(os.getenv("EMA_RIBBON_FAST", "20"))
+EMA_RIBBON_MID: int    = int(os.getenv("EMA_RIBBON_MID", "50"))
+EMA_RIBBON_SLOW: int   = int(os.getenv("EMA_RIBBON_SLOW", "100"))
+EMA_RIBBON_TREND: int  = int(os.getenv("EMA_RIBBON_TREND", "200"))
+NW_KLINE_COUNT: int    = int(os.getenv("NW_KLINE_COUNT", "260"))
 
 # ── Profit target / risk (price move = margin target / leverage) ───
 TARGET_MARGIN_PROFIT: float  = float(os.getenv("TARGET_MARGIN_PROFIT", "0.135"))
