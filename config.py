@@ -54,96 +54,101 @@ MIN_24H_VOLUME_USD: float            = float(os.getenv("MIN_24H_VOLUME_USD", str
 MAX_SPREAD_PCT: float                = float(os.getenv("MAX_SPREAD_PCT", "0.35"))
 MIN_PRICE_CHANGE_24H_PCT: float      = float(os.getenv("MIN_PRICE_CHANGE_24H_PCT", "0.0"))
 
-# ── Strategy: Liquidation-Aware 1m Scalp (v14) ──────────────────────
+# ── Strategy: Simple Supertrend Pullback v1 ─────────────────────────
 STRATEGY_NAME: str = os.getenv(
     "STRATEGY_NAME",
-    "Liquidation-Aware 1m Scalp (v14)",
+    "Simple Supertrend Pullback v1",
 )
 
-# ── Base signal selection ───────────────────────────────────────────
-BASE_SIGNAL: str = os.getenv("BASE_SIGNAL", "ema_confluence")   # "ema_confluence" | "nw_ribbon"
+TREND_TF: str = os.getenv("TREND_TF", "15m")
+ENTRY_TF: str = os.getenv("ENTRY_TF", "5m")
 
-# ── Base signal (1m EMA/RSI/VWAP/volume) ────────────────────────────
-SCALP_TF: str               = os.getenv("SCALP_TF", "1m")
-SCALP_KLINE_COUNT: int      = int(os.getenv("SCALP_KLINE_COUNT", "100"))
-EMA_FAST: int                = int(os.getenv("EMA_FAST", "9"))
-EMA_MID: int                 = int(os.getenv("EMA_MID", "21"))
-EMA_SLOW: int                = int(os.getenv("EMA_SLOW", "50"))
-RSI_PERIOD: int               = int(os.getenv("RSI_PERIOD", "14"))
-RSI_LONG_MIN: float           = float(os.getenv("RSI_LONG_MIN", "50"))
-RSI_LONG_MAX: float           = float(os.getenv("RSI_LONG_MAX", "68"))
-RSI_SHORT_MIN: float          = float(os.getenv("RSI_SHORT_MIN", "32"))
-RSI_SHORT_MAX: float          = float(os.getenv("RSI_SHORT_MAX", "50"))
-SCALP_VOLUME_MIN_MULT: float  = float(os.getenv("SCALP_VOLUME_MIN_MULT", "1.3"))
-SCALP_VOLUME_MA_BARS: int     = int(os.getenv("SCALP_VOLUME_MA_BARS", "20"))
+TREND_KLINE_COUNT: int = int(os.getenv("TREND_KLINE_COUNT", "260"))
+ENTRY_KLINE_COUNT: int = int(os.getenv("ENTRY_KLINE_COUNT", "120"))
 
-# ── Base signal (nw_ribbon: Nadaraya-Watson kernel + EMA ribbon) ────
-# Only used when BASE_SIGNAL=nw_ribbon. NW_KLINE_COUNT is separate from
-# SCALP_KLINE_COUNT so ema_confluence's cumulative-VWAP anchor never shifts.
-NW_H: float            = float(os.getenv("NW_H", "8.0"))
-NW_R: float            = float(os.getenv("NW_R", "8.0"))
-NW_LAG: int            = int(os.getenv("NW_LAG", "2"))
-NW_SMOOTH: bool        = os.getenv("NW_SMOOTH", "false").lower() == "true"
-EMA_RIBBON_FAST: int   = int(os.getenv("EMA_RIBBON_FAST", "20"))
-EMA_RIBBON_MID: int    = int(os.getenv("EMA_RIBBON_MID", "50"))
-EMA_RIBBON_SLOW: int   = int(os.getenv("EMA_RIBBON_SLOW", "100"))
-EMA_RIBBON_TREND: int  = int(os.getenv("EMA_RIBBON_TREND", "200"))
-NW_KLINE_COUNT: int    = int(os.getenv("NW_KLINE_COUNT", "260"))
+TREND_EMA_PERIOD: int = int(os.getenv("TREND_EMA_PERIOD", "200"))
+ENTRY_EMA_PERIOD: int = int(os.getenv("ENTRY_EMA_PERIOD", "20"))
 
-# ── Profit target / risk (price move = margin target / leverage) ───
-TARGET_MARGIN_PROFIT: float  = float(os.getenv("TARGET_MARGIN_PROFIT", "0.135"))
-MIN_RR: float                 = float(os.getenv("MIN_RR", "1.5"))
-MAX_SL_PRICE_PCT: float       = float(os.getenv("MAX_SL_PRICE_PCT", "0.0045"))
-BREAKEVEN_TRIGGER_PCT: float  = float(os.getenv("BREAKEVEN_TRIGGER_PCT", "0.5"))
+RSI_PERIOD: int = int(os.getenv("RSI_PERIOD", "14"))
+RSI_LONG_MIN: float = float(os.getenv("RSI_LONG_MIN", "50"))
+RSI_LONG_MAX: float = float(os.getenv("RSI_LONG_MAX", "68"))
+RSI_SHORT_MIN: float = float(os.getenv("RSI_SHORT_MIN", "32"))
+RSI_SHORT_MAX: float = float(os.getenv("RSI_SHORT_MAX", "50"))
 
-# ── Liquidation cluster estimator (see liq_estimator.py) ────────────
-_LEVERAGE_TIERS_DEFAULT = "10:0.20,20:0.25,25:0.20,50:0.20,75:0.10,100:0.05"
-LEVERAGE_TIERS: dict[int, float] = {}
-for _pair in os.getenv("LEVERAGE_TIERS", _LEVERAGE_TIERS_DEFAULT).split(","):
-    _lev_str, _weight_str = _pair.split(":")
-    LEVERAGE_TIERS[int(_lev_str)] = float(_weight_str)
+ATR_PERIOD: int = int(os.getenv("ATR_PERIOD", "14"))
 
-MMR_BUFFER: float            = float(os.getenv("MMR_BUFFER", "0.006"))
-BUCKET_PCT: float             = float(os.getenv("BUCKET_PCT", "0.0005"))
-CLUSTER_DECAY: float          = float(os.getenv("CLUSTER_DECAY", "0.97"))
-CLUSTER_LOOKAROUND: float     = float(os.getenv("CLUSTER_LOOKAROUND", "0.02"))
-CLUSTER_MIN_PERCENTILE: float = float(os.getenv("CLUSTER_MIN_PERCENTILE", "90"))
-OI_POLL_SEC: int              = int(os.getenv("OI_POLL_SEC", "60"))
+TREND_SUPERTREND_ATR_PERIOD: int = int(os.getenv("TREND_SUPERTREND_ATR_PERIOD", "10"))
+TREND_SUPERTREND_MULTIPLIER: float = float(os.getenv("TREND_SUPERTREND_MULTIPLIER", "3.0"))
 
-# ── Funding filter ───────────────────────────────────────────────────
-FUNDING_EXTREME: float        = float(os.getenv("FUNDING_EXTREME", "0.0004"))
+ENTRY_SUPERTREND_ATR_PERIOD: int = int(os.getenv("ENTRY_SUPERTREND_ATR_PERIOD", "10"))
+ENTRY_SUPERTREND_MULTIPLIER: float = float(os.getenv("ENTRY_SUPERTREND_MULTIPLIER", "2.0"))
 
-# ── Armed-setup lifetime (in 1m bars) ────────────────────────────────
-SCALP_ARM_MAX_AGE_BARS: int   = int(os.getenv("SCALP_ARM_MAX_AGE_BARS", "10"))
+VOLUME_MA_PERIOD: int = int(os.getenv("VOLUME_MA_PERIOD", "20"))
+MIN_VOLUME_MULTIPLIER: float = float(os.getenv("MIN_VOLUME_MULTIPLIER", "1.2"))
 
-# ── Scan cadence ─────────────────────────────────────────────────────
-SCALP_SCAN_INTERVAL_MINUTES: int = int(os.getenv("SCALP_SCAN_INTERVAL_MINUTES", "1"))
+PULLBACK_LOOKBACK_BARS: int = int(os.getenv("PULLBACK_LOOKBACK_BARS", "3"))
 
-# ── Trade params ───────────────────────────────────────────────────
+MAX_EMA_DISTANCE_PCT: float = float(os.getenv("MAX_EMA_DISTANCE_PCT", "0.003"))
+
+MAX_CONFIRMATION_CANDLE_ATR: float = float(os.getenv("MAX_CONFIRMATION_CANDLE_ATR", "1.8"))
+
+SL_ATR_BUFFER_MULTIPLIER: float = float(os.getenv("SL_ATR_BUFFER_MULTIPLIER", "0.10"))
+
+TARGET_ROI_PCT: float = float(os.getenv("TARGET_ROI_PCT", "15.0"))
+MAX_SL_ROI_PCT: float = float(os.getenv("MAX_SL_ROI_PCT", "10.0"))
+
 LEVERAGE: int = int(os.getenv("LEVERAGE", "20"))
 
+TP_PRICE_PCT: float = TARGET_ROI_PCT / 100.0 / LEVERAGE
+MAX_SL_PRICE_PCT: float = MAX_SL_ROI_PCT / 100.0 / LEVERAGE
+
+MIN_RR: float = float(os.getenv("MIN_RR", "1.5"))
+
+SCAN_INTERVAL_MINUTES: int = int(os.getenv("SCAN_INTERVAL_MINUTES", "5"))
+
+MAX_DAILY_SIGNALS: int = int(os.getenv("MAX_DAILY_SIGNALS", "3"))
+MIN_DAILY_SIGNAL_GAP_MINUTES: int = int(os.getenv("MIN_DAILY_SIGNAL_GAP_MINUTES", "60"))
+
+MAX_CONCURRENT_SIGNALS: int = int(os.getenv("MAX_CONCURRENT_SIGNALS", "2"))
+
+MAX_ACTIVE_LONG_SIGNALS: int = int(os.getenv("MAX_ACTIVE_LONG_SIGNALS", "1"))
+MAX_ACTIVE_SHORT_SIGNALS: int = int(os.getenv("MAX_ACTIVE_SHORT_SIGNALS", "1"))
+
+SIGNALS_PER_SCAN: int = int(os.getenv("SIGNALS_PER_SCAN", "1"))
+SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "240"))
+
+SIGNAL_EXPIRE_HOURS: int = int(os.getenv("SIGNAL_EXPIRE_HOURS", "6"))
+
+SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "4"))
+
+# ── BTC market safety filter ─────────────────────────────────────────
+ENABLE_BTC_FILTER: bool = os.getenv("ENABLE_BTC_FILTER", "true").lower() == "true"
+BTC_FILTER_SYMBOL: str = os.getenv("BTC_FILTER_SYMBOL", "BTC_USDT")
+BTC_FILTER_TF: str = os.getenv("BTC_FILTER_TF", "15m")
+BTC_MAX_OPPOSING_MOVE_PCT: float = float(os.getenv("BTC_MAX_OPPOSING_MOVE_PCT", "0.20"))
+BTC_MAX_SINGLE_CANDLE_MOVE_PCT: float = float(os.getenv("BTC_MAX_SINGLE_CANDLE_MOVE_PCT", "0.60"))
+BTC_MAX_THREE_CANDLE_MOVE_PCT: float = float(os.getenv("BTC_MAX_THREE_CANDLE_MOVE_PCT", "1.20"))
+
+# ── Fee / slippage estimates (backtest only) ─────────────────────────
+ESTIMATED_ENTRY_FEE_PCT: float = float(os.getenv("ESTIMATED_ENTRY_FEE_PCT", "0.02"))
+ESTIMATED_EXIT_FEE_PCT: float = float(os.getenv("ESTIMATED_EXIT_FEE_PCT", "0.02"))
+ESTIMATED_SLIPPAGE_PCT: float = float(os.getenv("ESTIMATED_SLIPPAGE_PCT", "0.01"))
+
+# ── Dry run ────────────────────────────────────────────────────────
+DRY_RUN: bool = os.getenv("DRY_RUN", "true").lower() == "true"
+DRY_RUN_SAVE_SIGNALS: bool = os.getenv("DRY_RUN_SAVE_SIGNALS", "false").lower() == "true"
+
 # ── Scheduler ──────────────────────────────────────────────────────
-OUTCOME_CHECK_MINUTES: int   = int(os.getenv("OUTCOME_CHECK_MINUTES", "1"))
+OUTCOME_CHECK_MINUTES: int = int(os.getenv("OUTCOME_CHECK_MINUTES", "1"))
 COIN_REFRESH_CRON_HOURS: str = os.getenv("COIN_REFRESH_CRON_HOURS", f"*/{COIN_REFRESH_HOURS}")
 
-SIGNALS_PER_SCAN: int        = int(os.getenv("SIGNALS_PER_SCAN",        "1"))
-MAX_CONCURRENT_SIGNALS: int  = int(os.getenv("MAX_CONCURRENT_SIGNALS",  "5"))
-SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "240"))
-SIGNAL_EXPIRE_HOURS: int     = int(os.getenv("SIGNAL_EXPIRE_HOURS",     "4"))
-SCAN_WORKERS: int            = int(os.getenv("SCAN_WORKERS",            "4"))
-
-# Daily signal cap
-MAX_DAILY_SIGNALS: int              = int(os.getenv("MAX_DAILY_SIGNALS",              "3"))
-MIN_DAILY_SIGNAL_GAP_MINUTES: int   = int(os.getenv("MIN_DAILY_SIGNAL_GAP_MINUTES",   "180"))
-
-# ── APScheduler ────────────────────────────────────────────────────
 SCHEDULER_MISFIRE_GRACE_SECONDS: int = int(os.getenv("SCHEDULER_MISFIRE_GRACE_SECONDS", "30"))
-SCHEDULER_MAX_INSTANCES: int         = int(os.getenv("SCHEDULER_MAX_INSTANCES",         "1"))
+SCHEDULER_MAX_INSTANCES: int = int(os.getenv("SCHEDULER_MAX_INSTANCES", "1"))
 
 # ── Log ────────────────────────────────────────────────────────────
-LOG_FILE: str                    = os.getenv("LOG_FILE",              "mexc_bot.log")
+LOG_FILE: str = os.getenv("LOG_FILE", "mexc_bot.log")
 ENABLE_LOG_BACKUP_ON_START: bool = os.getenv("ENABLE_LOG_BACKUP_ON_START", "true").lower() == "true"
-LOG_BACKUP_DIR: str              = os.getenv("LOG_BACKUP_DIR",        "logs/archive")
+LOG_BACKUP_DIR: str = os.getenv("LOG_BACKUP_DIR", "logs/archive")
 
 # ── MEXC REST API ──────────────────────────────────────────────────
 MEXC_BASE_URL: str = os.getenv("MEXC_BASE_URL", "https://contract.mexc.com/api/v1")
@@ -151,12 +156,12 @@ MEXC_BASE_URL: str = os.getenv("MEXC_BASE_URL", "https://contract.mexc.com/api/v
 # ── Database ───────────────────────────────────────────────────────
 DB_PATH: str = os.getenv("DB_PATH", "signals.db")
 
-# ── Candle minutes (derived from SCALP_TF) ─────────────────────────
+# ── Candle minutes (derived from ENTRY_TF) ──────────────────────────
 _TF_MINUTES: dict[str, int] = {
     "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
     "1h": 60, "4h": 240, "1d": 1440,
 }
-CANDLE_MINUTES: int = int(os.getenv("CANDLE_MINUTES", str(_TF_MINUTES.get(SCALP_TF, 1))))
+CANDLE_MINUTES: int = int(os.getenv("CANDLE_MINUTES", str(_TF_MINUTES.get(ENTRY_TF, 5))))
 
 # ── MEXC interval map ──────────────────────────────────────────────
 MEXC_INTERVAL_MAP: dict[str, str] = {
