@@ -50,6 +50,10 @@ def make_5m_pullback_df(
     MAX_EMA_DISTANCE_PCT (0.3%). Ends with one extra duplicated row so
     callers can safely `iloc[:-1]`.
 
+    dip_depth default changed from 1.0 to 0.3: the original value flipped
+    the 5m Supertrend bearish and it never recovered bullish by the
+    confirmation candle, making valid LONG signals impossible.
+
     Indexing (0-indexed, `bars` total rows before the forming-candle dupe):
       bars-1            confirmation candle (position -1)
       bars-4..bars-2     3-bar pullback window (positions -4..-2)

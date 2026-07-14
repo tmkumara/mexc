@@ -63,10 +63,15 @@ def test_long_rejected_without_pullback(monkeypatch):
 
 def test_long_rejected_when_rsi_too_high(monkeypatch):
     df_15m = make_15m_trend_df("LONG")
-    # A much steeper pre-pullback ramp pushes RSI toward the overbought
-    # end, past the 68 ceiling, even after the shallow pullback.
+    # NOTE: this fixture is intended to exercise the RSI-too-high rejection,
+    # but as constructed it actually rejects earlier via the "no prior
+    # uptrend above EMA20 before pullback" gate (confirmed by direct execution
+    # during review). The assertion below still correctly verifies
+    # evaluate_symbol rejects this candidate; it does not isolate the RSI gate
+    # specifically. A fixture redesign (recomputing the confirmation candle after
+    # mutating history) would be needed to isolate the RSI gate, which is
+    # out of scope for numeric-constant tuning.
     df_5m = make_5m_pullback_df("LONG", dip_depth=0.2)
-    # Steepen the baseline slope in place to drive RSI up further.
     df_5m.loc[df_5m.index[:-6], "close"] = (
         100.0 + 0.4 * np.arange(len(df_5m) - 6)
     )
