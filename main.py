@@ -281,10 +281,11 @@ async def check_outcomes(app: Application) -> None:
         if (now - generated).total_seconds() > SIGNAL_EXPIRE_HOURS * 3600:
             db.update_signal_outcome(sig["id"], "expired", 0.0)
             logger.info("Signal %s expired (%s)", sig["id"], symbol)
-            try:
-                await tg.notify_outcome(app, {**sig, "status": "expired", "pnl_roi": 0.0})
-            except Exception as e:
-                logger.error("Failed to notify expiry for %s: %s", symbol, e)
+            if not DRY_RUN:
+                try:
+                    await tg.notify_outcome(app, {**sig, "status": "expired", "pnl_roi": 0.0})
+                except Exception as e:
+                    logger.error("Failed to notify expiry for %s: %s", symbol, e)
             continue
 
         elapsed_min = max((now - generated).total_seconds() / 60, CANDLE_MINUTES)
@@ -308,10 +309,11 @@ async def check_outcomes(app: Application) -> None:
         db.update_signal_outcome(sig["id"], outcome, pnl)
         logger.info("Signal %s %s (%s) %+.1f%%", sig["id"], outcome.upper(), symbol, pnl)
 
-        try:
-            await tg.notify_outcome(app, {**sig, "status": outcome, "pnl_roi": pnl})
-        except Exception as e:
-            logger.error("Failed to notify %s for %s: %s", outcome, symbol, e)
+        if not DRY_RUN:
+            try:
+                await tg.notify_outcome(app, {**sig, "status": outcome, "pnl_roi": pnl})
+            except Exception as e:
+                logger.error("Failed to notify %s for %s: %s", outcome, symbol, e)
 
 
 # ── Main ──────────────────────────────────────────────────────────
