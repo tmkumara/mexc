@@ -14,9 +14,8 @@ Set in .env:
 This dashboard reads from SQLite directly and shows:
     - Signal performance
     - Recent signals
-    - Pending SMC sweep/order-block setups
+    - Active LONG/SHORT signal counts
     - Current strategy configuration
-    - Hybrid SMC/MSS confirmation configuration
 
 Frontend communication:
     - Primary: WebSocket /ws?token=<WEBUI_TOKEN>
@@ -218,128 +217,53 @@ def get_recent_signals(limit: int = 30) -> list[dict]:
     return rows
 
 
-def get_pending_setups(limit: int = 30) -> list[dict]:
-    if not _table_exists("pending_setups"):
-        return []
-
-    rows = _query(
-        """
-        SELECT
-            id,
-            symbol,
-            direction,
-            status,
-            trend_tf,
-            entry_tf,
-            sweep_type,
-            sweep_level,
-            ob_type,
-            ob_low,
-            ob_high,
-            target_price,
-            sl_price,
-            rr_estimate,
-            score,
-            setup_time,
-            expires_at,
-            created_at,
-            updated_at,
-            fired_signal_id
-        FROM pending_setups
-        ORDER BY created_at DESC
-        LIMIT ?
-        """,
-        (limit,),
-    )
-
-    for row in rows:
-        row["created_display"] = _iso_to_display(row.get("created_at"))
-        row["expires_display"] = _iso_to_display(row.get("expires_at"))
-        row["level_display"] = _format_price(row.get("sweep_level"))
-        row["zone_low_display"] = _format_price(row.get("ob_low"))
-        row["zone_high_display"] = _format_price(row.get("ob_high"))
-        row["tp_display"] = _format_price(row.get("target_price"))
-        row["sl_display"] = _format_price(row.get("sl_price"))
-
-    return rows
-
-
 def get_runtime_status() -> dict:
-    waiting_setups = _count_table("pending_setups", "status = 'waiting'")
-    expired_setups = _count_table("pending_setups", "status = 'expired'")
-    invalidated_setups = _count_table("pending_setups", "status = 'invalidated'")
-    fired_setups = _count_table("pending_setups", "status = 'fired'")
-    active_signals = _count_table("signals", "status = 'pending'")
+    active_long  = _count_table("signals", "status = 'pending' AND direction = 'LONG'")
+    active_short = _count_table("signals", "status = 'pending' AND direction = 'SHORT'")
 
     return {
         "db_exists": _db_exists(),
-        "waiting_setups": waiting_setups,
-        "expired_setups": expired_setups,
-        "invalidated_setups": invalidated_setups,
-        "fired_setups": fired_setups,
-        "active_signals": active_signals,
+        "active_long_signals": active_long,
+        "active_short_signals": active_short,
+        "active_signals": active_long + active_short,
     }
 
 
 def get_strategy_config() -> dict:
-    """Return dashboard-safe strategy/runtime configuration for Hybrid SMC Pro."""
+    """Return dashboard-safe strategy/runtime configuration for Simple Supertrend Pullback v1."""
     return {
-        "strategy": _safe_config_value("STRATEGY_NAME", "Hybrid SMC Pro"),
+        "strategy": _safe_config_value("STRATEGY_NAME", "Simple Supertrend Pullback v1"),
         "trend_tf": _safe_config_value("TREND_TF", "—"),
         "entry_tf": _safe_config_value("ENTRY_TF", "—"),
-        "htf_trend_tf": _safe_config_value("HTF_TREND_TF", "—"),
+        "trend_ema_period": _safe_config_value("TREND_EMA_PERIOD", "—"),
+        "entry_ema_period": _safe_config_value("ENTRY_EMA_PERIOD", "—"),
+        "trend_supertrend_atr_period": _safe_config_value("TREND_SUPERTREND_ATR_PERIOD", "—"),
+        "trend_supertrend_multiplier": _safe_config_value("TREND_SUPERTREND_MULTIPLIER", "—"),
+        "entry_supertrend_atr_period": _safe_config_value("ENTRY_SUPERTREND_ATR_PERIOD", "—"),
+        "entry_supertrend_multiplier": _safe_config_value("ENTRY_SUPERTREND_MULTIPLIER", "—"),
+        "rsi_long_range": f"{_safe_config_value('RSI_LONG_MIN', '—')}-{_safe_config_value('RSI_LONG_MAX', '—')}",
+        "rsi_short_range": f"{_safe_config_value('RSI_SHORT_MIN', '—')}-{_safe_config_value('RSI_SHORT_MAX', '—')}",
+        "min_volume_multiplier": _safe_config_value("MIN_VOLUME_MULTIPLIER", "—"),
+
         "top_n_coins": _safe_config_value("TOP_N_COINS", "—"),
         "min_volume_usd": _safe_config_value("COIN_POOL_MIN_VOLUME_USD", "—"),
-        "entry_kline_count": _safe_config_value("ENTRY_KLINE_COUNT", "—"),
-        "monitor_kline_count": _safe_config_value("MONITOR_KLINE_COUNT", "—"),
 
-        "min_score": _safe_config_value("MIN_SETUP_SCORE", "—"),
-        "signals_per_scan": _safe_config_value("SIGNALS_PER_SCAN", "—"),
+        "target_roi_pct": _safe_config_value("TARGET_ROI_PCT", "—"),
+        "max_sl_roi_pct": _safe_config_value("MAX_SL_ROI_PCT", "—"),
+        "min_rr": _safe_config_value("MIN_RR", "—"),
+        "leverage": _safe_config_value("LEVERAGE", "—"),
+
+        "max_daily_signals": _safe_config_value("MAX_DAILY_SIGNALS", "—"),
+        "min_daily_signal_gap_minutes": _safe_config_value("MIN_DAILY_SIGNAL_GAP_MINUTES", "—"),
         "max_concurrent_signals": _safe_config_value("MAX_CONCURRENT_SIGNALS", "—"),
+        "max_active_long_signals": _safe_config_value("MAX_ACTIVE_LONG_SIGNALS", "—"),
+        "max_active_short_signals": _safe_config_value("MAX_ACTIVE_SHORT_SIGNALS", "—"),
         "cooldown_minutes": _safe_config_value("SIGNAL_COOLDOWN_MINUTES", "—"),
         "scan_workers": _safe_config_value("SCAN_WORKERS", "—"),
 
-        "max_new_setups_per_scan": _safe_config_value("MAX_NEW_SETUPS_PER_SCAN", "—"),
-        "max_setups_same_direction_per_scan": _safe_config_value("MAX_SETUPS_SAME_DIRECTION_PER_SCAN", "—"),
-        "max_waiting_setups_total": _safe_config_value("MAX_WAITING_SETUPS_TOTAL", "—"),
-        "max_waiting_setups_same_direction": _safe_config_value("MAX_WAITING_SETUPS_SAME_DIRECTION", "—"),
-        "setup_monitor_limit": _safe_config_value("SETUP_MONITOR_LIMIT", "—"),
-
-        "min_rr": _safe_config_value("MIN_STRUCTURE_RR", "—"),
-        "max_rr": _safe_config_value("MAX_STRUCTURE_RR", "—"),
-        "min_sl_pct": _safe_config_value("MIN_SL_PCT", "—"),
-        "max_sl_pct": _safe_config_value("MAX_SL_PCT", "—"),
-        "leverage": _safe_config_value("LEVERAGE", "—"),
-        "min_tp_roi_pct": _safe_config_value("MIN_TP_ROI_PCT", "—"),
-        "target_tp_roi_pct": _safe_config_value("TARGET_TP_ROI_PCT", "—"),
-        "max_sl_roi_pct": _safe_config_value("MAX_SL_ROI_PCT", "—"),
-        "max_daily_signals": _safe_config_value("MAX_DAILY_SIGNALS", "—"),
-        "min_daily_signal_gap_minutes": _safe_config_value("MIN_DAILY_SIGNAL_GAP_MINUTES", "—"),
-
-        "atr_period": _safe_config_value("ATR_PERIOD", "—"),
-        "min_atr_pct": _safe_config_value("MIN_ATR_PCT", "—"),
-        "max_atr_pct": _safe_config_value("MAX_ATR_PCT", "—"),
-        "atr_sl_multiplier": _safe_config_value("ATR_SL_MULTIPLIER", "—"),
-        "atr_stop_floor_multiplier": _safe_config_value("ATR_STOP_FLOOR_MULTIPLIER", "—"),
-
-        "max_ob_distance_pct": _safe_config_value("MAX_OB_DISTANCE_PCT", "—"),
-        "max_ob_distance_atr": _safe_config_value("MAX_OB_DISTANCE_ATR", "—"),
-        "expire_if_price_away_pct": _safe_config_value("EXPIRE_IF_PRICE_AWAY_PCT", "—"),
-        "expire_if_price_away_atr": _safe_config_value("EXPIRE_IF_PRICE_AWAY_ATR", "—"),
-
-        "require_mss_break_entry": _safe_config_value("REQUIRE_MSS_BREAK_ENTRY", False),
-        "mss_break_lookback_candles": _safe_config_value("MSS_BREAK_LOOKBACK_CANDLES", "—"),
-        "ob_entry_quality_check": _safe_config_value("OB_ENTRY_QUALITY_CHECK", False),
-        "revalidate_before_fire": _safe_config_value("REVALIDATE_BEFORE_FIRE", False),
-        "require_trend_candle_confirmation": _safe_config_value("REQUIRE_TREND_CANDLE_CONFIRMATION", False),
-        "trend_confirm_tf": _safe_config_value("TREND_CONFIRM_TF", _safe_config_value("TREND_TF", "—")),
-
-        "enable_htf_filter": _safe_config_value("ENABLE_HTF_FILTER", False),
-        "enable_entry_ema_filter": _safe_config_value("ENABLE_ENTRY_EMA_FILTER", False),
-        "enable_atr_filter": _safe_config_value("ENABLE_ATR_FILTER", False),
-        "enable_volume_filter": _safe_config_value("ENABLE_VOLUME_FILTER", False),
         "enable_btc_filter": _safe_config_value("ENABLE_BTC_FILTER", False),
         "crypto_futures_only": _safe_config_value("CRYPTO_FUTURES_ONLY", True),
+        "dry_run": _safe_config_value("DRY_RUN", True),
     }
 
 
@@ -353,7 +277,6 @@ def build_payload() -> dict:
         "week": get_stats(week),
         "alltime": get_stats(),
         "recent": get_recent_signals(30),
-        "setups": get_pending_setups(30),
         "runtime": get_runtime_status(),
         "config": get_strategy_config(),
         "server_time": now.strftime("%Y-%m-%d %H:%M UTC"),
@@ -420,7 +343,7 @@ HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hybrid SMC Pro Dashboard</title>
+<title>Supertrend Pullback Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -588,7 +511,7 @@ body {
 }
 
 .runtime-grid {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   margin-bottom: 18px;
 }
 
@@ -813,8 +736,8 @@ tr:hover td {
 <header class="header">
   <div class="header-inner">
     <div>
-      <div class="logo"><span>📡</span> Hybrid SMC Pro Bot</div>
-      <div class="logo-sub">15m Structure + 5m Sweep/OB Retest + MSS Break Confirmation</div>
+      <div class="logo"><span>📡</span> Supertrend Pullback Bot</div>
+      <div class="logo-sub">15m Trend (EMA200 + Supertrend) + 5m EMA20 Pullback Reclaim</div>
     </div>
     <div class="meta">
       <span class="status-pill connecting" id="wsStatus"><span class="status-dot"></span>Connecting</span>
@@ -853,47 +776,18 @@ tr:hover td {
 
   <div class="section-title">Runtime State</div>
   <div class="grid runtime-grid">
-    <div class="card"><div class="card-label">Waiting OB Retests</div><div class="card-value blue" id="r-waiting">—</div><div class="card-small">SMC setups waiting for confirmation</div></div>
+    <div class="card"><div class="card-label">Active LONG</div><div class="card-value green" id="r-active-long">—</div><div class="card-small">of max active LONG signals</div></div>
+    <div class="card"><div class="card-label">Active SHORT</div><div class="card-value red" id="r-active-short">—</div><div class="card-small">of max active SHORT signals</div></div>
     <div class="card"><div class="card-label">Active Signals</div><div class="card-value yellow" id="r-active">—</div><div class="card-small">Open signal outcomes</div></div>
-    <div class="card"><div class="card-label">Expired Setups</div><div class="card-value muted" id="r-expired">—</div><div class="card-small">Stale or far from OB</div></div>
-    <div class="card"><div class="card-label">Invalidated Setups</div><div class="card-value red" id="r-invalidated">—</div><div class="card-small">SL touched before entry</div></div>
   </div>
 
   <div class="section-title">Current Strategy Setup</div>
   <div class="grid config-grid">
     <div class="card"><div class="card-label">Timeframes</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">Trend / Entry</div></div>
-    <div class="card"><div class="card-label">Quality Filter</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">Min score / max new setups</div></div>
-    <div class="card"><div class="card-label">Entry Confirm</div><div class="card-value green" id="cfg-confirm">—</div><div class="card-small" id="cfg-confirm-sub">—</div></div>
+    <div class="card"><div class="card-label">RSI Filter</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">Long / Short RSI range</div></div>
+    <div class="card"><div class="card-label">BTC Filter</div><div class="card-value green" id="cfg-confirm">—</div><div class="card-small" id="cfg-confirm-sub">—</div></div>
     <div class="card"><div class="card-label">Risk Model</div><div class="card-value orange" id="cfg-rr">—</div><div class="card-small" id="cfg-rr-sub">—</div></div>
   </div>
-
-  <section class="panel">
-    <div class="panel-head">
-      <div>
-        <div class="panel-title">Pending / Recent SMC Setups</div>
-        <div class="panel-subtitle">Liquidity sweep + order-block setups waiting, fired, expired, or invalidated</div>
-      </div>
-      <span class="badge badge-config" id="setup-count">—</span>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Symbol</th>
-            <th>Dir</th>
-            <th>Status</th>
-            <th>Score</th>
-            <th>RR</th>
-            <th>Sweep / OB Zone</th>
-            <th>TP / SL</th>
-            <th>Expires</th>
-          </tr>
-        </thead>
-        <tbody id="setupRows"></tbody>
-      </table>
-    </div>
-  </section>
 
   <section class="panel">
     <div class="panel-head">
@@ -1038,7 +932,6 @@ function render() {
   renderStats();
   renderRuntime();
   renderConfig();
-  renderSetups();
   renderSignals();
 }
 
@@ -1065,10 +958,9 @@ function renderStats() {
 function renderRuntime() {
   const r = data.runtime;
 
-  set("r-waiting", r.waiting_setups);
+  set("r-active-long", r.active_long_signals);
+  set("r-active-short", r.active_short_signals);
   set("r-active", r.active_signals);
-  set("r-expired", r.expired_setups);
-  set("r-invalidated", r.invalidated_setups);
 }
 
 function boolLabel(v) {
@@ -1079,49 +971,11 @@ function renderConfig() {
   const c = data.config;
 
   set("cfg-tf", `${c.trend_tf} / ${c.entry_tf}`);
-  set("cfg-quality", `${c.min_score} / ${c.max_new_setups_per_scan}`);
-  set("cfg-confirm", boolLabel(c.require_mss_break_entry));
-  set("cfg-confirm-sub", `MSS ${boolLabel(c.require_mss_break_entry)} | 15m confirm ${boolLabel(c.require_trend_candle_confirmation)} | Revalidate ${boolLabel(c.revalidate_before_fire)}`);
-  set("cfg-rr", `${c.min_rr}–${c.max_rr}R`);
-  set("cfg-rr-sub", `SL ${c.min_sl_pct}%–${c.max_sl_pct}% | ATR floor ${c.atr_stop_floor_multiplier}x | ${c.leverage}x`);
-}
-
-function renderSetups() {
-  const rows = data.setups || [];
-  set("setup-count", rows.length + " rows");
-
-  const tbody = document.getElementById("setupRows");
-
-  if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="9"><div class="empty">No setups recorded yet.</div></td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = rows.map(r => {
-    const dir = (r.direction || "").toLowerCase();
-    const status = (r.status || "").toLowerCase();
-    const sym = (r.symbol || "").replace("_USDT", "/USDT");
-
-    return `
-      <tr>
-        <td>#${r.id}</td>
-        <td><strong>${sym}</strong><br><span class="muted">${r.trend_tf}/${r.entry_tf}</span></td>
-        <td><span class="badge badge-${dir}">${r.direction}</span></td>
-        <td><span class="badge badge-${status}">${r.status}</span></td>
-        <td><strong>${fmtNum(r.score)}</strong></td>
-        <td>${fmtNum(r.rr_estimate)}</td>
-        <td class="price-stack">
-          <span class="muted">Sweep</span> ${r.level_display}<br>
-          <span class="muted">OB</span> ${r.zone_low_display} - ${r.zone_high_display}
-        </td>
-        <td class="price-stack">
-          <span class="green">TP</span> ${r.tp_display}<br>
-          <span class="red">SL</span> ${r.sl_display}
-        </td>
-        <td>${r.expires_display}</td>
-      </tr>
-    `;
-  }).join("");
+  set("cfg-quality", `${c.rsi_long_range} / ${c.rsi_short_range}`);
+  set("cfg-confirm", boolLabel(c.enable_btc_filter));
+  set("cfg-confirm-sub", `Trend ${c.trend_tf} EMA${c.trend_ema_period}+ST(${c.trend_supertrend_atr_period},${c.trend_supertrend_multiplier}) | Entry ${c.entry_tf} EMA${c.entry_ema_period}+ST(${c.entry_supertrend_atr_period},${c.entry_supertrend_multiplier}) | BTC filter ${boolLabel(c.enable_btc_filter)}`);
+  set("cfg-rr", `${c.min_rr}R min`);
+  set("cfg-rr-sub", `TP ${c.target_roi_pct}% | SL ≤ ${c.max_sl_roi_pct}% | ${c.leverage}x`);
 }
 
 function renderSignals() {
