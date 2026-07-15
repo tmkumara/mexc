@@ -136,11 +136,18 @@ async def scan_and_fire_signals(app: Application) -> None:
 
     to_scan = [s for s in coins if not db.signal_exists_for_coin(s, cooldown_since)]
 
+    # One private reject-reason dict per symbol -- each is written by exactly
+    # one worker thread, so no shared-state locking is needed.
+    reject_maps = [dict() for _ in to_scan]
+
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as executor:
         results = await loop.run_in_executor(
             None,
-            lambda: list(executor.map(lambda s: strategy.evaluate_symbol(s, btc_context), to_scan)),
+            lambda: list(executor.map(
+                lambda i: strategy.evaluate_symbol(to_scan[i], btc_context, reject_sink=reject_maps[i]),
+                range(len(to_scan)),
+            )),
         )
 
     candidates = sorted(
@@ -149,8 +156,19 @@ async def scan_and_fire_signals(app: Application) -> None:
         reverse=True,
     )
 
+    reject_counts: dict[str, int] = {}
+    for m in reject_maps:
+        for k, v in m.items():
+            reject_counts[k] = reject_counts.get(k, 0) + v
+    reject_summary = ", ".join(
+        f"{k}={v}" for k, v in sorted(reject_counts.items(), key=lambda kv: -kv[1])
+    ) or "none"
+
     if not candidates:
-        logger.info("[SCAN] Done — %d coins scanned, no candidates", len(to_scan))
+        logger.info(
+            "[SCAN] Done — %d coins scanned, no candidates | rejects: %s",
+            len(to_scan), reject_summary,
+        )
         return
 
     active_long  = db.count_active_signals_by_direction("LONG")
@@ -226,8 +244,8 @@ async def scan_and_fire_signals(app: Application) -> None:
             logger.error("[SCAN] Failed to fire signal for %s: %s", sig.symbol, e, exc_info=True)
 
     logger.info(
-        "[SCAN] Done — %d/%d coins scanned, %d candidate(s), %d fired",
-        len(to_scan), len(coins), len(candidates), fired,
+        "[SCAN] Done — %d/%d coins scanned, %d candidate(s), %d fired | rejects: %s",
+        len(to_scan), len(coins), len(candidates), fired, reject_summary,
     )
 
 

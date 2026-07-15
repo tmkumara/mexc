@@ -329,13 +329,47 @@ def _score_candidate(direction: str, details: dict, rr: float) -> float:
     return round(min(100.0, max(0.0, score)), 1)
 
 
-def evaluate_symbol(symbol: str, btc_context: "BtcContext | None" = None) -> Signal | None:
+def _reason_bucket(reason: str) -> str:
+    """Collapse the free-text pullback/confirmation reject reason into a
+    stable category so scan-level rejects can be aggregated and counted."""
+    if "no prior" in reason:
+        return "no_prior_trend"
+    if "no EMA20 pullback" in reason:
+        return "no_pullback"
+    if "did not reclaim EMA20" in reason:
+        return "no_reclaim"
+    if "supertrend not" in reason:
+        return "supertrend_mismatch"
+    if "confirmation candle not" in reason:
+        return "wrong_candle_color"
+    if reason.startswith("RSI"):
+        return "rsi_out_of_band"
+    if reason.startswith("volume ratio"):
+        return "low_volume"
+    if "ATR" in reason:
+        return "candle_too_wide"
+    if "chasing" in reason:
+        return "chasing_price"
+    return "pullback_other"
+
+
+def _bump(reject_sink: dict | None, key: str) -> None:
+    if reject_sink is not None:
+        reject_sink[key] = reject_sink.get(key, 0) + 1
+
+
+def evaluate_symbol(
+    symbol: str,
+    btc_context: "BtcContext | None" = None,
+    reject_sink: dict | None = None,
+) -> Signal | None:
     try:
         raw_15m = get_market_klines(symbol, TREND_TF, count=TREND_KLINE_COUNT)
         raw_5m = get_market_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
 
         if raw_15m is None or raw_15m.empty or raw_5m is None or raw_5m.empty:
             logger.debug("[REJECT] %s missing candle data", symbol)
+            _bump(reject_sink, "missing_data")
             return None
 
         closed_15m = raw_15m.iloc[:-1].copy()
@@ -343,45 +377,54 @@ def evaluate_symbol(symbol: str, btc_context: "BtcContext | None" = None) -> Sig
 
         if len(closed_15m) < TREND_EMA_PERIOD + 5:
             logger.debug("[REJECT] %s insufficient 15m candle history", symbol)
+            _bump(reject_sink, "insufficient_history")
             return None
         if len(closed_5m) < ENTRY_EMA_PERIOD + PULLBACK_LOOKBACK_BARS + 10:
             logger.debug("[REJECT] %s insufficient 5m candle history", symbol)
+            _bump(reject_sink, "insufficient_history")
             return None
 
         direction = _detect_trend(closed_15m)
         if direction is None:
             logger.debug("[REJECT] %s no 15m trend", symbol)
+            _bump(reject_sink, "no_trend")
             return None
 
         ok, reason, details = _detect_pullback_and_confirmation(closed_5m, direction)
         if not ok:
             logger.debug("[REJECT] %s %s", symbol, reason)
+            _bump(reject_sink, _reason_bucket(reason))
             return None
 
         if ENABLE_BTC_FILTER:
             ctx = btc_context if btc_context is not None else build_btc_context()
             if ctx is None:
                 logger.debug("[REJECT] %s BTC context unavailable", symbol)
+                _bump(reject_sink, "btc_context_unavailable")
                 return None
             btc_ok, btc_reason = _btc_filter_ok(direction, ctx)
             if not btc_ok:
                 logger.debug("[REJECT] %s %s %s", symbol, direction, btc_reason)
+                _bump(reject_sink, "btc_filter")
                 return None
 
         entry = details["close"]
         tp_sl = _calculate_tp_sl(direction, entry, details)
         if tp_sl is None:
             logger.debug("[REJECT] %s structural stop too wide", symbol)
+            _bump(reject_sink, "stop_too_wide")
             return None
         tp, sl = tp_sl
 
         if not valid_trade_geometry(direction, entry, tp, sl):
             logger.debug("[REJECT] %s invalid trade geometry", symbol)
+            _bump(reject_sink, "invalid_geometry")
             return None
 
         rr = _calc_rr(direction, entry, tp, sl)
         if rr < MIN_RR:
             logger.debug("[REJECT] %s RR %.2f below %.2f", symbol, rr, MIN_RR)
+            _bump(reject_sink, "rr_below_min")
             return None
 
         tp_roi, sl_roi = _roi_pct(direction, entry, tp, sl)
@@ -410,6 +453,7 @@ def evaluate_symbol(symbol: str, btc_context: "BtcContext | None" = None) -> Sig
         )
     except Exception as e:
         logger.error("[EVAL-ERROR] %s: %s", symbol, e, exc_info=True)
+        _bump(reject_sink, "error")
         return None
 
 
