@@ -1,10 +1,22 @@
-> **Current strategy (v14, `feature/liq-scalp-v14`): Liquidation-Aware 1m Scalp.**
-> EMA(9/21/50) + rolling VWAP + RSI + volume base signal on 1m candles,
-> gated by a free open-interest-derived liquidation-cluster estimator
-> (`liq_estimator.py`). See `CLAUDE.md` for the full architecture and
-> `docs/superpowers/plans/2026-07-11-liquidation-aware-scalp-v14.md` for
-> the implementation plan. The write-up below is retained for historical
-> reference only and does not describe the currently running strategy.
+> **Current strategy (`feature/supertrend-pullback-v1`): Simple Supertrend Pullback v1.**
+> 15m trend filter (EMA200 + Supertrend) gates direction; 5m EMA20 pullback
+> + reclaim + RSI + volume + candle-quality confirms entry, with a BTC
+> market safety filter and one-active-signal-per-direction correlation
+> limit. Target ~0.75% price move (15% ROI at 20x), max ~0.50% stop
+> (10% ROI), min 1.5 RR, max 3 signals/day. See `CLAUDE.md` for the full
+> architecture and
+> `docs/superpowers/specs/2026-07-15-supertrend-pullback-v1-design.md` /
+> `docs/superpowers/plans/2026-07-15-supertrend-pullback-v1.md` for the
+> design and implementation plan.
+>
+> **Limitations (v1):** no automatic breakeven/stop-trailing; the backtest
+> utility (`scripts/backtest_simple_strategy.py`) is limited to whatever
+> history a single MEXC REST kline request returns (no pagination yet);
+> parameters have not been auto-optimized — treat backtest output as a
+> baseline check, not a profitability claim.
+>
+> The write-up below is retained for historical reference only and does
+> not describe the currently running strategy.
 
 ---
 
