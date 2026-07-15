@@ -19,14 +19,17 @@ from __future__ import annotations
 import argparse
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import strategy
 from mexc_client import get_klines
 from config import (
     ENTRY_TF, TREND_TF, BTC_FILTER_SYMBOL, BTC_FILTER_TF,
-    SIGNAL_EXPIRE_HOURS, CANDLE_MINUTES,
+    SIGNAL_EXPIRE_HOURS, CANDLE_MINUTES, _TF_MINUTES,
     ESTIMATED_ENTRY_FEE_PCT, ESTIMATED_EXIT_FEE_PCT, ESTIMATED_SLIPPAGE_PCT,
     TREND_EMA_PERIOD, ENTRY_EMA_PERIOD, PULLBACK_LOOKBACK_BARS,
 )
@@ -129,7 +132,14 @@ def _with_forming_row(df: pd.DataFrame, upto_idx: int) -> pd.DataFrame:
 
 
 def _find_as_of_index(df: pd.DataFrame, timestamp) -> int | None:
-    """Index of the last row of df with index <= timestamp, or None."""
+    """Index of the last row of df with index <= timestamp, or None.
+
+    `timestamp` must already be an adjusted cutoff (the simulated "now"
+    minus this dataframe's own candle width), not a raw current-time
+    value -- passing a raw timestamp here lets a still-forming candle
+    (whose open time is <= the raw timestamp but whose close time is in
+    the future) leak into the "as-of" view. See callers in
+    backtest_symbol for the correct adjustment."""
     eligible = df.index[df.index <= timestamp]
     if len(eligible) == 0:
         return None
@@ -200,8 +210,14 @@ def backtest_symbol(symbol: str, stats: BacktestStats) -> None:
                 continue
 
             ts = df_5m_full.index[i]
-            trend_idx = _find_as_of_index(df_15m_full, ts)
-            btc_idx = _find_as_of_index(df_btc_full, ts) if not df_btc_full.empty else None
+            eval_time = ts + pd.Timedelta(minutes=CANDLE_MINUTES)
+            trend_tf_minutes = _TF_MINUTES.get(TREND_TF, 15)
+            btc_tf_minutes = _TF_MINUTES.get(BTC_FILTER_TF, 15)
+            trend_idx = _find_as_of_index(df_15m_full, eval_time - pd.Timedelta(minutes=trend_tf_minutes))
+            btc_idx = (
+                _find_as_of_index(df_btc_full, eval_time - pd.Timedelta(minutes=btc_tf_minutes))
+                if not df_btc_full.empty else None
+            )
             if trend_idx is None or trend_idx < min_start:
                 continue
 
