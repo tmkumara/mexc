@@ -336,3 +336,123 @@ def test_build_btc_context_4h_from_klines(monkeypatch):
     ctx = build_btc_context_4h()
     assert ctx is not None
     assert ctx.close > ctx.ema_200
+
+
+from fib_strategy import evaluate_symbol_fib
+from tests.fib_fixtures import patch_fib_klines
+
+
+def test_evaluate_symbol_fib_long_valid(monkeypatch):
+    df_4h = make_4h_trend_df("LONG")
+    df_1h = make_1h_fib_df("LONG")
+    patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
+    # The fixture's leg (90 -> 110) is a ~20% swing, wider than
+    # config_fib.MAX_SL_PRICE_PCT's default 0.5% cap (MAX_SL_ROI_PCT=10.0 /
+    # LEVERAGE=20) -- relax the cap for this pipeline-wiring test so it can
+    # reach the RR/geometry stages using the same fixture Tasks 2-3 already
+    # validated, rather than re-deriving a differently-scaled fixture.
+    monkeypatch.setattr(fib_strategy.config_fib, "MAX_SL_PRICE_PCT", 0.20)
+
+    sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bullish_btc_4h())
+
+    assert sig is not None
+    assert sig.direction == "LONG"
+    assert sig.sl_price < sig.entry_price < sig.tp_price
+    assert sig.rr >= fib_strategy.config_fib.MIN_RR
+
+
+def test_evaluate_symbol_fib_short_valid(monkeypatch):
+    df_4h = make_4h_trend_df("SHORT")
+    df_1h = make_1h_fib_df("SHORT", leg_start=110.0, leg_end=90.0)
+    patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
+    monkeypatch.setattr(fib_strategy.config_fib, "MAX_SL_PRICE_PCT", 0.20)
+
+    sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bearish_btc_4h())
+
+    assert sig is not None
+    assert sig.direction == "SHORT"
+    assert sig.tp_price < sig.entry_price < sig.sl_price
+    assert sig.rr >= fib_strategy.config_fib.MIN_RR
+
+
+def test_evaluate_symbol_fib_rejected_without_4h_trend(monkeypatch):
+    idx = pd.date_range("2026-01-01", periods=220, freq="4h")
+    flat_4h = pd.DataFrame(
+        {"open": 100.0, "high": 100.2, "low": 99.8, "close": 100.0, "volume": 1000.0},
+        index=idx,
+    )
+    df_1h = make_1h_fib_df("LONG")
+    patch_fib_klines(monkeypatch, fib_strategy, flat_4h, df_1h)
+
+    reject_sink: dict = {}
+    sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bullish_btc_4h(), reject_sink=reject_sink)
+
+    assert sig is None
+    assert reject_sink.get("no_trend") == 1
+
+
+def test_evaluate_symbol_fib_rejected_when_btc_opposes(monkeypatch):
+    df_4h = make_4h_trend_df("LONG")
+    df_1h = make_1h_fib_df("LONG")
+    patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
+
+    reject_sink: dict = {}
+    sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bearish_btc_4h(), reject_sink=reject_sink)
+
+    assert sig is None
+    assert reject_sink.get("btc_filter") == 1
+
+
+def test_evaluate_symbol_fib_1h_active_last_candle_is_ignored(monkeypatch):
+    df_4h = make_4h_trend_df("LONG")
+    df_1h = make_1h_fib_df("LONG")
+    # Corrupt only the forming (duplicated last) 1H row -- evaluate_symbol_fib
+    # must still fire off the completed candles underneath it.
+    df_1h.iloc[-1, df_1h.columns.get_loc("close")] = 1.0
+    patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
+    monkeypatch.setattr(fib_strategy.config_fib, "MAX_SL_PRICE_PCT", 0.20)
+
+    sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bullish_btc_4h())
+    assert sig is not None
+
+
+def test_evaluate_symbol_fib_4h_active_last_candle_is_ignored(monkeypatch):
+    df_4h = make_4h_trend_df("LONG")
+    df_1h = make_1h_fib_df("LONG")
+    # Corrupt only the forming (duplicated last) 4H row -- evaluate_symbol_fib
+    # must still read trend off the completed 4H candles underneath it.
+    df_4h.iloc[-1, df_4h.columns.get_loc("close")] = 1.0
+    patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
+    monkeypatch.setattr(fib_strategy.config_fib, "MAX_SL_PRICE_PCT", 0.20)
+
+    sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bullish_btc_4h())
+    assert sig is not None
+
+
+def test_evaluate_symbol_fib_rejected_when_rr_too_low(monkeypatch):
+    df_4h = make_4h_trend_df("LONG")
+    df_1h = make_1h_fib_df("LONG")
+    patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
+    # Must clear the SL-width cap first (see test_evaluate_symbol_fib_long_valid)
+    # so the pipeline actually reaches the RR check this test targets, rather
+    # than rejecting earlier at "stop_too_wide".
+    monkeypatch.setattr(fib_strategy.config_fib, "MAX_SL_PRICE_PCT", 0.20)
+    monkeypatch.setattr(fib_strategy.config_fib, "MIN_RR", 100.0)
+
+    reject_sink: dict = {}
+    sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bullish_btc_4h(), reject_sink=reject_sink)
+
+    assert sig is None
+    assert reject_sink.get("rr_below_min") == 1
+
+
+def test_evaluate_symbol_fib_handles_missing_data(monkeypatch):
+    def _fake(symbol, interval, count=100):
+        return pd.DataFrame()
+
+    monkeypatch.setattr(fib_strategy, "get_market_klines", _fake)
+
+    reject_sink: dict = {}
+    sig = evaluate_symbol_fib("TEST_USDT", reject_sink=reject_sink)
+    assert sig is None
+    assert reject_sink.get("missing_data") == 1

@@ -37,7 +37,7 @@ def make_1h_fib_df(
     bars: int = 140,
     leg_start: float = 90.0,
     leg_end: float = 110.0,
-    confirm_break: float = 0.6,
+    confirm_break: float = 0.02,
     confirm_volume_mult: float = 1.6,
     retrace_fraction: float = 0.559,
 ) -> pd.DataFrame:

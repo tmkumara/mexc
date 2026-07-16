@@ -331,3 +331,116 @@ def _btc_filter_ok_4h(direction: str, btc: BtcContext4h) -> tuple[bool, str]:
             return False, "blocked by BTC bullish trend"
 
     return True, ""
+
+
+# ── public entry point ─────────────────────────────────────────────────
+
+def _reason_bucket(reason: str) -> str:
+    if reason == "no valid impulse leg found":
+        return "no_swing_leg"
+    if reason == "no zone touch":
+        return "no_zone_touch"
+    if "did not close back" in reason:
+        return "no_confirmation"
+    if reason.startswith("RSI"):
+        return "rsi_out_of_band"
+    if reason.startswith("volume ratio"):
+        return "low_volume"
+    return "fib_other"
+
+
+def _bump(reject_sink: dict | None, key: str) -> None:
+    if reject_sink is not None:
+        reject_sink[key] = reject_sink.get(key, 0) + 1
+
+
+def evaluate_symbol_fib(
+    symbol: str,
+    btc_context: "BtcContext4h | None" = None,
+    reject_sink: dict | None = None,
+) -> FibSignal | None:
+    try:
+        raw_4h = get_market_klines(symbol, config_fib.TREND_TF, count=config_fib.TREND_KLINE_COUNT)
+        raw_1h = get_market_klines(symbol, config_fib.ENTRY_TF, count=config_fib.ENTRY_KLINE_COUNT)
+
+        if raw_4h is None or raw_4h.empty or raw_1h is None or raw_1h.empty:
+            logger.debug("[FIB-REJECT] %s missing candle data", symbol)
+            _bump(reject_sink, "missing_data")
+            return None
+
+        closed_4h = raw_4h.iloc[:-1].copy()
+        closed_1h = raw_1h.iloc[:-1].copy()
+
+        if len(closed_4h) < config_fib.TREND_EMA_PERIOD + 5:
+            _bump(reject_sink, "insufficient_history")
+            return None
+        min_1h_needed = config_fib.SWING_LOOKBACK_BARS + config_fib.SWING_FRACTAL_BARS + config_fib.VOLUME_MA_PERIOD + 10
+        if len(closed_1h) < min_1h_needed:
+            _bump(reject_sink, "insufficient_history")
+            return None
+
+        direction = _detect_trend_4h(closed_4h)
+        if direction is None:
+            logger.debug("[FIB-REJECT] %s no 4H trend", symbol)
+            _bump(reject_sink, "no_trend")
+            return None
+
+        ok, reason, details = _detect_fib_entry(closed_1h, direction)
+        if not ok:
+            logger.debug("[FIB-REJECT] %s %s", symbol, reason)
+            _bump(reject_sink, _reason_bucket(reason))
+            return None
+
+        if config_fib.ENABLE_BTC_FILTER:
+            ctx = btc_context if btc_context is not None else build_btc_context_4h()
+            if ctx is None:
+                _bump(reject_sink, "btc_context_unavailable")
+                return None
+            btc_ok, btc_reason = _btc_filter_ok_4h(direction, ctx)
+            if not btc_ok:
+                logger.debug("[FIB-REJECT] %s %s %s", symbol, direction, btc_reason)
+                _bump(reject_sink, "btc_filter")
+                return None
+
+        entry = details["close"]
+        tp_sl = _calculate_tp_sl_fib(direction, entry, details)
+        if tp_sl is None:
+            _bump(reject_sink, "stop_too_wide")
+            return None
+        tp, sl = tp_sl
+
+        if not _valid_trade_geometry(direction, entry, tp, sl):
+            _bump(reject_sink, "invalid_geometry")
+            return None
+
+        rr = _calc_rr(entry, tp, sl)
+        if rr < config_fib.MIN_RR:
+            _bump(reject_sink, "rr_below_min")
+            return None
+
+        score = _score_candidate_fib(direction, details, rr)
+
+        logger.info(
+            "[FIB-CANDIDATE] %s %s score=%.1f entry=%.6g tp=%.6g sl=%.6g rr=%.2f",
+            symbol, direction, score, entry, tp, sl, rr,
+        )
+
+        return FibSignal(
+            symbol=symbol,
+            direction=direction,
+            entry_price=round(entry, 8),
+            tp_price=round(tp, 8),
+            sl_price=round(sl, 8),
+            leverage=config_fib.LEVERAGE,
+            rr=round(rr, 2),
+            score=score,
+            leg_start=details["leg_start"],
+            leg_end=details["leg_end"],
+            zone_lower=details["zone_low"],
+            zone_upper=details["zone_high"],
+            generated_at=datetime.now(timezone.utc),
+        )
+    except Exception as e:
+        logger.error("[FIB-EVAL-ERROR] %s: %s", symbol, e, exc_info=True)
+        _bump(reject_sink, "error")
+        return None
