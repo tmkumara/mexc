@@ -13,7 +13,7 @@ def test_defaults_loaded():
     assert config_fib.CONFIRMATION_LOOKBACK_BARS == 3
     assert config_fib.TP_EXTENSION_LEVEL == 1.272
     assert config_fib.LEVERAGE == 20
-    assert config_fib.MIN_RR == 1.5
+    assert config_fib.MIN_RR == 1.3
     assert config_fib.ENABLE_BTC_FILTER is True
     assert config_fib.BTC_FILTER_TF == "4h"
 

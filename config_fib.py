@@ -48,7 +48,7 @@ ATR_PERIOD: int = int(os.getenv("FIB_ATR_PERIOD", "14"))
 LEVERAGE: int = int(os.getenv("FIB_LEVERAGE", "20"))
 MAX_SL_ROI_PCT: float = float(os.getenv("FIB_MAX_SL_ROI_PCT", "10.0"))
 MAX_SL_PRICE_PCT: float = MAX_SL_ROI_PCT / 100.0 / LEVERAGE
-MIN_RR: float = float(os.getenv("FIB_MIN_RR", "1.5"))
+MIN_RR: float = float(os.getenv("FIB_MIN_RR", "1.3"))
 
 # ── BTC market safety filter (4H variant) ─────────────────────────────
 ENABLE_BTC_FILTER: bool = os.getenv("FIB_ENABLE_BTC_FILTER", "true").lower() == "true"
