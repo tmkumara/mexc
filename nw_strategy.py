@@ -158,3 +158,47 @@ def _detect_nw_signal(df_1h: pd.DataFrame, direction: str) -> tuple[bool, str, d
         "swing_level": swing_level,
     }
     return True, "", details
+
+
+# ── trade geometry, TP/SL, RR ────────────────────────────────────────────
+
+def _valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
+    if entry <= 0 or tp <= 0 or sl <= 0:
+        return False
+    if direction == "LONG":
+        return tp > entry > sl
+    return tp < entry < sl
+
+
+def _calc_rr(entry: float, tp: float, sl: float) -> float:
+    reward = abs(tp - entry)
+    risk = abs(entry - sl)
+    return reward / risk if risk > 0 else 0.0
+
+
+def _calculate_tp_sl_nw(direction: str, entry: float, details: dict) -> tuple[float, float] | None:
+    """TP is a fixed ROI-target distance. SL is structural -- the swing
+    level found by _detect_nw_signal, pushed out by an ATR buffer -- with
+    its price distance from entry capped (not rejected) at
+    MAX_SL_PRICE_PCT. This intentionally mirrors the original live bot's
+    cap-not-reject SL model rather than the fib strategy's later
+    reject-if-too-wide redesign (see this plan's Global Constraints)."""
+    atr_last = details["atr"]
+    swing_level = details["swing_level"]
+
+    if direction == "LONG":
+        tp = entry * (1.0 + config_nw.TP_PRICE_PCT)
+        raw_sl_distance = entry - (swing_level - atr_last * config_nw.NW_SL_ATR_BUFFER_MULTIPLIER)
+        if raw_sl_distance <= 0:
+            return None
+        sl_distance = min(raw_sl_distance, entry * config_nw.MAX_SL_PRICE_PCT)
+        sl = entry - sl_distance
+    else:
+        tp = entry * (1.0 - config_nw.TP_PRICE_PCT)
+        raw_sl_distance = (swing_level + atr_last * config_nw.NW_SL_ATR_BUFFER_MULTIPLIER) - entry
+        if raw_sl_distance <= 0:
+            return None
+        sl_distance = min(raw_sl_distance, entry * config_nw.MAX_SL_PRICE_PCT)
+        sl = entry + sl_distance
+
+    return tp, sl

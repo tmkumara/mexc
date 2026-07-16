@@ -1,6 +1,10 @@
 # tests/test_nw_strategy.py
-from nw_strategy import _detect_trend_htf, find_swing_low, find_swing_high, _detect_nw_signal
+from nw_strategy import (
+    _detect_trend_htf, find_swing_low, find_swing_high, _detect_nw_signal,
+    _valid_trade_geometry, _calc_rr, _calculate_tp_sl_nw,
+)
 from tests.nw_fixtures import make_4h_trend_df, make_swing_fixture, make_1h_nw_df
+import config_nw
 
 
 def test_detect_trend_htf_long_when_trending_up():
@@ -90,3 +94,65 @@ def test_detect_nw_signal_rejects_low_volume():
     ok, reason, _ = _detect_nw_signal(closed, "LONG")
     assert ok is False
     assert "volume" in reason
+
+
+def test_valid_trade_geometry_long():
+    assert _valid_trade_geometry("LONG", entry=100.0, tp=101.0, sl=99.0) is True
+    assert _valid_trade_geometry("LONG", entry=100.0, tp=99.0, sl=101.0) is False
+
+
+def test_valid_trade_geometry_short():
+    assert _valid_trade_geometry("SHORT", entry=100.0, tp=99.0, sl=101.0) is True
+    assert _valid_trade_geometry("SHORT", entry=100.0, tp=101.0, sl=99.0) is False
+
+
+def test_calc_rr():
+    assert abs(_calc_rr(entry=100.0, tp=102.0, sl=99.0) - 2.0) < 1e-9
+
+
+def test_calculate_tp_sl_nw_long_fixed_tp_structural_sl():
+    entry = 100.0
+    details = {"atr": 0.20, "swing_level": 98.5}  # swing 1.5 below entry
+    result = _calculate_tp_sl_nw("LONG", entry, details)
+    assert result is not None
+    tp, sl = result
+    expected_tp = entry * (1.0 + config_nw.TP_PRICE_PCT)
+    assert abs(tp - expected_tp) < 1e-9
+    # raw sl distance = entry - (swing_level - atr*buffer)
+    #                 = 100 - (98.5 - 0.20*0.5) = 100 - 98.4 = 1.6
+    raw_distance = entry - (98.5 - 0.20 * config_nw.NW_SL_ATR_BUFFER_MULTIPLIER)
+    expected_distance = min(raw_distance, entry * config_nw.MAX_SL_PRICE_PCT)
+    assert abs((entry - sl) - expected_distance) < 1e-9
+
+
+def test_calculate_tp_sl_nw_short_fixed_tp_structural_sl():
+    entry = 100.0
+    details = {"atr": 0.20, "swing_level": 101.5}
+    result = _calculate_tp_sl_nw("SHORT", entry, details)
+    assert result is not None
+    tp, sl = result
+    expected_tp = entry * (1.0 - config_nw.TP_PRICE_PCT)
+    assert abs(tp - expected_tp) < 1e-9
+    raw_distance = (101.5 + 0.20 * config_nw.NW_SL_ATR_BUFFER_MULTIPLIER) - entry
+    expected_distance = min(raw_distance, entry * config_nw.MAX_SL_PRICE_PCT)
+    assert abs((sl - entry) - expected_distance) < 1e-9
+
+
+def test_calculate_tp_sl_nw_caps_at_max_sl_when_swing_far_away():
+    entry = 100.0
+    # Swing level absurdly far away -- raw distance must be capped, not
+    # left uncapped or rejected.
+    details = {"atr": 0.20, "swing_level": 50.0}
+    result = _calculate_tp_sl_nw("LONG", entry, details)
+    assert result is not None
+    tp, sl = result
+    assert abs((entry - sl) - entry * config_nw.MAX_SL_PRICE_PCT) < 1e-9
+
+
+def test_calculate_tp_sl_nw_rejects_when_swing_on_wrong_side_of_entry():
+    entry = 100.0
+    # LONG's swing_level (even after the ATR buffer) sits above entry --
+    # not a valid structural stop.
+    details = {"atr": 0.20, "swing_level": 100.5}
+    result = _calculate_tp_sl_nw("LONG", entry, details)
+    assert result is None
