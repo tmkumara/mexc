@@ -110,11 +110,26 @@ _NON_CRYPTO_KEYWORDS = (
     "NAS",       # catches NAS100 variants
     "SPX",
     "DJI",
+    "HK50",
+    "JP225",
+    "US30",
+    "SOXX",
+    "SOXL",
+    "XLE",
+    # Individual synthetic-equity tokens
+    "TESLA",
+    "NVIDIA",
+    "OPENAI",
+    "ANTHROPIC",
     # Commodity / energy
     "CRUDE",
     "USOIL",
     "BRENT",
     "OIL",
+    "NICKEL",
+    "ZINC",
+    "COPPER",
+    "ALUMINUM",
     # Precious metals
     "GOLD",
     "SILVER",
@@ -122,6 +137,24 @@ _NON_CRYPTO_KEYWORDS = (
     "XAG",
     "XPT",
     "XPD",
+    "PAXG",
+)
+
+# Forex currency codes -- checked against the exact base ticker (the part
+# before the quote suffix), never substring-contains like _NON_CRYPTO_KEYWORDS
+# above. These are common 3-letter sequences that collide with real crypto
+# tickers as substrings -- e.g. "AUD" is contained in "AUDIO" (Audius, a
+# genuine crypto token); AUD_USDT itself is forex EUR/AUD-style, but
+# AUDIO_USDT must not be excluded by it.
+_NON_CRYPTO_EXACT_BASES = (
+    "EUR",
+    "GBP",
+    "JPY",
+    "AUD",
+    "CAD",
+    "CHF",
+    "TRY",
+    "BRL",
 )
 
 
@@ -134,6 +167,9 @@ def _is_crypto_symbol(symbol: str) -> bool:
         return True
 
     upper = symbol.upper()
+    base = upper.split("_")[0]
+    if base in _NON_CRYPTO_EXACT_BASES:
+        return False
     return not any(keyword in upper for keyword in _NON_CRYPTO_KEYWORDS)
 
 
