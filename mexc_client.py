@@ -152,12 +152,22 @@ def _resample_to_3m(df_1m: pd.DataFrame, count: int) -> pd.DataFrame:
     return df_3m.tail(count)
 
 
-def get_klines(symbol: str, interval: str, count: int = 100) -> pd.DataFrame:
+def get_klines(
+    symbol: str,
+    interval: str,
+    count: int = 100,
+    start: int | None = None,
+    end: int | None = None,
+) -> pd.DataFrame:
     """
     Fetch OHLCV klines for a futures symbol.
 
     Supported app intervals:
         1m, 3m, 5m, 15m, 30m, 1h, 4h, 1d
+
+    `start`/`end` (Unix seconds) are optional and only used by backtesting
+    tools to page further back than a single `count`-only request reaches;
+    the live bot never passes them, so default behavior is unchanged.
     """
 
     if interval == "3m":
@@ -184,17 +194,17 @@ def get_klines(symbol: str, interval: str, count: int = 100) -> pd.DataFrame:
             f"Supported intervals: 1m, 3m, 5m, 15m, 30m, 1h, 4h, 1d"
         )
 
-    data = _get(
-        f"/contract/kline/{symbol}",
-        params={
-            "interval": mexc_interval,
-            "count": count,
-        },
-    )
+    params = {"interval": mexc_interval, "count": count}
+    if start is not None:
+        params["start"] = start
+    if end is not None:
+        params["end"] = end
+
+    data = _get(f"/contract/kline/{symbol}", params=params)
 
     raw = data.get("data", {})
 
-    return _parse_kline_response(raw).tail(count)
+    return _parse_kline_response(raw).tail(count) if start is None and end is None else _parse_kline_response(raw)
 
 
 def get_current_price(symbol: str) -> float | None:
