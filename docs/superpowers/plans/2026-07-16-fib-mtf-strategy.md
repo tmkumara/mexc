@@ -805,25 +805,29 @@ def test_calc_rr():
 
 
 def test_calculate_tp_sl_fib_long_valid():
-    details = {"leg_start": 90.0, "leg_end": 110.0, "atr": 0.5}
-    result = _calculate_tp_sl_fib("LONG", entry=100.5, details=details)
+    # A tight, realistic leg (0.5% of price) -- config_fib.MAX_SL_PRICE_PCT
+    # caps stops at 0.5% of entry (MAX_SL_ROI_PCT=10.0 / LEVERAGE=20), so
+    # the leg magnitude must actually respect that cap for this to return
+    # a valid (non-None) result.
+    details = {"leg_start": 100.0, "leg_end": 100.5, "atr": 0.01}
+    result = _calculate_tp_sl_fib("LONG", entry=100.3, details=details)
 
     assert result is not None
     tp, sl = result
-    assert abs(tp - 115.44) < 1e-6           # 90 + 20*1.272
-    assert sl < 90.0                          # leg_start minus ATR buffer
-    assert tp > 100.5 > sl
+    assert abs(tp - 100.636) < 1e-6           # 100.0 + 0.5*1.272
+    assert sl < 100.0                          # leg_start minus ATR buffer
+    assert tp > 100.3 > sl
 
 
 def test_calculate_tp_sl_fib_short_valid():
-    details = {"leg_start": 110.0, "leg_end": 90.0, "atr": 0.5}
-    result = _calculate_tp_sl_fib("SHORT", entry=99.4, details=details)
+    details = {"leg_start": 100.5, "leg_end": 100.0, "atr": 0.01}
+    result = _calculate_tp_sl_fib("SHORT", entry=100.2, details=details)
 
     assert result is not None
     tp, sl = result
-    assert abs(tp - 84.56) < 1e-6             # 110 - 20*1.272
-    assert sl > 110.0
-    assert tp < 99.4 < sl
+    assert abs(tp - 99.864) < 1e-6             # 100.5 - 0.5*1.272
+    assert sl > 100.5
+    assert tp < 100.2 < sl
 
 
 def test_calculate_tp_sl_fib_rejects_stop_too_wide():
@@ -1114,6 +1118,12 @@ def test_evaluate_symbol_fib_long_valid(monkeypatch):
     df_4h = make_4h_trend_df("LONG")
     df_1h = make_1h_fib_df("LONG")
     patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
+    # The fixture's leg (90 -> 110) is a ~20% swing, wider than
+    # config_fib.MAX_SL_PRICE_PCT's default 0.5% cap (MAX_SL_ROI_PCT=10.0 /
+    # LEVERAGE=20) -- relax the cap for this pipeline-wiring test so it can
+    # reach the RR/geometry stages using the same fixture Tasks 2-3 already
+    # validated, rather than re-deriving a differently-scaled fixture.
+    monkeypatch.setattr(fib_strategy.config_fib, "MAX_SL_PRICE_PCT", 0.20)
 
     sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bullish_btc_4h())
 
@@ -1127,6 +1137,7 @@ def test_evaluate_symbol_fib_short_valid(monkeypatch):
     df_4h = make_4h_trend_df("SHORT")
     df_1h = make_1h_fib_df("SHORT", leg_start=110.0, leg_end=90.0)
     patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
+    monkeypatch.setattr(fib_strategy.config_fib, "MAX_SL_PRICE_PCT", 0.20)
 
     sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bearish_btc_4h())
 
@@ -1171,6 +1182,7 @@ def test_evaluate_symbol_fib_1h_active_last_candle_is_ignored(monkeypatch):
     # must still fire off the completed candles underneath it.
     df_1h.iloc[-1, df_1h.columns.get_loc("close")] = 1.0
     patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
+    monkeypatch.setattr(fib_strategy.config_fib, "MAX_SL_PRICE_PCT", 0.20)
 
     sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bullish_btc_4h())
     assert sig is not None
@@ -1183,6 +1195,7 @@ def test_evaluate_symbol_fib_4h_active_last_candle_is_ignored(monkeypatch):
     # must still read trend off the completed 4H candles underneath it.
     df_4h.iloc[-1, df_4h.columns.get_loc("close")] = 1.0
     patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
+    monkeypatch.setattr(fib_strategy.config_fib, "MAX_SL_PRICE_PCT", 0.20)
 
     sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bullish_btc_4h())
     assert sig is not None
@@ -1192,6 +1205,10 @@ def test_evaluate_symbol_fib_rejected_when_rr_too_low(monkeypatch):
     df_4h = make_4h_trend_df("LONG")
     df_1h = make_1h_fib_df("LONG")
     patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
+    # Must clear the SL-width cap first (see test_evaluate_symbol_fib_long_valid)
+    # so the pipeline actually reaches the RR check this test targets, rather
+    # than rejecting earlier at "stop_too_wide".
+    monkeypatch.setattr(fib_strategy.config_fib, "MAX_SL_PRICE_PCT", 0.20)
     monkeypatch.setattr(fib_strategy.config_fib, "MIN_RR", 100.0)
 
     reject_sink: dict = {}
