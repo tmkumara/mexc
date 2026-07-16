@@ -2,6 +2,7 @@
 from nw_strategy import (
     _detect_trend_htf, find_swing_low, find_swing_high, _detect_nw_signal,
     _valid_trade_geometry, _calc_rr, _calculate_tp_sl_nw,
+    BtcContext4h, _btc_filter_ok_4h,
 )
 from tests.nw_fixtures import make_4h_trend_df, make_swing_fixture, make_1h_nw_df
 import config_nw
@@ -156,3 +157,29 @@ def test_calculate_tp_sl_nw_rejects_when_swing_on_wrong_side_of_entry():
     details = {"atr": 0.20, "swing_level": 100.5}
     result = _calculate_tp_sl_nw("LONG", entry, details)
     assert result is None
+
+
+def test_btc_filter_ok_long_when_btc_bullish():
+    btc = BtcContext4h(close=105.0, ema_200=100.0, one_candle_move_pct=0.1, three_candle_move_pct=0.3)
+    ok, reason = _btc_filter_ok_4h("LONG", btc)
+    assert ok is True, reason
+
+
+def test_btc_filter_blocks_long_when_btc_bearish():
+    btc = BtcContext4h(close=95.0, ema_200=100.0, one_candle_move_pct=-0.1, three_candle_move_pct=-0.3)
+    ok, reason = _btc_filter_ok_4h("LONG", btc)
+    assert ok is False
+    assert "bearish" in reason
+
+
+def test_btc_filter_blocks_on_extreme_single_candle_volatility():
+    btc = BtcContext4h(close=105.0, ema_200=100.0, one_candle_move_pct=0.9, three_candle_move_pct=0.3)
+    ok, reason = _btc_filter_ok_4h("LONG", btc)
+    assert ok is False
+    assert "volatility" in reason
+
+
+def test_btc_filter_ok_short_when_btc_bearish():
+    btc = BtcContext4h(close=95.0, ema_200=100.0, one_candle_move_pct=-0.1, three_candle_move_pct=-0.3)
+    ok, reason = _btc_filter_ok_4h("SHORT", btc)
+    assert ok is True, reason
