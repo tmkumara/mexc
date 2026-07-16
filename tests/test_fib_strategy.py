@@ -281,7 +281,7 @@ def test_calculate_tp_sl_fib_long_valid():
     assert result is not None
     tp, sl = result
     assert abs(tp - 100.809) < 1e-6           # 100.0 + 0.5*1.618
-    assert abs(sl - 100.1055) < 1e-6          # (100.5 - 0.5*0.786) - 0.01*0.15
+    assert abs(sl - 100.102) < 1e-6           # (100.5 - 0.5*0.786) - 0.01*0.5
     assert tp > 100.3 > sl
 
 
@@ -292,7 +292,7 @@ def test_calculate_tp_sl_fib_short_valid():
     assert result is not None
     tp, sl = result
     assert abs(tp - 99.691) < 1e-6             # 100.5 - 0.5*1.618
-    assert abs(sl - 100.3945) < 1e-6           # (100.0 + 0.5*0.786) + 0.01*0.15
+    assert abs(sl - 100.398) < 1e-6            # (100.0 + 0.5*0.786) + 0.01*0.5
     assert tp < 100.2 < sl
 
 

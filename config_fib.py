@@ -33,7 +33,13 @@ CONFIRMATION_LOOKBACK_BARS: int = int(os.getenv("FIB_CONFIRMATION_LOOKBACK_BARS"
 # 127.2%).
 TP_EXTENSION_LEVEL: float = float(os.getenv("FIB_TP_EXTENSION_LEVEL", "1.618"))
 SL_FIB_LEVEL: float = float(os.getenv("FIB_SL_FIB_LEVEL", "0.786"))
-SL_ATR_BUFFER_MULTIPLIER: float = float(os.getenv("FIB_SL_ATR_BUFFER_MULTIPLIER", "0.15"))
+# Widened from 0.15 -- the 60-day backtest showed stops sitting almost
+# exactly at the 0.786 level with only a thin cushion, and losses clustered
+# at SL distances right at the MAX_SL_PRICE_PCT cap (~0.4-0.5% of price).
+# That's a classic "obvious level" stop placement real price action often
+# wicks through before actually reversing. More buffer gives the trade room
+# to breathe past a routine test of the level.
+SL_ATR_BUFFER_MULTIPLIER: float = float(os.getenv("FIB_SL_ATR_BUFFER_MULTIPLIER", "0.5"))
 
 RSI_PERIOD: int = int(os.getenv("FIB_RSI_PERIOD", "14"))
 # Widened from the live bot's 50-68/32-50 bands -- the 60-day backtest
