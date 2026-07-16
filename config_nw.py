@@ -29,7 +29,7 @@ NW_KERNEL_SUM_WINDOW: int = int(os.getenv("NW_KERNEL_SUM_WINDOW", "300"))
 # so a recent-but-not-instantaneous flip still qualifies, provided the
 # latest bar's slope hasn't already reversed (see NW_KERNEL_SUM_WINDOW's
 # sibling check in _detect_nw_signal's "still holding" condition).
-NW_CONFIRMATION_LOOKBACK_BARS: int = int(os.getenv("NW_CONFIRMATION_LOOKBACK_BARS", "5"))
+NW_CONFIRMATION_LOOKBACK_BARS: int = int(os.getenv("NW_CONFIRMATION_LOOKBACK_BARS", "15"))
 
 # Structural swing lookup, used only to anchor the SL (see Task 5).
 NW_SWING_FRACTAL_BARS: int = int(os.getenv("NW_SWING_FRACTAL_BARS", "5"))
