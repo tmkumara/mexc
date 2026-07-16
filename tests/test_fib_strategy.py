@@ -184,7 +184,7 @@ def test_detect_fib_entry_rejected_without_zone_touch():
     closed = df.iloc[:-1]
     ok, reason, _ = _detect_fib_entry(closed, "LONG")
     assert ok is False
-    assert reason in ("no valid impulse leg found", "no zone touch")
+    assert reason == "no zone touch"
 
 
 def test_detect_fib_entry_rejected_when_rsi_out_of_band(monkeypatch):

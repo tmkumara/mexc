@@ -57,8 +57,10 @@ class BtcContext4h:
 # ── swing + fibonacci math ────────────────────────────────────────────
 
 def find_swings(df: pd.DataFrame, fractal_bars: int) -> pd.DataFrame:
-    """Marks bars whose high/low is the strict max/min among itself and
-    `fractal_bars // 2` bars on each side. A swing at index i only becomes
+    """Marks bars whose high/low is the max/min among itself and
+    `fractal_bars // 2` bars on each side (ties count as swings -- the
+    comparison uses `==` against the window extreme, not strict
+    uniqueness). A swing at index i only becomes
     knowable once the `half` bars after it have closed -- naturally
     lookahead-safe as long as this is only ever called on already-completed
     candles."""
@@ -266,7 +268,7 @@ def _score_candidate_fib(direction: str, details: dict, rr: float) -> float:
     score += 20.0 * precision
 
     vol_ratio = details["volume_ratio"]
-    vol_quality = min(1.0, max(0.0, (vol_ratio - config_fib.MIN_VOLUME_MULTIPLIER) / (2.0 - config_fib.MIN_VOLUME_MULTIPLIER)))
+    vol_quality = min(1.0, max(0.0, (vol_ratio - config_fib.MIN_VOLUME_MULTIPLIER) / (2.0 - config_fib.MIN_VOLUME_MULTIPLIER))) if config_fib.MIN_VOLUME_MULTIPLIER < 2.0 else (1.0 if vol_ratio >= config_fib.MIN_VOLUME_MULTIPLIER else 0.0)
     score += 15.0 * vol_quality
 
     rsi = details["rsi"]
