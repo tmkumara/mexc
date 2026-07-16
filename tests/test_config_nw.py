@@ -5,7 +5,7 @@ def test_defaults_loaded():
     assert config_nw.NW_TREND_TF == "4h"
     assert config_nw.NW_ENTRY_TF == "1h"
     assert config_nw.NW_TREND_EMA_PERIOD == 200
-    assert config_nw.NW_LOOKBACK_WINDOW == 8.0
+    assert config_nw.NW_LOOKBACK_WINDOW == 4.0
     assert config_nw.NW_RELATIVE_WEIGHTING == 8.0
     assert config_nw.NW_KERNEL_SUM_WINDOW == 300
     assert config_nw.NW_CONFIRMATION_LOOKBACK_BARS == 15

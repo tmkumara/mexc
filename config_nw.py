@@ -15,7 +15,7 @@ NW_ENTRY_KLINE_COUNT: int = int(os.getenv("NW_ENTRY_KLINE_COUNT", "500"))
 NW_TREND_EMA_PERIOD: int = int(os.getenv("NW_TREND_EMA_PERIOD", "200"))
 
 # Nadaraya-Watson rational quadratic kernel params (Pine Script defaults).
-NW_LOOKBACK_WINDOW: float = float(os.getenv("NW_LOOKBACK_WINDOW", "8.0"))       # Pine "h"
+NW_LOOKBACK_WINDOW: float = float(os.getenv("NW_LOOKBACK_WINDOW", "4.0"))       # Pine "h"
 NW_RELATIVE_WEIGHTING: float = float(os.getenv("NW_RELATIVE_WEIGHTING", "8.0"))  # Pine "r"
 # Bars summed per kernel estimate -- a numerical truncation bound, not a
 # Pine parameter. Kernel weight decays fast with distance under the
