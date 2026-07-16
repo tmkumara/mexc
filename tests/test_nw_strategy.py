@@ -210,3 +210,76 @@ def test_btc_filter_blocks_long_on_opposing_move_even_when_ema_trend_is_bullish(
     ok, reason = _btc_filter_ok_4h("LONG", btc)
     assert ok is False
     assert "bearish" in reason
+
+
+import nw_strategy
+from nw_strategy import evaluate_symbol_nw, BtcContext4h as _BtcCtx
+from tests.nw_fixtures import patch_nw_klines
+
+
+def test_evaluate_symbol_nw_returns_signal_for_valid_long_setup(monkeypatch):
+    df_4h = make_4h_trend_df("LONG")
+    df_1h = make_1h_nw_df("LONG")
+    patch_nw_klines(monkeypatch, nw_strategy, df_4h, df_1h)
+    monkeypatch.setattr(nw_strategy.config_nw, "NW_ENABLE_BTC_FILTER", False)
+
+    sig = evaluate_symbol_nw("TEST_USDT")
+
+    assert sig is not None
+    assert sig.direction == "LONG"
+    assert sig.tp_price > sig.entry_price > sig.sl_price
+    assert sig.rr >= nw_strategy.config_nw.MIN_RR
+
+
+def test_evaluate_symbol_nw_returns_signal_for_valid_short_setup(monkeypatch):
+    df_4h = make_4h_trend_df("SHORT")
+    df_1h = make_1h_nw_df("SHORT")
+    patch_nw_klines(monkeypatch, nw_strategy, df_4h, df_1h)
+    monkeypatch.setattr(nw_strategy.config_nw, "NW_ENABLE_BTC_FILTER", False)
+
+    sig = evaluate_symbol_nw("TEST_USDT")
+
+    assert sig is not None
+    assert sig.direction == "SHORT"
+    assert sig.tp_price < sig.entry_price < sig.sl_price
+
+
+def test_evaluate_symbol_nw_returns_none_when_no_htf_trend(monkeypatch):
+    # Flat 4H series -- close hovers at EMA200, no clear trend.
+    import numpy as np
+    import pandas as pd
+    idx = pd.date_range("2026-01-01", periods=220, freq="4h")
+    closes = np.full(220, 100.0)
+    df_4h = pd.DataFrame({
+        "open": closes, "high": closes + 0.01, "low": closes - 0.01,
+        "close": closes, "volume": np.full(220, 1000.0),
+    })
+    df_4h = pd.concat([df_4h, df_4h.iloc[[-1]]])
+    df_1h = make_1h_nw_df("LONG")
+    patch_nw_klines(monkeypatch, nw_strategy, df_4h, df_1h)
+
+    reject_sink = {}
+    sig = evaluate_symbol_nw("TEST_USDT", reject_sink=reject_sink)
+
+    assert sig is None
+    assert reject_sink.get("no_trend", 0) >= 1
+
+
+def test_evaluate_symbol_nw_uses_reject_sink_for_btc_filter(monkeypatch):
+    df_4h = make_4h_trend_df("LONG")
+    df_1h = make_1h_nw_df("LONG")
+    patch_nw_klines(monkeypatch, nw_strategy, df_4h, df_1h)
+    monkeypatch.setattr(nw_strategy.config_nw, "NW_ENABLE_BTC_FILTER", True)
+
+    bearish_btc = _BtcCtx(close=95.0, ema_200=100.0, one_candle_move_pct=-0.1, three_candle_move_pct=-0.3)
+    reject_sink = {}
+    sig = evaluate_symbol_nw("TEST_USDT", btc_context=bearish_btc, reject_sink=reject_sink)
+
+    assert sig is None
+    assert reject_sink.get("btc_filter", 0) >= 1
+
+
+def test_score_candidate_nw_within_bounds():
+    details = {"rsi": 60.0, "volume_ratio": 1.5}
+    score = nw_strategy._score_candidate_nw("LONG", details, rr=2.0)
+    assert 0.0 <= score <= 100.0

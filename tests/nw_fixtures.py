@@ -64,10 +64,10 @@ def make_1h_nw_df(
     direction: str = "LONG",
     pad_bars: int = 60,
     base_price: float = 100.0,
-    dip_depth: float = 2.5,
-    recovery_depth: float = 1.0,
-    final_decline_depth: float = 1.0,
-    bounce_size: float = 2.0,
+    dip_depth: float = 0.5,
+    recovery_depth: float = 0.2,
+    final_decline_depth: float = 0.2,
+    bounce_size: float = 0.4,
     volume_mult: float = 1.8,
 ) -> pd.DataFrame:
     """

@@ -251,3 +251,140 @@ def _btc_filter_ok_4h(direction: str, btc: BtcContext4h) -> tuple[bool, str]:
             return False, "blocked by BTC bullish trend"
 
     return True, ""
+
+
+# ── scoring ───────────────────────────────────────────────────────────
+
+def _score_candidate_nw(direction: str, details: dict, rr: float) -> float:
+    score = 30.0  # 4H trend + kernel-flip alignment -- already gated true/false upstream
+
+    rsi = details["rsi"]
+    ideal_lo, ideal_hi = (55.0, 65.0) if direction == "LONG" else (35.0, 45.0)
+    if ideal_lo <= rsi <= ideal_hi:
+        rsi_quality = 1.0
+    else:
+        dist = min(abs(rsi - ideal_lo), abs(rsi - ideal_hi))
+        rsi_quality = max(0.0, 1.0 - dist / 15.0)
+    score += 25.0 * rsi_quality
+
+    vol_ratio = details["volume_ratio"]
+    if config_nw.NW_MIN_VOLUME_MULTIPLIER < 2.0:
+        vol_quality = min(1.0, max(0.0, (vol_ratio - config_nw.NW_MIN_VOLUME_MULTIPLIER) / (2.0 - config_nw.NW_MIN_VOLUME_MULTIPLIER)))
+    else:
+        vol_quality = 1.0 if vol_ratio >= config_nw.NW_MIN_VOLUME_MULTIPLIER else 0.0
+    score += 20.0 * vol_quality
+
+    if config_nw.MIN_RR < 2.0:
+        rr_quality = min(1.0, max(0.0, (rr - config_nw.MIN_RR) / (2.0 - config_nw.MIN_RR)))
+    else:
+        rr_quality = 1.0 if rr >= config_nw.MIN_RR else 0.0
+    score += 25.0 * rr_quality
+
+    return round(min(100.0, max(0.0, score)), 1)
+
+
+# ── public entry point ─────────────────────────────────────────────────
+
+def _reason_bucket(reason: str) -> str:
+    if reason == "no kernel slope flip on latest candle":
+        return "no_flip"
+    if "no structural swing" in reason:
+        return "no_swing"
+    if reason.startswith("RSI"):
+        return "rsi_out_of_band"
+    if reason.startswith("volume ratio"):
+        return "low_volume"
+    return "nw_other"
+
+
+def _bump(reject_sink: dict | None, key: str) -> None:
+    if reject_sink is not None:
+        reject_sink[key] = reject_sink.get(key, 0) + 1
+
+
+def evaluate_symbol_nw(
+    symbol: str,
+    btc_context: "BtcContext4h | None" = None,
+    reject_sink: dict | None = None,
+) -> NwSignal | None:
+    try:
+        raw_4h = get_market_klines(symbol, config_nw.NW_TREND_TF, count=config_nw.NW_TREND_KLINE_COUNT)
+        raw_1h = get_market_klines(symbol, config_nw.NW_ENTRY_TF, count=config_nw.NW_ENTRY_KLINE_COUNT)
+
+        if raw_4h is None or raw_4h.empty or raw_1h is None or raw_1h.empty:
+            logger.debug("[NW-REJECT] %s missing candle data", symbol)
+            _bump(reject_sink, "missing_data")
+            return None
+
+        closed_4h = raw_4h.iloc[:-1].copy()
+        closed_1h = raw_1h.iloc[:-1].copy()
+
+        if len(closed_4h) < config_nw.NW_TREND_EMA_PERIOD + 5:
+            _bump(reject_sink, "insufficient_history")
+            return None
+        min_1h_needed = config_nw.NW_SWING_LOOKBACK_BARS + config_nw.NW_SWING_FRACTAL_BARS + config_nw.NW_VOLUME_MA_PERIOD + 10
+        if len(closed_1h) < min_1h_needed:
+            _bump(reject_sink, "insufficient_history")
+            return None
+
+        direction = _detect_trend_htf(closed_4h)
+        if direction is None:
+            logger.debug("[NW-REJECT] %s no 4H trend", symbol)
+            _bump(reject_sink, "no_trend")
+            return None
+
+        ok, reason, details = _detect_nw_signal(closed_1h, direction)
+        if not ok:
+            logger.debug("[NW-REJECT] %s %s", symbol, reason)
+            _bump(reject_sink, _reason_bucket(reason))
+            return None
+
+        if config_nw.NW_ENABLE_BTC_FILTER:
+            ctx = btc_context if btc_context is not None else build_btc_context_4h()
+            if ctx is None:
+                _bump(reject_sink, "btc_context_unavailable")
+                return None
+            btc_ok, btc_reason = _btc_filter_ok_4h(direction, ctx)
+            if not btc_ok:
+                logger.debug("[NW-REJECT] %s %s %s", symbol, direction, btc_reason)
+                _bump(reject_sink, "btc_filter")
+                return None
+
+        entry = details["close"]
+        tp_sl = _calculate_tp_sl_nw(direction, entry, details)
+        if tp_sl is None:
+            _bump(reject_sink, "invalid_structural_stop")
+            return None
+        tp, sl = tp_sl
+
+        if not _valid_trade_geometry(direction, entry, tp, sl):
+            _bump(reject_sink, "invalid_geometry")
+            return None
+
+        rr = _calc_rr(entry, tp, sl)
+        if rr < config_nw.MIN_RR:
+            _bump(reject_sink, "rr_below_min")
+            return None
+
+        score = _score_candidate_nw(direction, details, rr)
+
+        logger.info(
+            "[NW-CANDIDATE] %s %s score=%.1f entry=%.6g tp=%.6g sl=%.6g rr=%.2f",
+            symbol, direction, score, entry, tp, sl, rr,
+        )
+
+        return NwSignal(
+            symbol=symbol,
+            direction=direction,
+            entry_price=round(entry, 8),
+            tp_price=round(tp, 8),
+            sl_price=round(sl, 8),
+            leverage=config_nw.LEVERAGE,
+            rr=round(rr, 2),
+            score=score,
+            generated_at=datetime.now(timezone.utc),
+        )
+    except Exception as e:
+        logger.error("[NW-EVAL-ERROR] %s: %s", symbol, e, exc_info=True)
+        _bump(reject_sink, "error")
+        return None
