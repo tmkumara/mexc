@@ -24,7 +24,15 @@ ZONE_UPPER: float = float(os.getenv("FIB_ZONE_UPPER", "0.618"))
 # has to be that exact bar, only still hold beyond the zone level. 1 recovers
 # the original exact-latest-candle-only behavior.
 CONFIRMATION_LOOKBACK_BARS: int = int(os.getenv("FIB_CONFIRMATION_LOOKBACK_BARS", "3"))
-TP_EXTENSION_LEVEL: float = float(os.getenv("FIB_TP_EXTENSION_LEVEL", "1.272"))
+# TP/SL placement per the "textbook" Fibonacci retracement strategy
+# (https://www.cmcmarkets.com/en-gb/technical-analysis/how-to-trade-fibonacci):
+# stop-loss goes just beyond the *next* Fibonacci level past the entry zone
+# (not all the way back at the leg's 100% origin -- that was this branch's
+# original, too-wide design and the direct cause of its RR ceiling never
+# clearing ~1.5 on real data), and targets use the 161.8% extension (not
+# 127.2%).
+TP_EXTENSION_LEVEL: float = float(os.getenv("FIB_TP_EXTENSION_LEVEL", "1.618"))
+SL_FIB_LEVEL: float = float(os.getenv("FIB_SL_FIB_LEVEL", "0.786"))
 SL_ATR_BUFFER_MULTIPLIER: float = float(os.getenv("FIB_SL_ATR_BUFFER_MULTIPLIER", "0.15"))
 
 RSI_PERIOD: int = int(os.getenv("FIB_RSI_PERIOD", "14"))
@@ -48,7 +56,12 @@ ATR_PERIOD: int = int(os.getenv("FIB_ATR_PERIOD", "14"))
 LEVERAGE: int = int(os.getenv("FIB_LEVERAGE", "20"))
 MAX_SL_ROI_PCT: float = float(os.getenv("FIB_MAX_SL_ROI_PCT", "10.0"))
 MAX_SL_PRICE_PCT: float = MAX_SL_ROI_PCT / 100.0 / LEVERAGE
-MIN_RR: float = float(os.getenv("FIB_MIN_RR", "1.3"))
+# Restored to 1.5 (the live bot's own floor) now that SL sits at the 0.786
+# level instead of the leg origin -- the redesigned geometry's RR ceiling is
+# far above 1.5 (see TP_EXTENSION_LEVEL/SL_FIB_LEVEL above), so there's no
+# longer a reason to accept the weaker 1.3/1.06-grade trades the old
+# leg-origin SL forced.
+MIN_RR: float = float(os.getenv("FIB_MIN_RR", "1.5"))
 
 # ── BTC market safety filter (4H variant) ─────────────────────────────
 ENABLE_BTC_FILTER: bool = os.getenv("FIB_ENABLE_BTC_FILTER", "true").lower() == "true"

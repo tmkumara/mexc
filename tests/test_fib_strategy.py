@@ -272,14 +272,16 @@ def test_calculate_tp_sl_fib_long_valid():
     # A tight, realistic leg (0.5% of price) -- config_fib.MAX_SL_PRICE_PCT
     # caps stops at 0.5% of entry (MAX_SL_ROI_PCT=10.0 / LEVERAGE=20), so
     # the leg magnitude must actually respect that cap for this to return
-    # a valid (non-None) result.
+    # a valid (non-None) result. SL now sits at the 0.786 level (config_fib.
+    # SL_FIB_LEVEL), not the leg origin -- see "textbook" Fibonacci strategy
+    # note in config_fib.py.
     details = {"leg_start": 100.0, "leg_end": 100.5, "atr": 0.01}
     result = _calculate_tp_sl_fib("LONG", entry=100.3, details=details)
 
     assert result is not None
     tp, sl = result
-    assert abs(tp - 100.636) < 1e-6           # 100.0 + 0.5*1.272
-    assert sl < 100.0                          # leg_start minus ATR buffer
+    assert abs(tp - 100.809) < 1e-6           # 100.0 + 0.5*1.618
+    assert abs(sl - 100.1055) < 1e-6          # (100.5 - 0.5*0.786) - 0.01*0.15
     assert tp > 100.3 > sl
 
 
@@ -289,8 +291,8 @@ def test_calculate_tp_sl_fib_short_valid():
 
     assert result is not None
     tp, sl = result
-    assert abs(tp - 99.864) < 1e-6             # 100.5 - 0.5*1.272
-    assert sl > 100.5
+    assert abs(tp - 99.691) < 1e-6             # 100.5 - 0.5*1.618
+    assert abs(sl - 100.3945) < 1e-6           # (100.0 + 0.5*0.786) + 0.01*0.15
     assert tp < 100.2 < sl
 
 

@@ -264,15 +264,19 @@ def _calculate_tp_sl_fib(direction: str, entry: float, details: dict) -> tuple[f
     atr_last = details["atr"]
 
     tp = fib_extension_price(leg_start, leg_end, direction, config_fib.TP_EXTENSION_LEVEL)
+    # Stop sits just beyond the *next* Fibonacci level past the entry zone
+    # (config_fib.SL_FIB_LEVEL, default 0.786 -- one level deeper than the
+    # 0.5-0.618 entry zone), not all the way back at the leg's 100% origin.
+    sl_level_price = fib_retracement_price(leg_start, leg_end, direction, config_fib.SL_FIB_LEVEL)
 
     if direction == "LONG":
-        sl = leg_start - atr_last * config_fib.SL_ATR_BUFFER_MULTIPLIER
+        sl = sl_level_price - atr_last * config_fib.SL_ATR_BUFFER_MULTIPLIER
         if sl >= entry:
             return None
         if (entry - sl) / entry > config_fib.MAX_SL_PRICE_PCT:
             return None
     else:
-        sl = leg_start + atr_last * config_fib.SL_ATR_BUFFER_MULTIPLIER
+        sl = sl_level_price + atr_last * config_fib.SL_ATR_BUFFER_MULTIPLIER
         if sl <= entry:
             return None
         if (sl - entry) / entry > config_fib.MAX_SL_PRICE_PCT:
