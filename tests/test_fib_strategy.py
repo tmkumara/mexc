@@ -8,6 +8,7 @@ from fib_strategy import (
 )
 from fib_strategy import _detect_trend_4h, _detect_fib_entry
 from tests.fib_fixtures import make_1h_fib_df, make_4h_trend_df
+from fib_strategy import BtcContext4h, _btc_filter_ok_4h, build_btc_context_4h
 
 
 def test_fractal_swing_detection_finds_known_pivots():
@@ -280,3 +281,58 @@ def test_score_candidate_fib_within_bounds():
     }
     score = _score_candidate_fib("LONG", details, rr=2.5)
     assert 0.0 <= score <= 100.0
+
+
+def _bullish_btc_4h() -> BtcContext4h:
+    return BtcContext4h(close=50100.0, ema_200=49500.0, one_candle_move_pct=0.1, three_candle_move_pct=0.3)
+
+
+def _bearish_btc_4h() -> BtcContext4h:
+    return BtcContext4h(close=49500.0, ema_200=50100.0, one_candle_move_pct=-0.1, three_candle_move_pct=-0.3)
+
+
+def _extreme_btc_4h() -> BtcContext4h:
+    return BtcContext4h(close=50100.0, ema_200=49500.0, one_candle_move_pct=0.9, three_candle_move_pct=0.3)
+
+
+def test_btc_filter_long_allowed_when_btc_bullish():
+    ok, _ = _btc_filter_ok_4h("LONG", _bullish_btc_4h())
+    assert ok is True
+
+
+def test_btc_filter_long_blocked_when_btc_bearish():
+    ok, reason = _btc_filter_ok_4h("LONG", _bearish_btc_4h())
+    assert ok is False
+    assert "bearish" in reason
+
+
+def test_btc_filter_short_allowed_when_btc_bearish():
+    ok, _ = _btc_filter_ok_4h("SHORT", _bearish_btc_4h())
+    assert ok is True
+
+
+def test_btc_filter_short_blocked_when_btc_bullish():
+    ok, reason = _btc_filter_ok_4h("SHORT", _bullish_btc_4h())
+    assert ok is False
+    assert "bullish" in reason
+
+
+def test_btc_filter_blocked_during_extreme_move():
+    ok, reason = _btc_filter_ok_4h("LONG", _extreme_btc_4h())
+    assert ok is False
+    assert "volatility" in reason
+
+
+def test_build_btc_context_4h_from_klines(monkeypatch):
+    df_btc = make_4h_trend_df("LONG", bars=220)
+
+    def _fake(symbol, interval, count=100):
+        assert symbol == fib_strategy.config_fib.BTC_FILTER_SYMBOL
+        assert interval == fib_strategy.config_fib.BTC_FILTER_TF
+        return df_btc
+
+    monkeypatch.setattr(fib_strategy, "get_market_klines", _fake)
+
+    ctx = build_btc_context_4h()
+    assert ctx is not None
+    assert ctx.close > ctx.ema_200

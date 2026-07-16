@@ -140,6 +140,7 @@ def fib_extension_price(leg_start: float, leg_end: float, direction: str, ratio:
 
 from strategy import calculate_ema, calculate_rsi, calculate_atr
 import config_fib
+from market_data import get_market_klines
 
 
 def _ema_slope_ok(ema: pd.Series, direction: str, tolerance: float = 1e-9) -> bool:
@@ -281,3 +282,52 @@ def _score_candidate_fib(direction: str, details: dict, rr: float) -> float:
     score += 20.0 * rr_quality
 
     return round(min(100.0, max(0.0, score)), 1)
+
+
+# ── BTC 4H market-safety filter ────────────────────────────────────────
+
+def build_btc_context_4h() -> BtcContext4h | None:
+    df = get_market_klines(config_fib.BTC_FILTER_SYMBOL, config_fib.BTC_FILTER_TF, count=config_fib.TREND_KLINE_COUNT)
+    if df is None or df.empty:
+        return None
+    closed = df.iloc[:-1].copy()
+    if len(closed) < config_fib.TREND_EMA_PERIOD + 5:
+        return None
+
+    ema200 = calculate_ema(closed["close"], config_fib.TREND_EMA_PERIOD)
+
+    latest_close = float(closed["close"].iloc[-1])
+    previous_close = float(closed["close"].iloc[-2])
+    close_three_bars_ago = float(closed["close"].iloc[-4])
+
+    one_candle_move_pct = (latest_close - previous_close) / previous_close * 100.0
+    three_candle_move_pct = (latest_close - close_three_bars_ago) / close_three_bars_ago * 100.0
+
+    return BtcContext4h(
+        close=latest_close,
+        ema_200=float(ema200.iloc[-1]),
+        one_candle_move_pct=one_candle_move_pct,
+        three_candle_move_pct=three_candle_move_pct,
+    )
+
+
+def _btc_filter_ok_4h(direction: str, btc: BtcContext4h) -> tuple[bool, str]:
+    if abs(btc.one_candle_move_pct) > config_fib.BTC_MAX_SINGLE_CANDLE_MOVE_PCT:
+        return False, "blocked due to extreme BTC volatility"
+    if abs(btc.three_candle_move_pct) > config_fib.BTC_MAX_THREE_CANDLE_MOVE_PCT:
+        return False, "blocked due to extreme BTC volatility"
+
+    if direction == "LONG":
+        if not (
+            btc.close > btc.ema_200
+            and btc.three_candle_move_pct >= -config_fib.BTC_MAX_OPPOSING_MOVE_PCT
+        ):
+            return False, "blocked by BTC bearish trend"
+    else:
+        if not (
+            btc.close < btc.ema_200
+            and btc.three_candle_move_pct <= config_fib.BTC_MAX_OPPOSING_MOVE_PCT
+        ):
+            return False, "blocked by BTC bullish trend"
+
+    return True, ""
