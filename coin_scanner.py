@@ -157,10 +157,33 @@ _NON_CRYPTO_EXACT_BASES = (
     "BRL",
 )
 
+# Fiat-pegged stablecoins -- these ARE crypto, but a directional/trend
+# strategy has no business trading them: their price barely moves, so any
+# detected "swing" or "trend flip" sits a hair from entry, producing
+# degenerate near-zero stop distances and correspondingly inflated,
+# unrealistic RR values (found via the NW strategy's backtest: a
+# USDC_USDT trade with a structural stop 0.0018% from entry reported
+# RR=410). Checked as an exact base match, same as the forex codes above.
+_STABLECOIN_EXACT_BASES = (
+    "USDC",
+    "TUSD",
+    "DAI",
+    "BUSD",
+    "FDUSD",
+    "USDD",
+    "USDE",
+    "USDP",
+    "GUSD",
+    "PYUSD",
+    "USDJ",
+    "EURC",
+)
+
 
 def _is_crypto_symbol(symbol: str) -> bool:
     """
-    Returns False for MEXC stock/index/commodity style contracts.
+    Returns False for MEXC stock/index/commodity style contracts and for
+    fiat-pegged stablecoins (real crypto, but not trend-tradeable).
     Always returns True when CRYPTO_FUTURES_ONLY=False.
     """
     if not CRYPTO_FUTURES_ONLY:
@@ -168,7 +191,7 @@ def _is_crypto_symbol(symbol: str) -> bool:
 
     upper = symbol.upper()
     base = upper.split("_")[0]
-    if base in _NON_CRYPTO_EXACT_BASES:
+    if base in _NON_CRYPTO_EXACT_BASES or base in _STABLECOIN_EXACT_BASES:
         return False
     return not any(keyword in upper for keyword in _NON_CRYPTO_KEYWORDS)
 

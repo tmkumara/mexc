@@ -206,21 +206,28 @@ def _calculate_tp_sl_nw(direction: str, entry: float, details: dict) -> tuple[fl
     its price distance from entry capped (not rejected) at
     MAX_SL_PRICE_PCT. This intentionally mirrors the original live bot's
     cap-not-reject SL model rather than the fib strategy's later
-    reject-if-too-wide redesign (see this plan's Global Constraints)."""
+    reject-if-too-wide redesign (see this plan's Global Constraints).
+
+    The cap only guards against a stop being too WIDE. A raw structural
+    distance below MIN_SL_PRICE_PCT is rejected outright (not floored up)
+    -- a near-zero swing distance (e.g. a near-flat stablecoin) doesn't
+    reflect a real structural level, and artificially widening it would
+    just fabricate a stop, not fix the underlying setup quality."""
     atr_last = details["atr"]
     swing_level = details["swing_level"]
+    min_distance = entry * config_nw.MIN_SL_PRICE_PCT
 
     if direction == "LONG":
         tp = entry * (1.0 + config_nw.TP_PRICE_PCT)
         raw_sl_distance = entry - (swing_level - atr_last * config_nw.NW_SL_ATR_BUFFER_MULTIPLIER)
-        if raw_sl_distance <= 0:
+        if raw_sl_distance < min_distance:
             return None
         sl_distance = min(raw_sl_distance, entry * config_nw.MAX_SL_PRICE_PCT)
         sl = entry - sl_distance
     else:
         tp = entry * (1.0 - config_nw.TP_PRICE_PCT)
         raw_sl_distance = (swing_level + atr_last * config_nw.NW_SL_ATR_BUFFER_MULTIPLIER) - entry
-        if raw_sl_distance <= 0:
+        if raw_sl_distance < min_distance:
             return None
         sl_distance = min(raw_sl_distance, entry * config_nw.MAX_SL_PRICE_PCT)
         sl = entry + sl_distance

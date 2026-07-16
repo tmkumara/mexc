@@ -159,6 +159,17 @@ def test_calculate_tp_sl_nw_rejects_when_swing_on_wrong_side_of_entry():
     assert result is None
 
 
+def test_calculate_tp_sl_nw_rejects_degenerate_near_zero_stop_distance():
+    entry = 100.0
+    # raw distance = 100 - (99.999 - 0.0) = 0.001, i.e. 0.001% of entry --
+    # far below MIN_SL_PRICE_PCT (default 0.2%). A near-flat instrument
+    # (e.g. a stablecoin) can produce exactly this shape of degenerate
+    # "swing" -- reject outright rather than trade an unrealistic RR.
+    details = {"atr": 0.0, "swing_level": 99.999}
+    result = _calculate_tp_sl_nw("LONG", entry, details)
+    assert result is None
+
+
 def test_btc_filter_ok_long_when_btc_bullish():
     btc = BtcContext4h(close=105.0, ema_200=100.0, one_candle_move_pct=0.1, three_candle_move_pct=0.3)
     ok, reason = _btc_filter_ok_4h("LONG", btc)

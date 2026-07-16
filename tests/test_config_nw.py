@@ -25,6 +25,7 @@ def test_defaults_loaded():
     assert config_nw.LEVERAGE == 20
     assert config_nw.TARGET_ROI_PCT == 15.0
     assert config_nw.MAX_SL_ROI_PCT == 20.0
+    assert config_nw.MIN_SL_PRICE_PCT == 0.002
     assert config_nw.MIN_RR == 1.5
     assert config_nw.NW_ENABLE_BTC_FILTER is True
     assert config_nw.NW_BTC_FILTER_TF == "4h"

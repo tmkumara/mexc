@@ -60,6 +60,15 @@ TARGET_ROI_PCT: float = float(os.getenv("NW_TARGET_ROI_PCT", "15.0"))
 TP_PRICE_PCT: float = TARGET_ROI_PCT / 100.0 / LEVERAGE
 MAX_SL_ROI_PCT: float = float(os.getenv("NW_MAX_SL_ROI_PCT", "20.0"))
 MAX_SL_PRICE_PCT: float = MAX_SL_ROI_PCT / 100.0 / LEVERAGE
+# Cap-not-reject only guards against a stop being too WIDE -- nothing
+# stopped a structurally tiny swing (e.g. a near-flat stablecoin) from
+# producing a near-zero stop distance and a correspondingly inflated,
+# unrealistic RR that trivially clears MIN_RR while being trivially
+# stopped out by routine noise. Found via backtest: USDC_USDT reported
+# RR=410 with a stop 0.0018% from entry. A candidate whose raw structural
+# distance falls below this floor is rejected outright, not floored up --
+# an artificially widened stop wouldn't reflect a real structural level.
+MIN_SL_PRICE_PCT: float = float(os.getenv("NW_MIN_SL_PRICE_PCT", "0.002"))
 MIN_RR: float = float(os.getenv("NW_MIN_RR", "1.5"))
 
 # ── BTC market safety filter (4H variant) ─────────────────────────────
