@@ -42,7 +42,7 @@ NW_RSI_SHORT_MIN: float = float(os.getenv("NW_RSI_SHORT_MIN", "25"))
 NW_RSI_SHORT_MAX: float = float(os.getenv("NW_RSI_SHORT_MAX", "55"))
 
 NW_VOLUME_MA_PERIOD: int = int(os.getenv("NW_VOLUME_MA_PERIOD", "20"))
-NW_MIN_VOLUME_MULTIPLIER: float = float(os.getenv("NW_MIN_VOLUME_MULTIPLIER", "1.0"))
+NW_MIN_VOLUME_MULTIPLIER: float = float(os.getenv("NW_MIN_VOLUME_MULTIPLIER", "0.7"))
 
 NW_ATR_PERIOD: int = int(os.getenv("NW_ATR_PERIOD", "14"))
 # Buffer beyond the structural swing level used to place the SL.

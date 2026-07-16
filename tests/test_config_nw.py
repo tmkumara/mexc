@@ -17,7 +17,7 @@ def test_defaults_loaded():
     assert config_nw.NW_RSI_SHORT_MIN == 25
     assert config_nw.NW_RSI_SHORT_MAX == 55
     assert config_nw.NW_VOLUME_MA_PERIOD == 20
-    assert config_nw.NW_MIN_VOLUME_MULTIPLIER == 1.0
+    assert config_nw.NW_MIN_VOLUME_MULTIPLIER == 0.7
     assert config_nw.NW_ATR_PERIOD == 14
     assert config_nw.NW_SL_ATR_BUFFER_MULTIPLIER == 0.5
     assert config_nw.LEVERAGE == 20
