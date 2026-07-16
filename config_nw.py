@@ -22,6 +22,14 @@ NW_RELATIVE_WEIGHTING: float = float(os.getenv("NW_RELATIVE_WEIGHTING", "8.0")) 
 # default h/r, so bars beyond this contribute negligibly (see
 # tests/test_nw_kernel.py's truncation-accuracy test).
 NW_KERNEL_SUM_WINDOW: int = int(os.getenv("NW_KERNEL_SUM_WINDOW", "300"))
+# How many of the most recent candles may contain the slope-flip bar --
+# a genuine kernel turn is a single-bar event, and requiring it to be the
+# exact latest candle was found empirically to reject ~91% of all
+# evaluations (diagnostic run, 60-day/47-symbol pool, 2026-07-16). Widened
+# so a recent-but-not-instantaneous flip still qualifies, provided the
+# latest bar's slope hasn't already reversed (see NW_KERNEL_SUM_WINDOW's
+# sibling check in _detect_nw_signal's "still holding" condition).
+NW_CONFIRMATION_LOOKBACK_BARS: int = int(os.getenv("NW_CONFIRMATION_LOOKBACK_BARS", "5"))
 
 # Structural swing lookup, used only to anchor the SL (see Task 5).
 NW_SWING_FRACTAL_BARS: int = int(os.getenv("NW_SWING_FRACTAL_BARS", "5"))

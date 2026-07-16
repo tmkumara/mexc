@@ -115,8 +115,22 @@ def _detect_nw_signal(df_1h: pd.DataFrame, direction: str) -> tuple[bool, str, d
     flips = nw_kernel.detect_slope_flip(yhat)
 
     expected_flip = "bullish" if direction == "LONG" else "bearish"
-    if flips.iloc[-1] != expected_flip:
-        return False, "no kernel slope flip on latest candle", {}
+    # The flip itself doesn't have to be the exact latest bar -- it just has
+    # to have happened within the last NW_CONFIRMATION_LOOKBACK_BARS candles
+    # (a genuine kernel turn is a rare, single-bar event; requiring it to be
+    # today rejected ~91% of all evaluations empirically). The latest bar
+    # must still be holding that direction, though -- if the kernel already
+    # reversed again since the flip, this isn't a live setup anymore.
+    recent_flips = flips.iloc[-config_nw.NW_CONFIRMATION_LOOKBACK_BARS:]
+    if not bool((recent_flips == expected_flip).any()):
+        return False, "no kernel slope flip within confirmation lookback", {}
+
+    still_bullish = yhat[-1] > yhat[-2]
+    still_bearish = yhat[-1] < yhat[-2]
+    if direction == "LONG" and not still_bullish:
+        return False, "kernel reversed before confirmation held", {}
+    if direction == "SHORT" and not still_bearish:
+        return False, "kernel reversed before confirmation held", {}
 
     rsi = calculate_rsi(df_1h["close"], config_nw.NW_RSI_PERIOD)
     atr = calculate_atr(df_1h, config_nw.NW_ATR_PERIOD)
@@ -286,8 +300,10 @@ def _score_candidate_nw(direction: str, details: dict, rr: float) -> float:
 # ── public entry point ─────────────────────────────────────────────────
 
 def _reason_bucket(reason: str) -> str:
-    if reason == "no kernel slope flip on latest candle":
+    if "no kernel slope flip" in reason:
         return "no_flip"
+    if "reversed before confirmation held" in reason:
+        return "confirmation_not_held"
     if "no structural swing" in reason:
         return "no_swing"
     if reason.startswith("RSI"):

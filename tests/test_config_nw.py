@@ -8,6 +8,7 @@ def test_defaults_loaded():
     assert config_nw.NW_LOOKBACK_WINDOW == 8.0
     assert config_nw.NW_RELATIVE_WEIGHTING == 8.0
     assert config_nw.NW_KERNEL_SUM_WINDOW == 300
+    assert config_nw.NW_CONFIRMATION_LOOKBACK_BARS == 5
     assert config_nw.NW_SWING_FRACTAL_BARS == 5
     assert config_nw.NW_SWING_LOOKBACK_BARS == 20
     assert config_nw.NW_RSI_PERIOD == 14
