@@ -213,3 +213,66 @@ def test_detect_fib_entry_rejected_when_volume_too_low(monkeypatch):
     ok, reason, _ = _detect_fib_entry(closed, "LONG")
     assert ok is False
     assert reason.startswith("volume ratio")
+
+
+from fib_strategy import (
+    _valid_trade_geometry, _calc_rr, _calculate_tp_sl_fib, _score_candidate_fib,
+)
+
+
+def test_long_trade_geometry():
+    assert _valid_trade_geometry("LONG", entry=100.0, tp=105.0, sl=98.0) is True
+    assert _valid_trade_geometry("LONG", entry=100.0, tp=95.0, sl=98.0) is False
+
+
+def test_short_trade_geometry():
+    assert _valid_trade_geometry("SHORT", entry=100.0, tp=95.0, sl=102.0) is True
+    assert _valid_trade_geometry("SHORT", entry=100.0, tp=105.0, sl=102.0) is False
+
+
+def test_invalid_geometry_rejected_on_zero_price():
+    assert _valid_trade_geometry("LONG", entry=0.0, tp=105.0, sl=98.0) is False
+
+
+def test_calc_rr():
+    rr = _calc_rr(entry=100.0, tp=106.0, sl=98.0)
+    assert abs(rr - 3.0) < 1e-9
+
+
+def test_calculate_tp_sl_fib_long_valid():
+    details = {"leg_start": 90.0, "leg_end": 110.0, "atr": 0.5}
+    result = _calculate_tp_sl_fib("LONG", entry=100.5, details=details)
+
+    assert result is not None
+    tp, sl = result
+    assert abs(tp - 115.44) < 1e-6           # 90 + 20*1.272
+    assert sl < 90.0                          # leg_start minus ATR buffer
+    assert tp > 100.5 > sl
+
+
+def test_calculate_tp_sl_fib_short_valid():
+    details = {"leg_start": 110.0, "leg_end": 90.0, "atr": 0.5}
+    result = _calculate_tp_sl_fib("SHORT", entry=99.4, details=details)
+
+    assert result is not None
+    tp, sl = result
+    assert abs(tp - 84.56) < 1e-6             # 110 - 20*1.272
+    assert sl > 110.0
+    assert tp < 99.4 < sl
+
+
+def test_calculate_tp_sl_fib_rejects_stop_too_wide():
+    # ATR buffer alone would blow past MAX_SL_PRICE_PCT for a tiny entry
+    # price -- confirms the width guard works, not just the geometry sign.
+    details = {"leg_start": 50.0, "leg_end": 110.0, "atr": 500.0}
+    result = _calculate_tp_sl_fib("LONG", entry=100.5, details=details)
+    assert result is None
+
+
+def test_score_candidate_fib_within_bounds():
+    details = {
+        "close": 100.5, "zone_low": 97.64, "zone_high": 100.0,
+        "rsi": 58.0, "volume_ratio": 1.8,
+    }
+    score = _score_candidate_fib("LONG", details, rr=2.5)
+    assert 0.0 <= score <= 100.0

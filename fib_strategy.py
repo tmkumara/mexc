@@ -215,3 +215,69 @@ def _detect_fib_entry(df_1h: pd.DataFrame, direction: str) -> tuple[bool, str, d
         "volume_ratio": vol_last / vol_avg if vol_avg else 0.0,
     }
     return True, "", details
+
+
+# ── trade geometry, TP/SL, RR, scoring ────────────────────────────────
+
+def _valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
+    if entry <= 0 or tp <= 0 or sl <= 0:
+        return False
+    if direction == "LONG":
+        return tp > entry > sl
+    return tp < entry < sl
+
+
+def _calc_rr(entry: float, tp: float, sl: float) -> float:
+    reward = abs(tp - entry)
+    risk = abs(entry - sl)
+    return reward / risk if risk > 0 else 0.0
+
+
+def _calculate_tp_sl_fib(direction: str, entry: float, details: dict) -> tuple[float, float] | None:
+    leg_start = details["leg_start"]
+    leg_end = details["leg_end"]
+    atr_last = details["atr"]
+
+    tp = fib_extension_price(leg_start, leg_end, direction, config_fib.TP_EXTENSION_LEVEL)
+
+    if direction == "LONG":
+        sl = leg_start - atr_last * config_fib.SL_ATR_BUFFER_MULTIPLIER
+        if sl >= entry:
+            return None
+        if (entry - sl) / entry > config_fib.MAX_SL_PRICE_PCT:
+            return None
+    else:
+        sl = leg_start + atr_last * config_fib.SL_ATR_BUFFER_MULTIPLIER
+        if sl <= entry:
+            return None
+        if (sl - entry) / entry > config_fib.MAX_SL_PRICE_PCT:
+            return None
+
+    return tp, sl
+
+
+def _score_candidate_fib(direction: str, details: dict, rr: float) -> float:
+    score = 30.0  # 4H trend alignment -- already gated true/false upstream
+
+    zone_mid = (details["zone_low"] + details["zone_high"]) / 2.0
+    zone_span = details["zone_high"] - details["zone_low"]
+    precision = 1.0 - min(1.0, abs(details["close"] - zone_mid) / zone_span) if zone_span > 0 else 0.5
+    score += 20.0 * precision
+
+    vol_ratio = details["volume_ratio"]
+    vol_quality = min(1.0, max(0.0, (vol_ratio - config_fib.MIN_VOLUME_MULTIPLIER) / (2.0 - config_fib.MIN_VOLUME_MULTIPLIER)))
+    score += 15.0 * vol_quality
+
+    rsi = details["rsi"]
+    ideal_lo, ideal_hi = (55.0, 62.0) if direction == "LONG" else (38.0, 45.0)
+    if ideal_lo <= rsi <= ideal_hi:
+        rsi_quality = 1.0
+    else:
+        dist = min(abs(rsi - ideal_lo), abs(rsi - ideal_hi))
+        rsi_quality = max(0.0, 1.0 - dist / 15.0)
+    score += 15.0 * rsi_quality
+
+    rr_quality = min(1.0, max(0.0, (rr - config_fib.MIN_RR) / (2.0 - config_fib.MIN_RR))) if config_fib.MIN_RR < 2.0 else (1.0 if rr >= config_fib.MIN_RR else 0.0)
+    score += 20.0 * rr_quality
+
+    return round(min(100.0, max(0.0, score)), 1)
