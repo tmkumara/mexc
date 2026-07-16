@@ -183,3 +183,30 @@ def test_btc_filter_ok_short_when_btc_bearish():
     btc = BtcContext4h(close=95.0, ema_200=100.0, one_candle_move_pct=-0.1, three_candle_move_pct=-0.3)
     ok, reason = _btc_filter_ok_4h("SHORT", btc)
     assert ok is True, reason
+
+
+def test_btc_filter_blocks_on_extreme_three_candle_volatility_isolated():
+    # one_candle_move_pct stays well inside its own threshold (0.60) so
+    # only the three_candle branch can be responsible for the block.
+    btc = BtcContext4h(close=105.0, ema_200=100.0, one_candle_move_pct=0.1, three_candle_move_pct=1.3)
+    ok, reason = _btc_filter_ok_4h("LONG", btc)
+    assert ok is False
+    assert "volatility" in reason
+
+
+def test_btc_filter_allows_move_exactly_at_single_candle_threshold():
+    # Exactly at the threshold must still pass -- the check is strict '>'.
+    btc = BtcContext4h(close=105.0, ema_200=100.0, one_candle_move_pct=0.60, three_candle_move_pct=0.3)
+    ok, reason = _btc_filter_ok_4h("LONG", btc)
+    assert ok is True, reason
+
+
+def test_btc_filter_blocks_long_on_opposing_move_even_when_ema_trend_is_bullish():
+    # close > ema_200 (the EMA-trend conjunct is satisfied on its own), but
+    # three_candle_move_pct is past the -0.20 opposing-move tolerance --
+    # isolates the opposing-move clause from the EMA-trend clause. Neither
+    # volatility threshold is tripped (0.60 / 1.20).
+    btc = BtcContext4h(close=101.0, ema_200=100.0, one_candle_move_pct=-0.05, three_candle_move_pct=-0.25)
+    ok, reason = _btc_filter_ok_4h("LONG", btc)
+    assert ok is False
+    assert "bearish" in reason
