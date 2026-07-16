@@ -134,3 +134,84 @@ def fib_extension_price(leg_start: float, leg_end: float, direction: str, ratio:
     Fibonacci extension convention)."""
     span = leg_end - leg_start
     return leg_start + span * ratio
+
+
+# ── trend filter + entry confirmation ─────────────────────────────────
+
+from strategy import calculate_ema, calculate_rsi, calculate_atr
+import config_fib
+
+
+def _ema_slope_ok(ema: pd.Series, direction: str, tolerance: float = 1e-9) -> bool:
+    current = ema.iloc[-1]
+    three_bars_ago = ema.iloc[-4]
+    if direction == "LONG":
+        return current >= three_bars_ago - tolerance
+    return current <= three_bars_ago + tolerance
+
+
+def _detect_trend_4h(df_4h: pd.DataFrame) -> str | None:
+    ema200 = calculate_ema(df_4h["close"], config_fib.TREND_EMA_PERIOD)
+    close = float(df_4h["close"].iloc[-1])
+
+    if close > float(ema200.iloc[-1]) and _ema_slope_ok(ema200, "LONG"):
+        return "LONG"
+    if close < float(ema200.iloc[-1]) and _ema_slope_ok(ema200, "SHORT"):
+        return "SHORT"
+    return None
+
+
+def _detect_fib_entry(df_1h: pd.DataFrame, direction: str) -> tuple[bool, str, dict]:
+    rsi = calculate_rsi(df_1h["close"], config_fib.RSI_PERIOD)
+    atr = calculate_atr(df_1h, config_fib.ATR_PERIOD)
+
+    swings = find_swings(df_1h, config_fib.SWING_FRACTAL_BARS)
+    leg = find_last_impulse_leg(swings, direction, config_fib.SWING_LOOKBACK_BARS)
+    if leg is None:
+        return False, "no valid impulse leg found", {}
+
+    price_a = fib_retracement_price(leg.leg_start, leg.leg_end, direction, config_fib.ZONE_LOWER)
+    price_b = fib_retracement_price(leg.leg_start, leg.leg_end, direction, config_fib.ZONE_UPPER)
+    zone_low, zone_high = min(price_a, price_b), max(price_a, price_b)
+
+    recent = df_1h.iloc[-(config_fib.ZONE_LOOKBACK_BARS + 1):-1]
+    touched = bool(((recent["low"] <= zone_high) & (recent["high"] >= zone_low)).any())
+    if not touched:
+        return False, "no zone touch", {}
+
+    close = float(df_1h["close"].iloc[-1])
+    open_ = float(df_1h["open"].iloc[-1])
+    rsi_last = float(rsi.iloc[-1])
+    atr_last = float(atr.iloc[-1])
+    vol_last = float(df_1h["volume"].iloc[-1])
+    vol_avg = float(df_1h["volume"].iloc[-(config_fib.VOLUME_MA_PERIOD + 1):-1].mean())
+
+    if direction == "LONG":
+        if not (close > zone_high and close > open_):
+            return False, "confirmation candle did not close back above zone", {}
+    else:
+        if not (close < zone_low and close < open_):
+            return False, "confirmation candle did not close back below zone", {}
+
+    rsi_min, rsi_max = (
+        (config_fib.RSI_LONG_MIN, config_fib.RSI_LONG_MAX) if direction == "LONG"
+        else (config_fib.RSI_SHORT_MIN, config_fib.RSI_SHORT_MAX)
+    )
+    if not (rsi_min <= rsi_last <= rsi_max):
+        return False, f"RSI {rsi_last:.1f} outside {direction.lower()} range", {}
+
+    if vol_avg <= 0 or not (vol_last >= config_fib.MIN_VOLUME_MULTIPLIER * vol_avg):
+        ratio = (vol_last / vol_avg) if vol_avg else 0.0
+        return False, f"volume ratio {ratio:.2f} below {config_fib.MIN_VOLUME_MULTIPLIER}", {}
+
+    details = {
+        "close": close,
+        "leg_start": leg.leg_start,
+        "leg_end": leg.leg_end,
+        "zone_low": zone_low,
+        "zone_high": zone_high,
+        "rsi": rsi_last,
+        "atr": atr_last,
+        "volume_ratio": vol_last / vol_avg if vol_avg else 0.0,
+    }
+    return True, "", details

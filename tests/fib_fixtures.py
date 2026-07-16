@@ -39,6 +39,7 @@ def make_1h_fib_df(
     leg_end: float = 110.0,
     confirm_break: float = 0.6,
     confirm_volume_mult: float = 1.6,
+    retrace_fraction: float = 0.559,
 ) -> pd.DataFrame:
     """
     A 1H series ending in: quiet padding, a clean impulse leg (swing
@@ -51,15 +52,24 @@ def make_1h_fib_df(
     Story layout (40 bars, LONG shown -- SHORT mirrors leg_start/leg_end):
       story[0:10]   decline from padding level down to leg_start (swing low)
       story[10:20]  rise from leg_start up to leg_end (swing high)
-      story[20:30]  retracement from leg_end down to zone midpoint
-      story[30:39]  hold near the zone midpoint (small zigzag)
+      story[20:30]  retracement from leg_end down to `retrace_fraction` of
+                    the leg (0.559 by default -- inside the 0.5-0.618 zone;
+                    pass a value outside that band, e.g. 0.2, to build a
+                    fixture whose hold segment never touches the zone)
+      story[30:39]  hold near the retracement level (small zigzag)
       story[39]     confirmation candle, closes back out of the zone
+
+    `retrace_fraction` is expressed as a fraction of `span`, so unlike
+    `zone_edge` (a proportional 0.5 level) it deliberately does NOT scale
+    with leg size -- this is what lets a caller construct a "no zone
+    touch" fixture even with a very large leg span, where a proportional
+    retracement would always land inside the zone by construction.
     """
     sign = 1.0 if direction == "LONG" else -1.0
     idx = pd.date_range("2026-01-01", periods=bars, freq="1h")
 
     span = abs(leg_end - leg_start)
-    zone_mid = leg_end - sign * 0.559 * span   # midpoint of the 0.5-0.618 zone
+    zone_mid = leg_end - sign * retrace_fraction * span
     zone_edge = leg_end - sign * 0.5 * span    # the 0.5 level (nearer to leg_end)
 
     # pad + decline together form ONE continuous monotonic run down to
