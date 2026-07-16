@@ -60,7 +60,12 @@ MIN_VOLUME_MULTIPLIER: float = float(os.getenv("FIB_MIN_VOLUME_MULTIPLIER", "1.0
 ATR_PERIOD: int = int(os.getenv("FIB_ATR_PERIOD", "14"))
 
 LEVERAGE: int = int(os.getenv("FIB_LEVERAGE", "20"))
-MAX_SL_ROI_PCT: float = float(os.getenv("FIB_MAX_SL_ROI_PCT", "10.0"))
+# Raised from 10.0 (the live 5m-scalp bot's own cap, -> 0.5% price distance)
+# -- that figure was never calibrated for this 1H/4H swing strategy and was
+# the binding constraint crushing the sample when SL_ATR_BUFFER_MULTIPLIER
+# was widened. 20.0 -> 1.0% price distance at 20x leverage, giving the wider
+# buffer room to actually take effect.
+MAX_SL_ROI_PCT: float = float(os.getenv("FIB_MAX_SL_ROI_PCT", "20.0"))
 MAX_SL_PRICE_PCT: float = MAX_SL_ROI_PCT / 100.0 / LEVERAGE
 # Restored to 1.5 (the live bot's own floor) now that SL sits at the 0.786
 # level instead of the leg origin -- the redesigned geometry's RR ceiling is
