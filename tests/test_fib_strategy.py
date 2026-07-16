@@ -269,8 +269,8 @@ def test_calc_rr():
 
 
 def test_calculate_tp_sl_fib_long_valid():
-    # A tight, realistic leg (0.5% of price) -- config_fib.MAX_SL_PRICE_PCT
-    # caps stops at 0.5% of entry (MAX_SL_ROI_PCT=10.0 / LEVERAGE=20), so
+    # A tight, realistic leg -- config_fib.MAX_SL_PRICE_PCT caps stops at
+    # MAX_SL_ROI_PCT/100/LEVERAGE of entry (currently 20.0/100/10 = 2.0%), so
     # the leg magnitude must actually respect that cap for this to return
     # a valid (non-None) result. SL now sits at the 0.786 level (config_fib.
     # SL_FIB_LEVEL), not the leg origin -- see "textbook" Fibonacci strategy
@@ -377,10 +377,10 @@ def test_evaluate_symbol_fib_long_valid(monkeypatch):
     df_1h = make_1h_fib_df("LONG")
     patch_fib_klines(monkeypatch, fib_strategy, df_4h, df_1h)
     # The fixture's leg (90 -> 110) is a ~20% swing, wider than
-    # config_fib.MAX_SL_PRICE_PCT's default 0.5% cap (MAX_SL_ROI_PCT=10.0 /
-    # LEVERAGE=20) -- relax the cap for this pipeline-wiring test so it can
-    # reach the RR/geometry stages using the same fixture Tasks 2-3 already
-    # validated, rather than re-deriving a differently-scaled fixture.
+    # config_fib.MAX_SL_PRICE_PCT's default cap (MAX_SL_ROI_PCT/100/LEVERAGE)
+    # -- relax the cap for this pipeline-wiring test so it can reach the
+    # RR/geometry stages using the same fixture Tasks 2-3 already validated,
+    # rather than re-deriving a differently-scaled fixture.
     monkeypatch.setattr(fib_strategy.config_fib, "MAX_SL_PRICE_PCT", 0.20)
 
     sig = evaluate_symbol_fib("TEST_USDT", btc_context=_bullish_btc_4h())

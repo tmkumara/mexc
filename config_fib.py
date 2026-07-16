@@ -59,7 +59,13 @@ MIN_VOLUME_MULTIPLIER: float = float(os.getenv("FIB_MIN_VOLUME_MULTIPLIER", "1.0
 
 ATR_PERIOD: int = int(os.getenv("FIB_ATR_PERIOD", "14"))
 
-LEVERAGE: int = int(os.getenv("FIB_LEVERAGE", "20"))
+# Reduced from 20 -- the 20x backtest's -128.4% max drawdown (in leveraged
+# ROI% terms) meant a real account would have been margin-called before
+# reaching the eventual positive result. ROI%/drawdown scale linearly with
+# leverage for the same underlying price path, so halving it roughly halves
+# both the upside and the drawdown -- a materially more survivable profile
+# at the cost of smaller per-trade returns.
+LEVERAGE: int = int(os.getenv("FIB_LEVERAGE", "10"))
 # Raised from 10.0 (the live 5m-scalp bot's own cap, -> 0.5% price distance)
 # -- that figure was never calibrated for this 1H/4H swing strategy and was
 # the binding constraint crushing the sample when SL_ATR_BUFFER_MULTIPLIER
