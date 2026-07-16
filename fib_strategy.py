@@ -182,6 +182,24 @@ def _detect_fib_entry(df_1h: pd.DataFrame, direction: str) -> tuple[bool, str, d
     if not touched:
         return False, "no zone touch", {}
 
+    # Breakout candle: within the last CONFIRMATION_LOOKBACK_BARS candles
+    # (including the latest), at least one candle closed back out of the zone
+    # in the trend direction AND was itself the right color -- this is the
+    # actual reversal/rejection event, and it no longer has to be the exact
+    # latest bar (real breakouts often take a candle or two to fully clear
+    # the zone before the market "confirms" it).
+    breakout_window = df_1h.iloc[-config_fib.CONFIRMATION_LOOKBACK_BARS:]
+    if direction == "LONG":
+        breakout_occurred = bool(
+            ((breakout_window["close"] > zone_high) & (breakout_window["close"] > breakout_window["open"])).any()
+        )
+    else:
+        breakout_occurred = bool(
+            ((breakout_window["close"] < zone_low) & (breakout_window["close"] < breakout_window["open"])).any()
+        )
+    if not breakout_occurred:
+        return False, "no confirmation candle closed back out of zone within lookback", {}
+
     close = float(df_1h["close"].iloc[-1])
     open_ = float(df_1h["open"].iloc[-1])
     rsi_last = float(rsi.iloc[-1])
@@ -189,12 +207,16 @@ def _detect_fib_entry(df_1h: pd.DataFrame, direction: str) -> tuple[bool, str, d
     vol_last = float(df_1h["volume"].iloc[-1])
     vol_avg = float(df_1h["volume"].iloc[-(config_fib.VOLUME_MA_PERIOD + 1):-1].mean())
 
+    # The current (latest) candle doesn't have to be a fresh breakout itself
+    # -- that already happened within the lookback window above -- but price
+    # must still be holding beyond the zone level now, not have fallen back
+    # into it.
     if direction == "LONG":
-        if not (close > zone_high and close > open_):
-            return False, "confirmation candle did not close back above zone", {}
+        if not (close > zone_high):
+            return False, "price fell back into zone before confirmation held", {}
     else:
-        if not (close < zone_low and close < open_):
-            return False, "confirmation candle did not close back below zone", {}
+        if not (close < zone_low):
+            return False, "price fell back into zone before confirmation held", {}
 
     rsi_min, rsi_max = (
         (config_fib.RSI_LONG_MIN, config_fib.RSI_LONG_MAX) if direction == "LONG"
@@ -342,8 +364,10 @@ def _reason_bucket(reason: str) -> str:
         return "no_swing_leg"
     if reason == "no zone touch":
         return "no_zone_touch"
-    if "did not close back" in reason:
+    if "no confirmation candle closed back out of zone" in reason:
         return "no_confirmation"
+    if "fell back into zone" in reason:
+        return "confirmation_not_held"
     if reason.startswith("RSI"):
         return "rsi_out_of_band"
     if reason.startswith("volume ratio"):

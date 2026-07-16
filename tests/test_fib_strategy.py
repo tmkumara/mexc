@@ -216,6 +216,34 @@ def test_detect_fib_entry_rejected_when_volume_too_low(monkeypatch):
     assert reason.startswith("volume ratio")
 
 
+def test_detect_fib_entry_confirms_within_lookback_not_only_latest_candle():
+    """The breakout candle (close > zone_high, bullish) can be up to
+    CONFIRMATION_LOOKBACK_BARS back, not only the exact latest candle -- the
+    latest candle just needs to still be holding beyond the zone level,
+    without itself needing to be a fresh breakout. Under the pre-lookback-
+    window logic this exact scenario (latest candle is red) would have been
+    rejected."""
+    df = make_1h_fib_df("LONG")
+    closed = df.iloc[:-1].copy()
+    zone_high = fib_retracement_price(90.0, 110.0, "LONG", fib_strategy.config_fib.ZONE_LOWER)
+
+    # -2: the actual breakout candle -- bullish, closes well above zone_high.
+    closed.iloc[-2, closed.columns.get_loc("open")] = 98.32
+    closed.iloc[-2, closed.columns.get_loc("close")] = zone_high + 0.5
+    closed.iloc[-2, closed.columns.get_loc("high")] = zone_high + 0.6
+    closed.iloc[-2, closed.columns.get_loc("low")] = 98.2
+    # -1 (latest): red candle, but still holds above zone_high.
+    closed.iloc[-1, closed.columns.get_loc("open")] = zone_high + 0.5
+    closed.iloc[-1, closed.columns.get_loc("close")] = zone_high + 0.3
+    closed.iloc[-1, closed.columns.get_loc("high")] = zone_high + 0.6
+    closed.iloc[-1, closed.columns.get_loc("low")] = zone_high + 0.2
+
+    ok, reason, details = _detect_fib_entry(closed, "LONG")
+
+    assert ok is True, reason
+    assert details["close"] == zone_high + 0.3
+
+
 from fib_strategy import (
     _valid_trade_geometry, _calc_rr, _calculate_tp_sl_fib, _score_candidate_fib,
 )

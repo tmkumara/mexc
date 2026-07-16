@@ -19,6 +19,11 @@ SWING_LOOKBACK_BARS: int = int(os.getenv("FIB_SWING_LOOKBACK_BARS", "60"))
 ZONE_LOOKBACK_BARS: int = int(os.getenv("FIB_ZONE_LOOKBACK_BARS", "10"))
 ZONE_LOWER: float = float(os.getenv("FIB_ZONE_LOWER", "0.5"))
 ZONE_UPPER: float = float(os.getenv("FIB_ZONE_UPPER", "0.618"))
+# How many of the most recent candles may contain the breakout candle (the
+# bar that first closes back out of the zone) -- the latest candle no longer
+# has to be that exact bar, only still hold beyond the zone level. 1 recovers
+# the original exact-latest-candle-only behavior.
+CONFIRMATION_LOOKBACK_BARS: int = int(os.getenv("FIB_CONFIRMATION_LOOKBACK_BARS", "3"))
 TP_EXTENSION_LEVEL: float = float(os.getenv("FIB_TP_EXTENSION_LEVEL", "1.272"))
 SL_ATR_BUFFER_MULTIPLIER: float = float(os.getenv("FIB_SL_ATR_BUFFER_MULTIPLIER", "0.15"))
 

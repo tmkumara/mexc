@@ -10,6 +10,7 @@ def test_defaults_loaded():
     assert config_fib.ZONE_LOOKBACK_BARS == 10
     assert config_fib.ZONE_LOWER == 0.5
     assert config_fib.ZONE_UPPER == 0.618
+    assert config_fib.CONFIRMATION_LOOKBACK_BARS == 3
     assert config_fib.TP_EXTENSION_LEVEL == 1.272
     assert config_fib.LEVERAGE == 20
     assert config_fib.MIN_RR == 1.5
