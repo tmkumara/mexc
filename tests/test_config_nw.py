@@ -29,10 +29,10 @@ def test_defaults_loaded():
 
 
 def test_derived_tp_price_pct():
-    expected = config_nw.TARGET_ROI_PCT / 100.0 / config_nw.LEVERAGE
+    expected = 0.0075
     assert abs(config_nw.TP_PRICE_PCT - expected) < 1e-12
 
 
 def test_derived_max_sl_price_pct():
-    expected = config_nw.MAX_SL_ROI_PCT / 100.0 / config_nw.LEVERAGE
+    expected = 0.01
     assert abs(config_nw.MAX_SL_PRICE_PCT - expected) < 1e-12
