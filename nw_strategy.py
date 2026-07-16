@@ -21,7 +21,7 @@ import pandas as pd
 
 import nw_kernel
 import config_nw
-from strategy import calculate_ema, calculate_rsi, calculate_atr
+from strategy import calculate_ema, calculate_rsi, calculate_atr, calculate_supertrend
 from market_data import get_market_klines
 
 logger = logging.getLogger(__name__)
@@ -131,6 +131,16 @@ def _detect_nw_signal(df_1h: pd.DataFrame, direction: str) -> tuple[bool, str, d
         return False, "kernel reversed before confirmation held", {}
     if direction == "SHORT" and not still_bearish:
         return False, "kernel reversed before confirmation held", {}
+
+    # Supertrend confirmation on the entry timeframe -- an additional
+    # trend-agreement gate, independent of the kernel, meant to filter out
+    # weaker/noisier flips (see NW_SUPERTREND_ATR_PERIOD/MULTIPLIER).
+    st = calculate_supertrend(df_1h, config_nw.NW_SUPERTREND_ATR_PERIOD, config_nw.NW_SUPERTREND_MULTIPLIER)
+    st_direction = int(st["supertrend_direction"].iloc[-1])
+    if direction == "LONG" and st_direction != 1:
+        return False, "Supertrend not bullish on latest candle", {}
+    if direction == "SHORT" and st_direction != -1:
+        return False, "Supertrend not bearish on latest candle", {}
 
     rsi = calculate_rsi(df_1h["close"], config_nw.NW_RSI_PERIOD)
     atr = calculate_atr(df_1h, config_nw.NW_ATR_PERIOD)
@@ -304,6 +314,8 @@ def _reason_bucket(reason: str) -> str:
         return "no_flip"
     if "reversed before confirmation held" in reason:
         return "confirmation_not_held"
+    if "Supertrend not" in reason:
+        return "supertrend_disagree"
     if "no structural swing" in reason:
         return "no_swing"
     if reason.startswith("RSI"):

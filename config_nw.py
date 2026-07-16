@@ -45,6 +45,13 @@ NW_VOLUME_MA_PERIOD: int = int(os.getenv("NW_VOLUME_MA_PERIOD", "20"))
 NW_MIN_VOLUME_MULTIPLIER: float = float(os.getenv("NW_MIN_VOLUME_MULTIPLIER", "0.7"))
 
 NW_ATR_PERIOD: int = int(os.getenv("NW_ATR_PERIOD", "14"))
+# Supertrend confirmation on the entry timeframe -- an additional trend-
+# agreement gate on top of the kernel flip, meant to filter out weaker/
+# noisier flips (added after the curated-pool backtest showed low win rate
+# even after fixing signal frequency). Defaults mirror the live bot's own
+# ENTRY_SUPERTREND_ATR_PERIOD/MULTIPLIER (see CLAUDE.md).
+NW_SUPERTREND_ATR_PERIOD: int = int(os.getenv("NW_SUPERTREND_ATR_PERIOD", "10"))
+NW_SUPERTREND_MULTIPLIER: float = float(os.getenv("NW_SUPERTREND_MULTIPLIER", "2.0"))
 # Buffer beyond the structural swing level used to place the SL.
 NW_SL_ATR_BUFFER_MULTIPLIER: float = float(os.getenv("NW_SL_ATR_BUFFER_MULTIPLIER", "0.5"))
 

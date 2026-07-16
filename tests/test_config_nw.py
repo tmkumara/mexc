@@ -20,6 +20,8 @@ def test_defaults_loaded():
     assert config_nw.NW_MIN_VOLUME_MULTIPLIER == 0.7
     assert config_nw.NW_ATR_PERIOD == 14
     assert config_nw.NW_SL_ATR_BUFFER_MULTIPLIER == 0.5
+    assert config_nw.NW_SUPERTREND_ATR_PERIOD == 10
+    assert config_nw.NW_SUPERTREND_MULTIPLIER == 2.0
     assert config_nw.LEVERAGE == 20
     assert config_nw.TARGET_ROI_PCT == 15.0
     assert config_nw.MAX_SL_ROI_PCT == 20.0
