@@ -28,13 +28,20 @@ TP_EXTENSION_LEVEL: float = float(os.getenv("FIB_TP_EXTENSION_LEVEL", "1.272"))
 SL_ATR_BUFFER_MULTIPLIER: float = float(os.getenv("FIB_SL_ATR_BUFFER_MULTIPLIER", "0.15"))
 
 RSI_PERIOD: int = int(os.getenv("FIB_RSI_PERIOD", "14"))
-RSI_LONG_MIN: float = float(os.getenv("FIB_RSI_LONG_MIN", "50"))
-RSI_LONG_MAX: float = float(os.getenv("FIB_RSI_LONG_MAX", "68"))
-RSI_SHORT_MIN: float = float(os.getenv("FIB_RSI_SHORT_MIN", "32"))
-RSI_SHORT_MAX: float = float(os.getenv("FIB_RSI_SHORT_MAX", "50"))
+# Widened from the live bot's 50-68/32-50 bands -- the 60-day backtest
+# (Task 8) showed rsi_out_of_band as a real, non-dominant-but-meaningful
+# rejection bucket once the confirmation-lookback fix reduced the earlier
+# no_confirmation bottleneck; loosened here at the user's direct request to
+# see whether it unblocks any real trades.
+RSI_LONG_MIN: float = float(os.getenv("FIB_RSI_LONG_MIN", "45"))
+RSI_LONG_MAX: float = float(os.getenv("FIB_RSI_LONG_MAX", "75"))
+RSI_SHORT_MIN: float = float(os.getenv("FIB_RSI_SHORT_MIN", "25"))
+RSI_SHORT_MAX: float = float(os.getenv("FIB_RSI_SHORT_MAX", "55"))
 
 VOLUME_MA_PERIOD: int = int(os.getenv("FIB_VOLUME_MA_PERIOD", "20"))
-MIN_VOLUME_MULTIPLIER: float = float(os.getenv("FIB_MIN_VOLUME_MULTIPLIER", "1.3"))
+# Widened from 1.3 (no volume premium required) -- same rationale as the RSI
+# bands above.
+MIN_VOLUME_MULTIPLIER: float = float(os.getenv("FIB_MIN_VOLUME_MULTIPLIER", "1.0"))
 
 ATR_PERIOD: int = int(os.getenv("FIB_ATR_PERIOD", "14"))
 
