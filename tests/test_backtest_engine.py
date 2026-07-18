@@ -143,9 +143,14 @@ def test_filtered_book_stays_flat_until_position_closes(monkeypatch, params):
 
 def test_pullback_entry_fires_without_a_flip(monkeypatch, params):
     computed = _build_computed()
-    # bar 100: NO flip (side=None), but an ongoing TRENDING bullish pullback setup
+    # bar 100: NO flip (side=None), but an ongoing TRENDING bullish pullback setup.
+    # price matches bar 101's fill (99.0) -- with the flat SL/TP bands sized off
+    # the signal bar's own price (_calc_tp_sl), a bar-100-vs-bar-101 price gap
+    # bigger than the band itself would make the computed SL/TP invalid relative
+    # to the actual entry_idx+1 fill price, which real market data won't do at
+    # this band width (0.5%) but this synthetic fixture could by accident.
     computed.iloc[100] = pd.Series(_flat_row(
-        100, price=100.0, side=None, trend=1, regime="TRENDING", regime_votes=3,
+        100, price=99.0, side=None, trend=1, regime="TRENDING", regime_votes=3,
         kc_pos=0.2, kc_slope=0.2, ao=1.0, ao_rising=True, supertrend=97.0,
         kc_mid=101.0, kc_upper=105.0,
     ))

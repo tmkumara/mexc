@@ -179,7 +179,7 @@ def _simulate_trade(
         result = {"status": "pending", "exit_price": None, "exit_reason": None,
                    "tp1_hit": False, "bars_held": 0, "final_sl": sl}
     else:
-        result = v3s.walk_trade(direction, entry_price, sl, tp1, tp2, bars_after)
+        result = v3s.walk_trade(direction, entry_price, sl, tp1, tp2, bars_after, trail=False)
 
     entry_fee = position_size * entry_price * params.taker_fee_pct
 

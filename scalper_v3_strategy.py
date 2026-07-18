@@ -208,12 +208,24 @@ def _liq_filter_ok(symbol: str, direction: str, entry: float, sl: float) -> tupl
 # ── evaluate ──────────────────────────────────────────────────────────
 
 def _calc_tp_sl(direction: str, sig: dict) -> tuple[float, float, float]:
-    """SL = supertrend line. TP1 = kc_mid, TP2 = kc_upper for longs
-    (mirrored for shorts)."""
-    sl = sig["stop_loss"]
+    """Flat SL/TP2 at SCALPER_V3_MAX_SL_PRICE_PCT / SCALPER_V3_TP_PRICE_PCT
+    (both ROI-at-LEVERAGE derived -- see config.py), replacing the earlier
+    SuperTrend-SL / Keltner-TP1-TP2 structural exits: SL and TP2 are fixed
+    at entry and never move (no trailing, no breakeven -- see
+    walk_trade(trail=False)). tp1 is repurposed as a pure informational
+    progress checkpoint at SCALPER_V3_TP1_NOTIFY_PRICE_PCT (7% ROI by
+    default) that only triggers a Telegram ping (main.check_outcomes_v3)
+    -- it does not move the SL or close the trade."""
+    entry = sig["price"]
     if direction == "LONG":
-        return sl, sig["kc_mid"], sig["kc_upper"]
-    return sl, sig["kc_mid"], sig["kc_lower"]
+        sl = entry * (1 - cfg.SCALPER_V3_MAX_SL_PRICE_PCT)
+        tp1 = entry * (1 + cfg.SCALPER_V3_TP1_NOTIFY_PRICE_PCT)
+        tp2 = entry * (1 + cfg.SCALPER_V3_TP_PRICE_PCT)
+    else:
+        sl = entry * (1 + cfg.SCALPER_V3_MAX_SL_PRICE_PCT)
+        tp1 = entry * (1 - cfg.SCALPER_V3_TP1_NOTIFY_PRICE_PCT)
+        tp2 = entry * (1 - cfg.SCALPER_V3_TP_PRICE_PCT)
+    return sl, tp1, tp2
 
 
 def valid_v3_geometry(direction: str, entry: float, sl: float, tp1: float, tp2: float) -> bool:
@@ -401,6 +413,7 @@ def walk_trade(
     tp1_price: float,
     tp2_price: float,
     bars: pd.DataFrame,
+    trail: bool = True,
 ) -> dict:
     """
     Walk CLOSED bars AFTER entry and resolve the trade outcome. Shared by
@@ -414,6 +427,14 @@ def walk_trade(
     as of the close of bar i-1 (the previous CLOSED bar) -- never bar i's
     own value, which would be lookahead (bar i's supertrend can only be
     known once bar i itself has closed).
+
+    `trail=False` (used by the flat SCALPER_V3_MAX_SL_ROI_PCT /
+    SCALPER_V3_TARGET_ROI_PCT exit mode -- see _calc_tp_sl) disables the
+    SuperTrend trailing stop and the breakeven-after-TP1 step entirely:
+    SL and TP stay fixed at their initial values for the life of the
+    trade. tp1_price/tp2_price are typically equal in this mode (a single
+    flat target), so a TP touch always resolves as "tp2" the same bar it
+    would have hit TP1.
 
     Same-bar tie-break: if both SL and a TP are touched within one bar,
     the stop wins (conservative), matching outcome_check.check_tp_sl.
@@ -438,22 +459,26 @@ def walk_trade(
         high = float(bars["high"].iloc[i])
         low = float(bars["low"].iloc[i])
 
-        # Trail using the PREVIOUS closed bar's supertrend value (no lookahead).
-        if direction == "LONG":
-            sl_level = max(sl_level, prev_trail)
-            if tp1_hit:
-                sl_level = max(sl_level, entry_price)
-        else:
-            sl_level = min(sl_level, prev_trail)
-            if tp1_hit:
-                sl_level = min(sl_level, entry_price)
+        if trail:
+            # Trail using the PREVIOUS closed bar's supertrend value (no lookahead).
+            if direction == "LONG":
+                sl_level = max(sl_level, prev_trail)
+                if tp1_hit:
+                    sl_level = max(sl_level, entry_price)
+            else:
+                sl_level = min(sl_level, prev_trail)
+                if tp1_hit:
+                    sl_level = min(sl_level, entry_price)
 
         hit_sl = (low <= sl_level) if direction == "LONG" else (high >= sl_level)
         if hit_sl:
-            # Once TP1 has hit, SL only ever trails to entry or better (see
-            # above), so a stop-out post-TP1 is always breakeven-or-profit.
-            reason = "breakeven" if tp1_hit else "sl"
-            status = "win" if tp1_hit else "loss"
+            # Once TP1 has hit, a trailing SL only ever moves to entry or
+            # better (see above), so a stop-out post-TP1 is always
+            # breakeven-or-profit -- but that's only true when trail=True.
+            # With trail=False the SL never moves, so a post-TP1 stop-out
+            # is a real loss at the original (still fixed) SL level.
+            reason = "breakeven" if (trail and tp1_hit) else "sl"
+            status = "win" if (trail and tp1_hit) else "loss"
             return {
                 "status": status, "exit_price": sl_level, "exit_reason": reason,
                 "tp1_hit": tp1_hit, "tp1_hit_at_idx": tp1_hit_idx,
@@ -473,7 +498,8 @@ def walk_trade(
                 "bars_held": i + 1, "final_sl": sl_level,
             }
 
-        prev_trail = float(bars["supertrend"].iloc[i])
+        if trail:
+            prev_trail = float(bars["supertrend"].iloc[i])
 
     return {
         "status": "pending", "exit_price": None, "exit_reason": None,

@@ -81,6 +81,7 @@ def init_db():
             ("regime_votes", "INTEGER"),
             ("adx", "REAL"),
             ("chop", "REAL"),
+            ("signal_message_id", "INTEGER"),
         ]:
             try:
                 con.execute(f"ALTER TABLE signals ADD COLUMN {col} {definition}")
@@ -247,14 +248,26 @@ def save_v3_signal(
         return cur.lastrowid
 
 
-def mark_signal_tp1_hit(signal_id: int, hit_at: datetime, new_sl_price: float) -> None:
+def mark_signal_tp1_hit(signal_id: int, hit_at: datetime) -> None:
+    """Records that price reached the SCALPER_V3_TP1_NOTIFY_ROI_PCT
+    progress checkpoint (tp1_price) -- purely informational (triggers a
+    Telegram ping via bot.notify_v3_progress), does not move sl_price.
+    Real exits are a flat SL/TP2 with no breakeven step -- see
+    scalper_v3_strategy.walk_trade(trail=False)."""
     ts = hit_at.isoformat()
     with _conn() as con:
         con.execute("""
             UPDATE signals
-            SET tp1_hit_at = ?, sl_price = ?, breakeven_triggered_at = ?
+            SET tp1_hit_at = ?
             WHERE id = ? AND tp1_hit_at IS NULL
-        """, (ts, new_sl_price, ts, signal_id))
+        """, (ts, signal_id))
+
+
+def set_signal_message_id(signal_id: int, message_id: int) -> None:
+    with _conn() as con:
+        con.execute("""
+            UPDATE signals SET signal_message_id = ? WHERE id = ?
+        """, (message_id, signal_id))
 
 
 def save_skipped_signal(

@@ -154,6 +154,19 @@ SCALPER_V3_EXPAND_PERIOD: int = int(os.getenv("SCALPER_V3_EXPAND_PERIOD", "20"))
 SCALPER_V3_EXPAND_MIN: float = float(os.getenv("SCALPER_V3_EXPAND_MIN", "1.10"))
 SCALPER_V3_MIN_STRENGTH: int = int(os.getenv("SCALPER_V3_MIN_STRENGTH", "3"))
 
+# Flat SL/TP sizing (replaces the structural SuperTrend-SL / Keltner-TP1-TP2
+# exits -- see scalper_v3_strategy._calc_tp_sl). Both entry paths use the
+# same fixed ROI-at-LEVERAGE distance, no trailing stop, no breakeven step.
+SCALPER_V3_TARGET_ROI_PCT: float = float(os.getenv("SCALPER_V3_TARGET_ROI_PCT", "10.0"))
+SCALPER_V3_MAX_SL_ROI_PCT: float = float(os.getenv("SCALPER_V3_MAX_SL_ROI_PCT", "10.0"))
+SCALPER_V3_TP_PRICE_PCT: float = SCALPER_V3_TARGET_ROI_PCT / 100.0 / LEVERAGE
+SCALPER_V3_MAX_SL_PRICE_PCT: float = SCALPER_V3_MAX_SL_ROI_PCT / 100.0 / LEVERAGE
+
+# Informational progress checkpoint (Telegram ping only -- does not move
+# the SL or close the trade). Stored in the tp1_price column/field.
+SCALPER_V3_TP1_NOTIFY_ROI_PCT: float = float(os.getenv("SCALPER_V3_TP1_NOTIFY_ROI_PCT", "7.0"))
+SCALPER_V3_TP1_NOTIFY_PRICE_PCT: float = SCALPER_V3_TP1_NOTIFY_ROI_PCT / 100.0 / LEVERAGE
+
 # Funding-rate safety filter -- block entries when funding is stacked hard
 # against the trade direction (crowded-trade / squeeze risk).
 SCALPER_V3_MAX_ADVERSE_FUNDING_PCT: float = float(

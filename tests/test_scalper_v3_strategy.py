@@ -3,6 +3,7 @@
 import pandas as pd
 import pytest
 
+import config as cfg
 import scalper_v3_strategy as v3
 
 
@@ -107,6 +108,52 @@ def test_walk_trade_no_lookahead_trail_uses_previous_bar():
     assert result["bars_held"] == 1
 
 
+# ── walk_trade(trail=False) -- flat SL/TP, no breakeven step ───────────
+
+def test_walk_trade_flat_tp1_then_sl_is_a_real_loss():
+    # TP1 (informational only) touches on bar 0, then price reverses all
+    # the way back to the ORIGINAL sl on bar 1. With trail=False the SL
+    # never moved to breakeven, so this must be a real loss -- NOT the
+    # "breakeven win" a trailing/breakeven walk_trade would report.
+    bars = pd.DataFrame({
+        "high": [103.0, 100.5],
+        "low": [99.5, 96.5],
+        "close": [102.0, 97.0],
+        "supertrend": [99.0, 99.0],  # irrelevant when trail=False
+    })
+    result = v3.walk_trade("LONG", entry_price=100, initial_sl=97, tp1_price=103,
+                            tp2_price=110, bars=bars, trail=False)
+    assert result["tp1_hit"] is True
+    assert result["status"] == "loss"
+    assert result["exit_reason"] == "sl"
+    assert result["exit_price"] == 97
+
+
+def test_walk_trade_flat_tp_hit_is_a_win():
+    # tp1 == tp2 (the live flat-exit convention) -- touching it resolves as tp2/win.
+    bars = pd.DataFrame({"high": [100.6], "low": [99.6], "close": [100.5], "supertrend": [99.0]})
+    result = v3.walk_trade("LONG", entry_price=100, initial_sl=99.5, tp1_price=100.5,
+                            tp2_price=100.5, bars=bars, trail=False)
+    assert result["status"] == "win"
+    assert result["exit_reason"] == "tp2"
+    assert result["exit_price"] == 100.5
+
+
+def test_walk_trade_flat_sl_does_not_trail_toward_supertrend():
+    # supertrend rises well above the initial SL -- with trail=False this
+    # must NOT tighten the stop (contrast with the trail=True default,
+    # which would ratchet sl_level up to meet it).
+    bars = pd.DataFrame({
+        "high": [100.2, 100.2],
+        "low": [99.6, 99.5],  # bar 1 dips to 99.5 -- above the original SL (99.4)
+        "close": [100.0, 99.9],
+        "supertrend": [99.8, 99.8],
+    })
+    result = v3.walk_trade("LONG", entry_price=100, initial_sl=99.4, tp1_price=105,
+                            tp2_price=110, bars=bars, trail=False)
+    assert result["status"] == "pending"  # never touched the flat 99.4 SL
+
+
 # ── evaluate_symbol_v3 via a monkeypatched engine (deterministic) ──────
 
 class _FakeEngine:
@@ -192,9 +239,9 @@ def test_evaluate_returns_signal_when_confluence_passes(monkeypatch):
     result = v3.evaluate_symbol_v3("FOO_USDT", df=_dummy_df())
     assert isinstance(result, v3.ScalperV3Signal)
     assert result.direction == "LONG"
-    assert result.sl_price == 98.5
-    assert result.tp1_price == 101.0
-    assert result.tp2_price == 104.0
+    assert result.sl_price == pytest.approx(100.0 * (1 - cfg.SCALPER_V3_MAX_SL_PRICE_PCT))
+    assert result.tp1_price == pytest.approx(100.0 * (1 + cfg.SCALPER_V3_TP1_NOTIFY_PRICE_PCT))
+    assert result.tp2_price == pytest.approx(100.0 * (1 + cfg.SCALPER_V3_TP_PRICE_PCT))
     assert v3.valid_v3_geometry(result.direction, result.entry_price, result.sl_price, result.tp1_price, result.tp2_price)
 
 
@@ -228,7 +275,7 @@ def test_evaluate_blocked_by_liq_estimator(monkeypatch):
 
     class _FakeLiq:
         def significant_clusters(self, price):
-            return [(98.7, "long", 500_000.0)]  # sits between entry(100) and sl(98.5)
+            return [(99.7, "long", 500_000.0)]  # sits between entry(100) and the flat sl (~99.5)
 
     v3.register_liq_estimator("FOO_USDT", _FakeLiq())
     result = v3.evaluate_symbol_v3("FOO_USDT", df=_dummy_df())

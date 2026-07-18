@@ -415,7 +415,9 @@ async def scan_and_fire_signals_v3(app: Application) -> None:
 
         if not DRY_RUN:
             try:
-                await tg.broadcast_v3_signal(app, result, signal_id)
+                sent = await tg.broadcast_v3_signal(app, result, signal_id)
+                if sent is not None:
+                    db.set_signal_message_id(signal_id, sent.message_id)
             except Exception as e:
                 logger.error("[SCAN-V3] Telegram broadcast failed for %s: %s", symbol, e)
 
@@ -473,10 +475,15 @@ async def check_outcomes_v3(app: Application) -> None:
         if bars_after_entry.empty:
             continue
 
-        result = v3.walk_trade(direction, entry_price, sl_price, tp1_price, tp2_price, bars_after_entry)
+        result = v3.walk_trade(direction, entry_price, sl_price, tp1_price, tp2_price, bars_after_entry, trail=False)
 
         if result["tp1_hit"] and sig.get("tp1_hit_at") is None:
-            db.mark_signal_tp1_hit(sig["id"], now, max(sl_price, entry_price) if direction == "LONG" else min(sl_price, entry_price))
+            db.mark_signal_tp1_hit(sig["id"], now)
+            if not DRY_RUN:
+                try:
+                    await tg.notify_v3_progress(app, sig)
+                except Exception as e:
+                    logger.error("[V3] Failed to send progress ping for %s: %s", symbol, e)
 
         if result["status"] == "pending":
             continue
