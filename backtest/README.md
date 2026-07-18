@@ -27,35 +27,46 @@ source venv/bin/activate
 pip install -r requirements.txt   # now includes pyarrow + matplotlib
 ```
 
-## 1. Fetch 6 months of 1m data (Phase 2)
+## 1. Fetch 6 months of data (Phase 2)
+
+**Important, learned the hard way:** MEXC's `/contract/kline` REST
+endpoint only retains ~30 days of history for the `Min1` interval —
+requesting anything older silently returns 0 bars (no error). 30 days
+isn't enough for even one 8-week walk-forward window. Fetch at **5m**
+instead (the strategy's actual entry timeframe — `SCALPER_V3_TIMEFRAME`
+in config.py), which MEXC retains much further back. `--interval 5m` is
+now the default.
 
 Pick your top-3 traded symbols. If this host has the bot's real
 `signals.db` (i.e. you're on the production server), you can derive them
 automatically:
 
 ```bash
-python backtest/fetch_data.py --from-db --top-n 3 --months 6
+python backtest/fetch_data.py --from-db --top-n 3 --months 6 --interval 5m
 ```
 
 Otherwise name them explicitly:
 
 ```bash
-python backtest/fetch_data.py --symbols BTC_USDT,ETH_USDT,SOL_USDT --months 6
+python backtest/fetch_data.py --symbols BTC_USDT,ETH_USDT,SOL_USDT --months 6 --interval 5m
 ```
 
 This takes a while (paginated 1-day windows with a 0.35s sleep between
-requests to stay well under MEXC's rate limit — expect roughly 10-20
-minutes for 3 symbols x 6 months). It writes:
+requests to stay well under MEXC's rate limit). At 5m you can safely
+widen `--chunk-minutes` (e.g. `--chunk-minutes 43200` for 30-day windows
+per request) to cut the request count dramatically, since a 30-day
+window is only ~8,600 bars at 5m vs. ~43,000 at 1m. It writes:
 
-- `backtest/data/<SYMBOL>_1m.parquet` — the OHLCV history
-- `backtest/data/<SYMBOL>_gaps.json` — any missing-minute ranges found
+- `backtest/data/<SYMBOL>_5m.parquet` — the OHLCV history
+- `backtest/data/<SYMBOL>_5m_gaps.json` — any missing-bar ranges found
   (small numbers of gaps are normal — brief exchange downtime, etc.;
   pass `--strict` to fail hard instead if you want zero tolerance)
 - `backtest/data/fetch_report.json` — a summary across all symbols
 
 **Check the gap reports before trusting the backtest.** A parquet file
 with large gaps will silently understate how many signals fired in that
-period.
+period. If you specifically need 1m granularity for a shorter window
+(e.g. the last ~30 days), pass `--interval 1m --months 1`.
 
 ## 2. Sanity-check the plumbing before the full run
 
@@ -64,8 +75,11 @@ Run `--quick` first (a single parameter combination) to confirm the data
 loads, windows are built correctly, and nothing crashes:
 
 ```bash
-python backtest/optimize.py --symbols BTC_USDT,ETH_USDT,SOL_USDT --quick
+python backtest/optimize.py --symbols BTC_USDT,ETH_USDT,SOL_USDT --data-interval 5m --quick
 ```
+
+`--data-interval` must match whatever `--interval` you fetched with (both
+default to `5m`).
 
 If a window logs `no param set met the >=30 train-trade minimum`, that's
 not a bug — it means confluence_ok() genuinely didn't fire >=30 times in
@@ -76,7 +90,7 @@ report rather than reported on thin, overfit-prone samples.
 ## 3. Full walk-forward optimization (Phase 4)
 
 ```bash
-python backtest/optimize.py --symbols BTC_USDT,ETH_USDT,SOL_USDT
+python backtest/optimize.py --symbols BTC_USDT,ETH_USDT,SOL_USDT --data-interval 5m
 ```
 
 This can take a long time (the SuperTrend calc has an O(n) Python loop
@@ -111,7 +125,7 @@ particular check:
 Only after you've reviewed the report:
 
 ```bash
-python backtest/optimize.py --symbols BTC_USDT,ETH_USDT,SOL_USDT --write-config
+python backtest/optimize.py --symbols BTC_USDT,ETH_USDT,SOL_USDT --data-interval 5m --write-config
 ```
 
 This patches the `SCALPER_V3_*` default fallbacks in `config.py` in

@@ -25,11 +25,15 @@ Methodology (deliberately NOT a naive grid search over all 6 months):
     Phase 3's requirement that the regime/channel filter's rejects
     provably have worse expectancy than what it accepts.
 
-Usage (run on a host with the real backtest/data/<SYMBOL>_1m.parquet
-files -- see backtest/README.md):
-    python backtest/optimize.py --symbols BTC_USDT,ETH_USDT,SOL_USDT
-    python backtest/optimize.py --symbols BTC_USDT --quick   # tiny grid, for a fast sanity check
-    python backtest/optimize.py --symbols BTC_USDT --write-config   # after reviewing the report, persist recommended params into config.py (LIVE_ENABLED stays false)
+Usage (run on a host with the real backtest/data/<SYMBOL>_<interval>.parquet
+files from fetch_data.py -- see backtest/README.md):
+    python backtest/optimize.py --symbols BTC_USDT,ETH_USDT,SOL_USDT --data-interval 5m
+    python backtest/optimize.py --symbols BTC_USDT --data-interval 5m --quick   # tiny grid, for a fast sanity check
+    python backtest/optimize.py --symbols BTC_USDT --data-interval 5m --write-config   # after reviewing the report, persist recommended params into config.py (LIVE_ENABLED stays false)
+
+--data-interval must match whatever --interval you passed to fetch_data.py
+(default 5m on both sides -- MEXC's Min1 REST history only retains ~30
+days, not enough for a 6-month walk-forward backtest).
 """
 
 from __future__ import annotations
@@ -81,10 +85,13 @@ TEST_WEEKS = 2
 MAX_WINDOWS = 4
 
 
-def load_symbol_data(symbol: str) -> pd.DataFrame:
-    path = DATA_DIR / f"{symbol}_1m.parquet"
+def load_symbol_data(symbol: str, interval: str = "5m", data_dir: Path = DATA_DIR) -> pd.DataFrame:
+    path = data_dir / f"{symbol}_{interval}.parquet"
     if not path.exists():
-        raise FileNotFoundError(f"{path} not found -- run backtest/fetch_data.py first (see backtest/README.md)")
+        raise FileNotFoundError(
+            f"{path} not found -- run backtest/fetch_data.py --interval {interval} first "
+            f"(see backtest/README.md). If you fetched a different interval, pass --data-interval to match."
+        )
     return pd.read_parquet(path)
 
 
@@ -143,13 +150,21 @@ def grid_search_window(df_1m: pd.DataFrame, symbol: str, window: dict, grid: dic
     return best
 
 
-def run_walk_forward(symbol: str, grid: dict, entry_timeframe: str) -> dict:
-    df_1m = load_symbol_data(symbol)
+def run_walk_forward(symbol: str, grid: dict, entry_timeframe: str, data_interval: str = "5m") -> dict:
+    from config import _TF_MINUTES
+    if _TF_MINUTES.get(data_interval, 5) > _TF_MINUTES.get(entry_timeframe, 5):
+        raise ValueError(
+            f"--data-interval {data_interval} is coarser than --entry-timeframe {entry_timeframe} -- "
+            f"can't upsample. Fetch data at {entry_timeframe} or coarser-but-still-divides-evenly, or "
+            f"pass a coarser --entry-timeframe."
+        )
+
+    df_1m = load_symbol_data(symbol, data_interval)
     windows = build_windows(df_1m)
     if not windows:
         raise ValueError(
             f"{symbol}: not enough history for even one {TRAIN_WEEKS + TEST_WEEKS}-week "
-            f"train+test window ({len(df_1m)} 1m bars spanning "
+            f"train+test window ({len(df_1m)} {data_interval} bars spanning "
             f"{(df_1m.index.max() - df_1m.index.min()).days if not df_1m.empty else 0} days)"
         )
 
@@ -346,7 +361,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--symbols", type=str, required=True, help="Comma-separated symbols, must match fetched parquet files")
     parser.add_argument("--quick", action="store_true", help="Use a 1-combo grid for a fast sanity check instead of the full 243-combo grid")
-    parser.add_argument("--entry-timeframe", type=str, default="5m")
+    parser.add_argument("--entry-timeframe", type=str, default="5m",
+                        help="Timeframe SuperScalper trades on (must be >= --data-interval granularity)")
+    parser.add_argument("--data-interval", type=str, default="5m",
+                        help="Interval of the fetched parquet files to load, e.g. backtest/fetch_data.py --interval 5m "
+                             "writes <SYMBOL>_5m.parquet -- must match here.")
     parser.add_argument("--initial-equity", type=float, default=10_000.0)
     parser.add_argument("--write-config", action="store_true",
                         help="After reporting, persist the recommended params into config.py's SCALPER_V3_* defaults. LIVE_ENABLED is never touched.")
@@ -361,7 +380,7 @@ def main():
     for symbol in symbols:
         logger.info("[%s] walk-forward optimization starting (grid size=%d)", symbol,
                     len(list(itertools.product(*grid.values()))))
-        wf = run_walk_forward(symbol, grid, args.entry_timeframe)
+        wf = run_walk_forward(symbol, grid, args.entry_timeframe, args.data_interval)
         all_results.append(wf)
 
     report_text = build_report(all_results, args.initial_equity, out_dir)

@@ -1,25 +1,35 @@
 """
-backtest/fetch_data.py — download historical 1m klines from MEXC Futures
-for the backtester, with pagination, rate-limit-friendly sleeps, and a gap
+backtest/fetch_data.py — download historical klines from MEXC Futures for
+the backtester, with pagination, rate-limit-friendly sleeps, and a gap
 report.
 
 MUST be run somewhere that can reach contract.mexc.com (the production
 server, per CLAUDE.md -- NOT this sandbox, whose egress policy blocks
 that host). See backtest/README.md.
 
+IMPORTANT -- MEXC's Min1 kline history via this endpoint only goes back
+~30 days (confirmed empirically: a 6-month Min1 fetch silently returned
+0 bars for anything older than ~30 days, then 43,787 consecutive bars --
+exactly ~30.4 days -- once inside the retained window). 30 days isn't
+enough for even one 8-week walk-forward window. Fetch at --interval 5m
+(the strategy's actual entry timeframe -- see SCALPER_V3_TIMEFRAME in
+config.py) instead: exchanges generally retain higher timeframes far
+longer than 1m, since there's much less data to store per day. Default
+is now 5m; pass --interval 1m explicitly if you only need a short window.
+
 Usage:
     python backtest/fetch_data.py --symbols BTC_USDT,ETH_USDT,SOL_USDT \\
-        --months 6 --out backtest/data
+        --months 6 --interval 5m --out backtest/data
 
     # Or derive the top-3 most-frequently-traded symbols from the bot's
     # own signals.db (run this on the server, where that DB is real):
-    python backtest/fetch_data.py --from-db --top-n 3 --months 6
+    python backtest/fetch_data.py --from-db --top-n 3 --months 6 --interval 5m
 
 Output:
-    backtest/data/<SYMBOL>_1m.parquet   -- columns: open, high, low, close, volume
-                                            indexed by UTC timestamp (naive)
-    backtest/data/<SYMBOL>_gaps.json    -- any missing-minute ranges found
-    backtest/data/fetch_report.json     -- summary across all symbols
+    backtest/data/<SYMBOL>_<interval>.parquet  -- columns: open, high, low, close, volume
+                                                    indexed by UTC timestamp (naive)
+    backtest/data/<SYMBOL>_<interval>_gaps.json -- any missing-bar ranges found
+    backtest/data/fetch_report.json             -- summary across all symbols
 """
 
 from __future__ import annotations
@@ -38,7 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 
 from mexc_client import _get, _parse_kline_response  # reuse the exact parsing/retry logic the live bot relies on
-from config import DB_PATH
+from config import DB_PATH, MEXC_INTERVAL_MAP, _TF_MINUTES
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("fetch_data")
@@ -48,8 +58,13 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 # Conservative per-request window -- stays well under any documented MEXC
 # kline row cap regardless of how many bars a given window actually
 # contains, at the cost of more requests. Override with --chunk-minutes.
-DEFAULT_CHUNK_MINUTES = 1440  # 1 day of 1m candles per request
+# For coarser intervals this is still a wall-clock window (not a bar
+# count), so it can safely be widened via --chunk-minutes to cut the
+# number of requests (e.g. 43200 = 30 days of wall-clock time per
+# request, which is only ~360 bars at 5m).
+DEFAULT_CHUNK_MINUTES = 1440  # 1 day of wall-clock time per request
 DEFAULT_SLEEP_SECONDS = 0.35   # spacing between requests to stay well under MEXC's public rate limit
+DEFAULT_INTERVAL = "5m"
 
 
 def top_symbols_from_db(top_n: int, db_path: str = DB_PATH) -> list[str]:
@@ -75,10 +90,10 @@ def top_symbols_from_db(top_n: int, db_path: str = DB_PATH) -> list[str]:
     return top
 
 
-def _fetch_chunk(symbol: str, start: int, end: int, retries: int = 5) -> pd.DataFrame:
+def _fetch_chunk(symbol: str, start: int, end: int, mexc_interval: str, retries: int = 5) -> pd.DataFrame:
     data = _get(
         f"/contract/kline/{symbol}",
-        params={"interval": "Min1", "start": start, "end": end},
+        params={"interval": mexc_interval, "start": start, "end": end},
         retries=retries,
     )
     raw = data.get("data", {})
@@ -88,9 +103,14 @@ def _fetch_chunk(symbol: str, start: int, end: int, retries: int = 5) -> pd.Data
 def fetch_symbol(
     symbol: str,
     months: int,
+    interval: str = DEFAULT_INTERVAL,
     chunk_minutes: int = DEFAULT_CHUNK_MINUTES,
     sleep_seconds: float = DEFAULT_SLEEP_SECONDS,
 ) -> pd.DataFrame:
+    mexc_interval = MEXC_INTERVAL_MAP.get(interval)
+    if mexc_interval is None:
+        raise ValueError(f"Unsupported interval {interval!r} -- one of {sorted(MEXC_INTERVAL_MAP)}")
+
     end_ts = int(datetime.now(timezone.utc).timestamp())
     start_ts = int((datetime.now(timezone.utc) - timedelta(days=months * 30)).timestamp())
 
@@ -102,12 +122,13 @@ def fetch_symbol(
         windows.append((cursor, w_end))
         cursor = w_end
 
-    logger.info("[%s] fetching %d windows (%d months, %dm chunks)", symbol, len(windows), months, chunk_minutes)
+    logger.info("[%s] fetching %d windows (%d months, %s interval, %dm chunks)",
+                symbol, len(windows), months, interval, chunk_minutes)
 
     frames = []
     for i, (w_start, w_end) in enumerate(windows):
         try:
-            df = _fetch_chunk(symbol, w_start, w_end)
+            df = _fetch_chunk(symbol, w_start, w_end, mexc_interval)
         except Exception as e:
             logger.error("[%s] window %d/%d (%s-%s) failed after retries: %s",
                          symbol, i + 1, len(windows), w_start, w_end, e)
@@ -155,26 +176,28 @@ def find_gaps(df: pd.DataFrame, expected_seconds: int = 60) -> list[dict]:
     return gaps
 
 
-def save_symbol(symbol: str, df: pd.DataFrame, out_dir: Path, strict: bool) -> dict:
+def save_symbol(symbol: str, df: pd.DataFrame, out_dir: Path, strict: bool, interval: str = DEFAULT_INTERVAL) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{symbol}_1m.parquet"
+    path = out_dir / f"{symbol}_{interval}.parquet"
     df.to_parquet(path)
 
-    gaps = find_gaps(df)
-    gaps_path = out_dir / f"{symbol}_gaps.json"
+    expected_seconds = _TF_MINUTES.get(interval, 5) * 60
+    gaps = find_gaps(df, expected_seconds=expected_seconds)
+    gaps_path = out_dir / f"{symbol}_{interval}_gaps.json"
     gaps_path.write_text(json.dumps(gaps, indent=2))
 
     if gaps:
         total_missing = sum(g["missing_bars"] for g in gaps)
-        logger.warning("[%s] %d gap(s) found, %d missing 1m bars total -- see %s",
-                       symbol, len(gaps), total_missing, gaps_path)
+        logger.warning("[%s] %d gap(s) found, %d missing %s bars total -- see %s",
+                       symbol, len(gaps), total_missing, interval, gaps_path)
         if strict:
-            raise AssertionError(f"{symbol}: {len(gaps)} gap(s) found in 1m klines (--strict)")
+            raise AssertionError(f"{symbol}: {len(gaps)} gap(s) found in {interval} klines (--strict)")
     else:
-        logger.info("[%s] no gaps -- %d consecutive 1m bars", symbol, len(df))
+        logger.info("[%s] no gaps -- %d consecutive %s bars", symbol, len(df), interval)
 
     return {
         "symbol": symbol,
+        "interval": interval,
         "bars": len(df),
         "start": df.index.min().isoformat() if not df.empty else None,
         "end": df.index.max().isoformat() if not df.empty else None,
@@ -193,6 +216,10 @@ def main():
                              "Only useful on the production server.")
     parser.add_argument("--top-n", type=int, default=3)
     parser.add_argument("--months", type=int, default=6)
+    parser.add_argument("--interval", type=str, default=DEFAULT_INTERVAL,
+                        help="Kline interval to fetch (default 5m -- MEXC's Min1 REST history only goes back "
+                             "~30 days, not enough for a 6-month walk-forward backtest; 1m is still available "
+                             "for shorter windows). One of: " + ", ".join(sorted(MEXC_INTERVAL_MAP)))
     parser.add_argument("--chunk-minutes", type=int, default=DEFAULT_CHUNK_MINUTES)
     parser.add_argument("--sleep-seconds", type=float, default=DEFAULT_SLEEP_SECONDS)
     parser.add_argument("--out", type=str, default=str(DATA_DIR))
@@ -208,18 +235,19 @@ def main():
         parser.error("Pass --symbols BTC_USDT,ETH_USDT,SOL_USDT or --from-db")
         return
 
-    logger.info("Fetching %d months of 1m klines for: %s", args.months, symbols)
+    logger.info("Fetching %d months of %s klines for: %s", args.months, args.interval, symbols)
 
     out_dir = Path(args.out)
-    report = {"symbols": [], "fetched_at": datetime.now(timezone.utc).isoformat(), "months": args.months}
+    report = {"symbols": [], "fetched_at": datetime.now(timezone.utc).isoformat(),
+              "months": args.months, "interval": args.interval}
 
     for symbol in symbols:
-        df = fetch_symbol(symbol, args.months, args.chunk_minutes, args.sleep_seconds)
+        df = fetch_symbol(symbol, args.months, args.interval, args.chunk_minutes, args.sleep_seconds)
         if df.empty:
             logger.error("[%s] no data fetched -- skipping save", symbol)
             report["symbols"].append({"symbol": symbol, "bars": 0, "error": "no data fetched"})
             continue
-        report["symbols"].append(save_symbol(symbol, df, out_dir, args.strict))
+        report["symbols"].append(save_symbol(symbol, df, out_dir, args.strict, args.interval))
 
     report_path = out_dir / "fetch_report.json"
     out_dir.mkdir(parents=True, exist_ok=True)
