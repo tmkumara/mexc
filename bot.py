@@ -83,6 +83,38 @@ async def broadcast_signal(app: Application, signal, signal_id: int) -> None:
     await _send_html(app, msg)
 
 
+def format_v3_signal(signal, signal_id: int) -> str:
+    """Super Scalper v3 alert -- includes regime/confluence diagnostics
+    alongside the trade levels."""
+    arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
+    coin  = signal.symbol.replace("_", "/")
+
+    return "\n".join([
+        f"{escape(arrow)} — {_bold(coin)} Futures",
+        _italic("Super Scalper v3"),
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"📍 Entry: {_code(f'{signal.entry_price:,.6g}')}",
+        f"🎯 TP1:   {_code(f'{signal.tp1_price:,.6g}')}  {_italic('kc_mid — moves SL to breakeven')}",
+        f"🎯 TP2:   {_code(f'{signal.tp2_price:,.6g}')}  {_italic('kc_upper/lower')}",
+        f"🛑 SL:    {_code(f'{signal.sl_price:,.6g}')}  {_italic('supertrend line, trails')}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"🧭 Trend: {_code(signal.trend)}   💪 Strength: {_code(signal.strength)}",
+        f"📉 AO: {_code(f'{signal.ao:.4g}')}   📍 kc_pos: {_code(f'{signal.kc_pos:.2f}')}",
+        f"🌐 Regime: {_code(signal.regime)} ({_code(f'{signal.regime_votes}/3')} votes)",
+        f"📈 ADX: {_code(f'{signal.adx:.1f}')}   🌀 Chop: {_code(f'{signal.chop:.1f}')}",
+        f"💰 Funding: {_code(f'{signal.funding_rate:+.4f}%')}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"⏰ {_code(signal.generated_at.astimezone(LKT).strftime('%Y-%m-%d %H:%M LKT'))}",
+        f"🆔 Signal ID: {_code(signal_id)}",
+        _italic("⚠️ Not financial advice. Use risk management."),
+    ])
+
+
+async def broadcast_v3_signal(app: Application, signal, signal_id: int) -> None:
+    msg = format_v3_signal(signal, signal_id)
+    await _send_html(app, msg)
+
+
 async def notify_outcome(app: Application, signal_db: dict) -> None:
     direction = signal_db["direction"]
     symbol    = signal_db["symbol"].replace("_", "/")

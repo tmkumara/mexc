@@ -129,6 +129,50 @@ BTC_MAX_OPPOSING_MOVE_PCT: float = float(os.getenv("BTC_MAX_OPPOSING_MOVE_PCT", 
 BTC_MAX_SINGLE_CANDLE_MOVE_PCT: float = float(os.getenv("BTC_MAX_SINGLE_CANDLE_MOVE_PCT", "0.60"))
 BTC_MAX_THREE_CANDLE_MOVE_PCT: float = float(os.getenv("BTC_MAX_THREE_CANDLE_MOVE_PCT", "1.20"))
 
+# ── Strategy: Super Scalper v3 (SuperTrend + Keltner + regime filter) ──
+# Off by default -- runs alongside v1 in main.py only when explicitly
+# enabled, and never live-trades until LIVE_ENABLED is flipped true.
+SCALPER_V3_ENABLED: bool = os.getenv("SCALPER_V3_ENABLED", "false").lower() == "true"
+SCALPER_V3_TIMEFRAME: str = os.getenv("SCALPER_V3_TIMEFRAME", "5m")
+SCALPER_V3_HISTORY_BARS: int = int(os.getenv("SCALPER_V3_HISTORY_BARS", "300"))
+
+SCALPER_V3_ATR_PERIOD: int = int(os.getenv("SCALPER_V3_ATR_PERIOD", "10"))
+SCALPER_V3_ATR_MULT: float = float(os.getenv("SCALPER_V3_ATR_MULT", "2.5"))
+SCALPER_V3_KC_EMA: int = int(os.getenv("SCALPER_V3_KC_EMA", "20"))
+SCALPER_V3_KC_ATR_PERIOD: int = int(os.getenv("SCALPER_V3_KC_ATR_PERIOD", "14"))
+SCALPER_V3_KC_MULT: float = float(os.getenv("SCALPER_V3_KC_MULT", "2.0"))
+SCALPER_V3_ENTRY_ZONE: float = float(os.getenv("SCALPER_V3_ENTRY_ZONE", "0.45"))
+SCALPER_V3_SLOPE_LOOKBACK: int = int(os.getenv("SCALPER_V3_SLOPE_LOOKBACK", "3"))
+SCALPER_V3_AO_FAST: int = int(os.getenv("SCALPER_V3_AO_FAST", "5"))
+SCALPER_V3_AO_SLOW: int = int(os.getenv("SCALPER_V3_AO_SLOW", "34"))
+SCALPER_V3_STRENGTH_LOOKBACK: int = int(os.getenv("SCALPER_V3_STRENGTH_LOOKBACK", "5"))
+SCALPER_V3_ADX_PERIOD: int = int(os.getenv("SCALPER_V3_ADX_PERIOD", "14"))
+SCALPER_V3_ADX_MIN: float = float(os.getenv("SCALPER_V3_ADX_MIN", "22.0"))
+SCALPER_V3_CHOP_PERIOD: int = int(os.getenv("SCALPER_V3_CHOP_PERIOD", "14"))
+SCALPER_V3_CHOP_MAX: float = float(os.getenv("SCALPER_V3_CHOP_MAX", "50.0"))
+SCALPER_V3_EXPAND_PERIOD: int = int(os.getenv("SCALPER_V3_EXPAND_PERIOD", "20"))
+SCALPER_V3_EXPAND_MIN: float = float(os.getenv("SCALPER_V3_EXPAND_MIN", "1.10"))
+SCALPER_V3_MIN_STRENGTH: int = int(os.getenv("SCALPER_V3_MIN_STRENGTH", "3"))
+
+# Funding-rate safety filter -- block entries when funding is stacked hard
+# against the trade direction (crowded-trade / squeeze risk).
+SCALPER_V3_MAX_ADVERSE_FUNDING_PCT: float = float(
+    os.getenv("SCALPER_V3_MAX_ADVERSE_FUNDING_PCT", "0.05")
+)
+
+# Move SL to breakeven (entry price) once TP1 (kc_mid) fills.
+SCALPER_V3_BREAKEVEN_AFTER_TP1: bool = os.getenv("SCALPER_V3_BREAKEVEN_AFTER_TP1", "true").lower() == "true"
+
+SCALPER_V3_SCAN_INTERVAL_MINUTES: int = int(os.getenv("SCALPER_V3_SCAN_INTERVAL_MINUTES", "5"))
+SCALPER_V3_MAX_CONCURRENT_SIGNALS: int = int(os.getenv("SCALPER_V3_MAX_CONCURRENT_SIGNALS", "2"))
+SCALPER_V3_SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SCALPER_V3_SIGNAL_COOLDOWN_MINUTES", "240"))
+SCALPER_V3_EXPIRE_HOURS: int = int(os.getenv("SCALPER_V3_EXPIRE_HOURS", "6"))
+STRATEGY_NAME_V3: str = os.getenv("STRATEGY_NAME_V3", "Super Scalper v3")
+
+# ── Live trading master switch -- paper-trade / backtest-only until
+# explicitly flipped true after reviewing optimization results. ─────────
+LIVE_ENABLED: bool = os.getenv("LIVE_ENABLED", "false").lower() == "true"
+
 # ── Fee / slippage estimates (backtest only) ─────────────────────────
 ESTIMATED_ENTRY_FEE_PCT: float = float(os.getenv("ESTIMATED_ENTRY_FEE_PCT", "0.02"))
 ESTIMATED_EXIT_FEE_PCT: float = float(os.getenv("ESTIMATED_EXIT_FEE_PCT", "0.02"))

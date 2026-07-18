@@ -68,11 +68,60 @@ def init_db():
             ("entry_timeframe", "TEXT"),
             ("trend_timeframe", "TEXT"),
             ("setup_reason", "TEXT"),
+            # ── Super Scalper v3 fields (nullable -- only populated for
+            # signals fired by strategy_name = "Super Scalper v3") ──────
+            ("tp1_price", "REAL"),
+            ("tp2_price", "REAL"),
+            ("tp1_hit_at", "TEXT"),
+            ("trend", "TEXT"),
+            ("strength", "INTEGER"),
+            ("ao", "REAL"),
+            ("kc_pos", "REAL"),
+            ("regime", "TEXT"),
+            ("regime_votes", "INTEGER"),
+            ("adx", "REAL"),
+            ("chop", "REAL"),
         ]:
             try:
                 con.execute(f"ALTER TABLE signals ADD COLUMN {col} {definition}")
             except Exception:
                 pass
+
+        # ── skipped_signals table ───────────────────────────────────
+        # A SuperTrend flip fired but a filter (regime/kc_pos/slope/ao/
+        # strength/liq/funding/geometry) rejected it. Logged for Phase 4's
+        # "verify the filter's rejects have worse expectancy" comparison.
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS skipped_signals (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol       TEXT    NOT NULL,
+                direction    TEXT,
+                reason       TEXT    NOT NULL,
+                strategy_name TEXT,
+                entry_price  REAL,
+                sl_price     REAL,
+                tp1_price    REAL,
+                tp2_price    REAL,
+                trend        TEXT,
+                strength     INTEGER,
+                ao           REAL,
+                kc_pos       REAL,
+                regime       TEXT,
+                regime_votes INTEGER,
+                adx          REAL,
+                chop         REAL,
+                generated_at TEXT    NOT NULL
+            )
+        """)
+
+        con.execute("""
+            CREATE INDEX IF NOT EXISTS idx_skipped_signals_generated_at
+            ON skipped_signals (generated_at)
+        """)
+        con.execute("""
+            CREATE INDEX IF NOT EXISTS idx_skipped_signals_reason
+            ON skipped_signals (reason)
+        """)
 
         # ── armed_setups table ─────────────────────────────────────
         con.execute("""
@@ -151,6 +200,105 @@ def update_signal_outcome(signal_id: int, status: str, pnl_roi: float):
             SET status = ?, pnl_roi = ?, closed_at = ?
             WHERE id = ? AND status = 'pending'
         """, (status, pnl_roi, closed_at, signal_id))
+
+
+def save_v3_signal(
+    symbol: str,
+    direction: str,
+    entry_price: float,
+    sl_price: float,
+    tp1_price: float,
+    tp2_price: float,
+    generated_at: datetime,
+    strategy_name: str,
+    trend: str,
+    strength: int,
+    ao: float,
+    kc_pos: float,
+    regime: str,
+    regime_votes: int,
+    adx: float,
+    chop: float,
+    setup_reason: str = "",
+) -> int:
+    """Save a Super Scalper v3 signal. tp_price/rr are set from TP2/an
+    approximation so v1 reporting code (which reads those columns) keeps
+    working unchanged for v3 rows too."""
+    ts = generated_at.isoformat()
+    risk = abs(entry_price - sl_price)
+    reward = abs(tp2_price - entry_price)
+    rr = round(reward / risk, 2) if risk > 0 else 0.0
+    with _conn() as con:
+        cur = con.execute("""
+            INSERT INTO signals
+              (symbol, direction, entry_price, tp_price, sl_price,
+               leverage, status, placed, generated_at, placed_at,
+               strategy_name, rr, setup_reason,
+               tp1_price, tp2_price, trend, strength, ao, kc_pos,
+               regime, regime_votes, adx, chop)
+            VALUES (?, ?, ?, ?, ?, 1, 'pending', 1, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            symbol, direction, entry_price, tp2_price, sl_price, ts, ts,
+            strategy_name, rr, setup_reason,
+            tp1_price, tp2_price, trend, strength, ao, kc_pos,
+            regime, regime_votes, adx, chop,
+        ))
+        return cur.lastrowid
+
+
+def mark_signal_tp1_hit(signal_id: int, hit_at: datetime, new_sl_price: float) -> None:
+    ts = hit_at.isoformat()
+    with _conn() as con:
+        con.execute("""
+            UPDATE signals
+            SET tp1_hit_at = ?, sl_price = ?, breakeven_triggered_at = ?
+            WHERE id = ? AND tp1_hit_at IS NULL
+        """, (ts, new_sl_price, ts, signal_id))
+
+
+def save_skipped_signal(
+    symbol: str,
+    reason: str,
+    generated_at: datetime,
+    direction: str | None = None,
+    strategy_name: str = "",
+    entry_price: float | None = None,
+    sl_price: float | None = None,
+    tp1_price: float | None = None,
+    tp2_price: float | None = None,
+    trend: str | None = None,
+    strength: int | None = None,
+    ao: float | None = None,
+    kc_pos: float | None = None,
+    regime: str | None = None,
+    regime_votes: int | None = None,
+    adx: float | None = None,
+    chop: float | None = None,
+) -> int:
+    with _conn() as con:
+        cur = con.execute("""
+            INSERT INTO skipped_signals
+              (symbol, direction, reason, strategy_name, entry_price, sl_price,
+               tp1_price, tp2_price, trend, strength, ao, kc_pos,
+               regime, regime_votes, adx, chop, generated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            symbol, direction, reason, strategy_name, entry_price, sl_price,
+            tp1_price, tp2_price, trend, strength, ao, kc_pos,
+            regime, regime_votes, adx, chop, generated_at.isoformat(),
+        ))
+        return cur.lastrowid
+
+
+def get_skipped_signals_in_range(start: datetime, end: datetime) -> list[dict]:
+    with _conn() as con:
+        rows = con.execute("""
+            SELECT * FROM skipped_signals
+            WHERE generated_at >= ? AND generated_at < ?
+            ORDER BY generated_at ASC
+        """, (start.isoformat(), end.isoformat())).fetchall()
+        return [dict(r) for r in rows]
 
 
 def mark_signal_breakeven_triggered(signal_id: int, triggered_at: datetime) -> None:
@@ -241,6 +389,33 @@ def signal_exists_for_coin(symbol: str, since: datetime) -> bool:
             LIMIT 1
         """, (symbol, since.isoformat())).fetchone()
         return row is not None
+
+
+def signal_exists_for_coin_strategy(symbol: str, since: datetime, strategy_name: str) -> bool:
+    with _conn() as con:
+        row = con.execute("""
+            SELECT id FROM signals
+            WHERE symbol = ? AND strategy_name = ? AND generated_at >= ?
+            LIMIT 1
+        """, (symbol, strategy_name, since.isoformat())).fetchone()
+        return row is not None
+
+
+def count_active_signals_by_strategy(strategy_name: str) -> int:
+    with _conn() as con:
+        row = con.execute("""
+            SELECT COUNT(*) FROM signals WHERE status = 'pending' AND strategy_name = ?
+        """, (strategy_name,)).fetchone()
+        return row[0]
+
+
+def get_pending_signals_by_strategy(strategy_name: str) -> list[dict]:
+    with _conn() as con:
+        rows = con.execute("""
+            SELECT * FROM signals WHERE status = 'pending' AND strategy_name = ?
+            ORDER BY generated_at ASC
+        """, (strategy_name,)).fetchall()
+        return [dict(r) for r in rows]
 
 
 def count_losses_since(symbol: str, direction: str | None, since: datetime) -> int:

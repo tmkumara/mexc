@@ -21,6 +21,8 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta, date
 
+import pandas as pd
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -30,6 +32,7 @@ import database as db
 import strategy
 import bot as tg
 import coin_scanner
+import scalper_v3_strategy as v3
 from outcome_check import check_tp_sl
 from market_data import get_market_klines
 from config import (
@@ -62,6 +65,14 @@ from config import (
     MAX_SL_ROI_PCT,
     DRY_RUN,
     DRY_RUN_SAVE_SIGNALS,
+    SCALPER_V3_ENABLED,
+    SCALPER_V3_TIMEFRAME,
+    SCALPER_V3_SCAN_INTERVAL_MINUTES,
+    SCALPER_V3_MAX_CONCURRENT_SIGNALS,
+    SCALPER_V3_SIGNAL_COOLDOWN_MINUTES,
+    SCALPER_V3_EXPIRE_HOURS,
+    STRATEGY_NAME_V3,
+    LIVE_ENABLED,
 )
 
 
@@ -334,6 +345,159 @@ async def check_outcomes(app: Application) -> None:
                 logger.error("Failed to notify %s for %s: %s", outcome, symbol, e)
 
 
+# ── Super Scalper v3 scanner (OFF by default — SCALPER_V3_ENABLED) ──
+#
+# Additive and independent of the v1 scan/outcome loop above: separate
+# strategy_name, separate cooldown/concurrency limits, separate DB rows.
+# LIVE_ENABLED gates real order intent the same way DRY_RUN gates v1 --
+# with LIVE_ENABLED=false this only ever logs candidates/skips and (if
+# DRY_RUN is also false) sends a paper-trade Telegram alert, never more.
+
+async def scan_and_fire_signals_v3(app: Application) -> None:
+    if not SCALPER_V3_ENABLED:
+        return
+    if tg.paused:
+        logger.info("[SCAN-V3] Paused — skipping")
+        return
+
+    coins = coin_scanner.get_cached_coins()
+    if not coins:
+        logger.warning("[SCAN-V3] Empty coin pool — skipping")
+        return
+
+    now = datetime.now(timezone.utc)
+    cooldown_since = now - timedelta(minutes=SCALPER_V3_SIGNAL_COOLDOWN_MINUTES)
+
+    active = db.count_active_signals_by_strategy(STRATEGY_NAME_V3)
+    slots = SCALPER_V3_MAX_CONCURRENT_SIGNALS - active
+    if slots <= 0:
+        logger.info("[SCAN-V3] %d/%d active v3 signals — no slots", active, SCALPER_V3_MAX_CONCURRENT_SIGNALS)
+        return
+
+    to_scan = [s for s in coins if not db.signal_exists_for_coin_strategy(s, cooldown_since, STRATEGY_NAME_V3)]
+
+    fired = 0
+    skipped = 0
+    for symbol in to_scan:
+        if fired >= slots:
+            break
+        try:
+            result = v3.evaluate_symbol_v3(symbol)
+        except Exception as e:
+            logger.error("[SCAN-V3] %s eval failed: %s", symbol, e, exc_info=True)
+            continue
+
+        if result is None:
+            continue
+
+        if isinstance(result, v3.SkippedSignal):
+            skipped += 1
+            db.save_skipped_signal(
+                symbol=result.symbol, reason=result.reason, generated_at=result.generated_at,
+                direction=result.direction, strategy_name=STRATEGY_NAME_V3,
+                trend=result.details.get("trend"), strength=result.details.get("strength"),
+                ao=result.details.get("ao"), kc_pos=result.details.get("kc_pos"),
+                regime=result.details.get("regime"), regime_votes=result.details.get("regime_votes"),
+                adx=result.details.get("adx"), chop=result.details.get("chop"),
+            )
+            logger.debug("[SCAN-V3-BLOCKED] %s %s: %s", symbol, result.direction, result.reason)
+            continue
+
+        signal_id = db.save_v3_signal(
+            symbol=result.symbol, direction=result.direction,
+            entry_price=result.entry_price, sl_price=result.sl_price,
+            tp1_price=result.tp1_price, tp2_price=result.tp2_price,
+            generated_at=result.generated_at, strategy_name=STRATEGY_NAME_V3,
+            trend=result.trend, strength=result.strength, ao=result.ao, kc_pos=result.kc_pos,
+            regime=result.regime, regime_votes=result.regime_votes, adx=result.adx, chop=result.chop,
+            setup_reason=result.setup_reason,
+        )
+
+        if not DRY_RUN:
+            try:
+                await tg.broadcast_v3_signal(app, result, signal_id)
+            except Exception as e:
+                logger.error("[SCAN-V3] Telegram broadcast failed for %s: %s", symbol, e)
+
+        fired += 1
+        logger.info(
+            "[SIGNAL-V3] Fired #%d %s %s entry=%.6g tp1=%.6g tp2=%.6g sl=%.6g live_enabled=%s",
+            signal_id, result.symbol, result.direction,
+            result.entry_price, result.tp1_price, result.tp2_price, result.sl_price, LIVE_ENABLED,
+        )
+
+    logger.info(
+        "[SCAN-V3] Done — %d coins scanned, %d fired, %d skipped-and-logged",
+        len(to_scan), fired, skipped,
+    )
+
+
+async def check_outcomes_v3(app: Application) -> None:
+    if not SCALPER_V3_ENABLED:
+        return
+
+    pending = db.get_pending_signals_by_strategy(STRATEGY_NAME_V3)
+    now = datetime.now(timezone.utc)
+
+    for sig in pending:
+        symbol = sig["symbol"]
+        direction = sig["direction"]
+        entry_price = sig["entry_price"]
+        tp1_price = sig["tp1_price"]
+        tp2_price = sig["tp2_price"]
+        sl_price = sig["sl_price"]
+        generated = datetime.fromisoformat(sig["generated_at"])
+        if generated.tzinfo is None:
+            generated = generated.replace(tzinfo=timezone.utc)
+
+        if (now - generated).total_seconds() > SCALPER_V3_EXPIRE_HOURS * 3600:
+            db.update_signal_outcome(sig["id"], "expired", 0.0)
+            logger.info("[V3] Signal %s expired (%s)", sig["id"], symbol)
+            if not DRY_RUN:
+                try:
+                    await tg.notify_outcome(app, {**sig, "status": "expired", "pnl_roi": 0.0})
+                except Exception as e:
+                    logger.error("[V3] Failed to notify expiry for %s: %s", symbol, e)
+            continue
+
+        try:
+            df = v3.update_rolling_history(symbol)
+            if df is None or df.empty:
+                continue
+            computed = v3.get_engine(symbol).compute(df)
+        except Exception as e:
+            logger.warning("[V3] Could not compute candles for %s: %s", symbol, e)
+            continue
+
+        bars_after_entry = computed[computed.index > pd.Timestamp(generated).tz_localize(None)]
+        if bars_after_entry.empty:
+            continue
+
+        result = v3.walk_trade(direction, entry_price, sl_price, tp1_price, tp2_price, bars_after_entry)
+
+        if result["tp1_hit"] and sig.get("tp1_hit_at") is None:
+            db.mark_signal_tp1_hit(sig["id"], now, max(sl_price, entry_price) if direction == "LONG" else min(sl_price, entry_price))
+
+        if result["status"] == "pending":
+            continue
+
+        pnl_pct = (
+            (result["exit_price"] - entry_price) / entry_price * 100.0
+            if direction == "LONG"
+            else (entry_price - result["exit_price"]) / entry_price * 100.0
+        )
+        db.update_signal_outcome(sig["id"], result["status"], round(pnl_pct, 4))
+        logger.info(
+            "[V3] Signal %s %s (%s) exit=%s reason=%s %+.2f%%",
+            sig["id"], result["status"].upper(), symbol, result["exit_price"], result["exit_reason"], pnl_pct,
+        )
+        if not DRY_RUN:
+            try:
+                await tg.notify_outcome(app, {**sig, "status": result["status"], "pnl_roi": pnl_pct})
+            except Exception as e:
+                logger.error("[V3] Failed to notify %s for %s: %s", result["status"], symbol, e)
+
+
 # ── Main ──────────────────────────────────────────────────────────
 
 async def main():
@@ -389,6 +553,24 @@ async def main():
         CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
         id="coin_refresh",
     )
+
+    if SCALPER_V3_ENABLED:
+        logger.info(
+            "[V3] Super Scalper v3 scanner ENABLED (paper-trade only, live_enabled=%s)",
+            LIVE_ENABLED,
+        )
+        scheduler.add_job(
+            scan_and_fire_signals_v3,
+            CronTrigger(minute=f"*/{SCALPER_V3_SCAN_INTERVAL_MINUTES}", second=10),
+            args=[app],
+            id="signal_scanner_v3",
+        )
+        scheduler.add_job(
+            check_outcomes_v3,
+            IntervalTrigger(minutes=OUTCOME_CHECK_MINUTES),
+            args=[app],
+            id="outcome_checker_v3",
+        )
 
     async def _daily(app=app):
         await tg.auto_daily_report(type("ctx", (), {"application": app})())
