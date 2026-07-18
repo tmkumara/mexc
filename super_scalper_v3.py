@@ -184,16 +184,23 @@ class SuperScalper:
             min_strength = self.cfg.strength_lookback
 
         c = self.cfg
+        # kc_slope lags price (it's EMA-based) -- at a fresh flip bar, price
+        # is still down at kc_pos <= entry_zone precisely because the
+        # channel midline hasn't turned yet, so requiring the pullback
+        # path's fully-confirmed slope (> 0.05 / < -0.05) here made kc_pos
+        # and kc_slope near-mutually-exclusive and this path never fired on
+        # real data (see commit 093c22b). A flip is an early-trend catch, so
+        # it only needs the channel to not already be sloping against it.
         if sig["side"] == "BUY":
             return (sig["trend"] == "BULLISH"
                     and sig["kc_pos"] <= c.entry_zone
-                    and sig["kc_slope"] > 0.05
+                    and sig["kc_slope"] > -0.02
                     and (sig["ao"] > 0 or sig["ao_rising"])
                     and sig["strength"] >= min_strength)
         if sig["side"] == "SELL":
             return (sig["trend"] == "BEARISH"
                     and sig["kc_pos"] >= 1 - c.entry_zone
-                    and sig["kc_slope"] < -0.05
+                    and sig["kc_slope"] < 0.02
                     and (sig["ao"] < 0 or not sig["ao_rising"])
                     and sig["strength"] >= min_strength)
         return False
