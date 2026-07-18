@@ -12,6 +12,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import ParseMode
 
+import config as cfg
 import database as db
 import reports
 from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, LKT, STRATEGY_NAME
@@ -23,13 +24,14 @@ paused: bool = False
 
 # ── send helpers ──────────────────────────────────────────────────
 
-async def _send_html(app: Application, text: str, chat_id: str = None):
+async def _send_html(app: Application, text: str, chat_id: str = None, reply_to_message_id: int = None):
     target = chat_id or TELEGRAM_CHANNEL_ID
-    await app.bot.send_message(
+    return await app.bot.send_message(
         chat_id=target,
         text=text,
         parse_mode=ParseMode.HTML,
         disable_web_page_preview=True,
+        reply_to_message_id=reply_to_message_id,
     )
 
 
@@ -81,6 +83,60 @@ def format_signal(signal, signal_id: int) -> str:
 async def broadcast_signal(app: Application, signal, signal_id: int) -> None:
     msg = format_signal(signal, signal_id)
     await _send_html(app, msg)
+
+
+def format_v3_signal(signal, signal_id: int) -> str:
+    """Super Scalper v3 alert -- includes regime/confluence diagnostics
+    alongside the trade levels."""
+    arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
+    coin  = signal.symbol.replace("_", "/")
+
+    return "\n".join([
+        f"{escape(arrow)} — {_bold(coin)} Futures",
+        _italic("Super Scalper v3"),
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"📍 Entry: {_code(f'{signal.entry_price:,.6g}')}",
+        f"🎯 TP:    {_code(f'{signal.tp2_price:,.6g}')}  {_italic(f'+{cfg.SCALPER_V3_TARGET_ROI_PCT:.0f}% ROI @ {cfg.LEVERAGE}x')}",
+        f"🛑 SL:    {_code(f'{signal.sl_price:,.6g}')}  {_italic(f'-{cfg.SCALPER_V3_MAX_SL_ROI_PCT:.0f}% ROI @ {cfg.LEVERAGE}x, fixed')}",
+        f"📶 Progress ping at: {_code(f'{signal.tp1_price:,.6g}')}  {_italic(f'+{cfg.SCALPER_V3_TP1_NOTIFY_ROI_PCT:.0f}% ROI, informational')}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"🧭 Trend: {_code(signal.trend)}   💪 Strength: {_code(signal.strength)}",
+        f"📉 AO: {_code(f'{signal.ao:.4g}')}   📍 kc_pos: {_code(f'{signal.kc_pos:.2f}')}",
+        f"🌐 Regime: {_code(signal.regime)} ({_code(f'{signal.regime_votes}/3')} votes)",
+        f"📈 ADX: {_code(f'{signal.adx:.1f}')}   🌀 Chop: {_code(f'{signal.chop:.1f}')}",
+        f"💰 Funding: {_code(f'{signal.funding_rate:+.4f}%')}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"⏰ {_code(signal.generated_at.astimezone(LKT).strftime('%Y-%m-%d %H:%M LKT'))}",
+        f"🆔 Signal ID: {_code(signal_id)}",
+        _italic("⚠️ Not financial advice. Use risk management."),
+    ])
+
+
+async def broadcast_v3_signal(app: Application, signal, signal_id: int):
+    msg = format_v3_signal(signal, signal_id)
+    return await _send_html(app, msg)
+
+
+async def notify_v3_progress(app: Application, signal_db: dict) -> None:
+    """Sent once, the first time price reaches the SCALPER_V3_TP1_NOTIFY_ROI_PCT
+    checkpoint (informational only -- SL/TP are unchanged, still flat).
+    Replies to the original signal message when we have its message_id."""
+    direction = signal_db["direction"]
+    symbol    = signal_db["symbol"].replace("_", "/")
+    arrow     = "🟢" if direction == "LONG" else "🔴"
+    entry_price = signal_db["entry_price"]
+    tp1_price   = signal_db["tp1_price"]
+
+    msg = "\n".join([
+        f"📶 {_bold('Progress Update')}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"{arrow} {escape(direction)} — {_bold(symbol)}",
+        f"Reached {_code(f'+{cfg.SCALPER_V3_TP1_NOTIFY_ROI_PCT:.0f}% ROI')} toward the "
+        f"{_code(f'+{cfg.SCALPER_V3_TARGET_ROI_PCT:.0f}% ROI')} target",
+        f"Entry: {_code(f'{entry_price:,.6g}')}   Now near: {_code(f'{tp1_price:,.6g}')}",
+        f"🆔 Signal ID: {_code(signal_db['id'])}",
+    ])
+    await _send_html(app, msg, reply_to_message_id=signal_db.get("signal_message_id"))
 
 
 async def notify_outcome(app: Application, signal_db: dict) -> None:
