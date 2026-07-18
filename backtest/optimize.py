@@ -193,6 +193,8 @@ def run_walk_forward(symbol: str, grid: dict, entry_timeframe: str, data_interva
             "test_metrics": test_metrics,
             "baseline_metrics": baseline_metrics,
             "skipped_metrics": skipped_metrics,
+            "n_flip_trades": len(test_result.flip_trades),
+            "n_pullback_trades": len(test_result.pullback_trades),
             "test_low_confidence": test_metrics["total_trades"] < MIN_TRAIN_TRADES,
             "equity_curve": test_result.equity_curve,
             "baseline_equity_curve": test_result.baseline_equity_curve,
@@ -264,7 +266,7 @@ def build_report(all_results: list[dict], initial_equity: float, out_dir: Path) 
         lines.append("")
         lines.append(f"Windows: {wf['n_accepted']}/{wf['n_windows']} accepted (rest rejected for <{MIN_TRAIN_TRADES} train trades)")
         lines.append("")
-        lines.append("| Window | Train | Test | Params | Test trades | Test WR% | Test PF | Test maxDD% | Baseline PF | Skipped PF | Confidence |")
+        lines.append("| Window | Train | Test | Params | Test trades (flip/pullback) | Test WR% | Test PF | Test maxDD% | Baseline PF | Skipped PF | Confidence |")
         lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
 
         for i, w in enumerate(wf["windows"]):
@@ -280,8 +282,9 @@ def build_report(all_results: list[dict], initial_equity: float, out_dir: Path) 
             sm = w["skipped_metrics"]
             combo_str = f"atr_mult={c['atr_mult']} ez={c['entry_zone']} adx≥{c['adx_min']} chop≤{c['chop_max']} str≥{c['min_strength']}"
             conf = "LOW (<30 trades)" if w["test_low_confidence"] else "ok"
+            trades_str = f"{tm['total_trades']} ({w['n_flip_trades']}/{w['n_pullback_trades']})"
             lines.append(
-                f"| {i+1} | {train_span} | {test_span} | {combo_str} | {tm['total_trades']} | "
+                f"| {i+1} | {train_span} | {test_span} | {combo_str} | {trades_str} | "
                 f"{tm['win_rate']} | {tm['profit_factor']} | {tm['max_drawdown_pct']} | "
                 f"{bm['profit_factor']} | {sm['profit_factor']} | {conf} |"
             )

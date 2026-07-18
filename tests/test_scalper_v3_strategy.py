@@ -123,6 +123,10 @@ class _FakeEngine:
         from super_scalper_v3 import SuperScalper
         return SuperScalper(**v3.scalper_kwargs()).confluence_ok(sig, min_strength=min_strength)
 
+    def pullback_entry_ok(self, sig):
+        from super_scalper_v3 import SuperScalper
+        return SuperScalper(**v3.scalper_kwargs()).pullback_entry_ok(sig)
+
 
 def _base_sig(**overrides):
     sig = dict(
@@ -142,11 +146,44 @@ def _dummy_df(n=120):
     })
 
 
-def test_evaluate_returns_none_when_no_flip(monkeypatch):
+def test_evaluate_returns_none_when_no_flip_and_no_pullback(monkeypatch):
     monkeypatch.setattr(v3, "get_ticker", lambda s: None)
-    v3._engines["FOO_USDT"] = _FakeEngine(_base_sig(side=None))
+    # no flip, and kc_pos/kc_slope don't satisfy pullback_entry_ok either
+    v3._engines["FOO_USDT"] = _FakeEngine(_base_sig(side=None, kc_pos=0.9, kc_slope=-0.1))
     result = v3.evaluate_symbol_v3("FOO_USDT", df=_dummy_df())
     assert result is None
+
+
+def test_evaluate_returns_none_when_no_flip_and_regime_not_trending(monkeypatch):
+    monkeypatch.setattr(v3, "get_ticker", lambda s: None)
+    # kc_pos/kc_slope/ao would satisfy pullback_entry_ok, but regime isn't TRENDING
+    v3._engines["FOO_USDT"] = _FakeEngine(_base_sig(side=None, regime="RANGING"))
+    result = v3.evaluate_symbol_v3("FOO_USDT", df=_dummy_df())
+    assert result is None
+
+
+def test_evaluate_returns_pullback_signal_when_no_flip_but_conditions_align(monkeypatch):
+    monkeypatch.setattr(v3, "get_ticker", lambda s: None)
+    # no fresh flip, but an ongoing TRENDING bullish pullback setup -- this is
+    # exactly the case confluence_ok() misses (see evaluate_symbol_v3 docstring)
+    v3._engines["FOO_USDT"] = _FakeEngine(_base_sig(side=None))
+    result = v3.evaluate_symbol_v3("FOO_USDT", df=_dummy_df())
+    assert isinstance(result, v3.ScalperV3Signal)
+    assert result.direction == "LONG"
+    assert result.entry_kind == "pullback"
+    assert v3.valid_v3_geometry(result.direction, result.entry_price, result.sl_price, result.tp1_price, result.tp2_price)
+
+
+def test_evaluate_pullback_short_direction(monkeypatch):
+    monkeypatch.setattr(v3, "get_ticker", lambda s: None)
+    v3._engines["FOO_USDT"] = _FakeEngine(_base_sig(
+        side=None, trend="BEARISH", kc_pos=0.8, kc_slope=-0.2, ao=-1.0, ao_rising=False,
+        stop_loss=101.5, kc_mid=99.0, kc_lower=96.0,
+    ))
+    result = v3.evaluate_symbol_v3("FOO_USDT", df=_dummy_df())
+    assert isinstance(result, v3.ScalperV3Signal)
+    assert result.direction == "SHORT"
+    assert result.entry_kind == "pullback"
 
 
 def test_evaluate_returns_signal_when_confluence_passes(monkeypatch):

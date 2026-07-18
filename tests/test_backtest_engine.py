@@ -47,6 +47,9 @@ class _FakeEngine:
     def confluence_ok(self, sig, min_strength=3):
         return self._real.confluence_ok(sig, min_strength=min_strength)
 
+    def pullback_entry_ok(self, sig):
+        return self._real.pullback_entry_ok(sig)
+
 
 @pytest.fixture
 def params():
@@ -136,6 +139,31 @@ def test_filtered_book_stays_flat_until_position_closes(monkeypatch, params):
     assert result.trades[0].entry_time == computed.index[101]
     # both flips still register in the all-flip baseline book (its own exclusivity is independent)
     assert len(result.all_flip_trades) == 1  # second flip at bar 102 also blocked (baseline book also flat-until-close, same first trade still open)
+
+
+def test_pullback_entry_fires_without_a_flip(monkeypatch, params):
+    computed = _build_computed()
+    # bar 100: NO flip (side=None), but an ongoing TRENDING bullish pullback setup
+    computed.iloc[100] = pd.Series(_flat_row(
+        100, price=100.0, side=None, trend=1, regime="TRENDING", regime_votes=3,
+        kc_pos=0.2, kc_slope=0.2, ao=1.0, ao_rising=True, supertrend=97.0,
+        kc_mid=101.0, kc_upper=105.0,
+    ))
+    for j in range(101, 110):
+        computed.iloc[j] = pd.Series(_flat_row(j, price=99.0, side=None, supertrend=98.0))
+    computed.loc[computed.index[103], "high"] = 106.0  # TP2 win
+
+    monkeypatch.setattr(bt, "SuperScalper", lambda **kw: _FakeEngine(computed, **kw))
+    result = bt.run_backtest(_dummy_1m(), "FAKE_USDT", params)
+
+    assert len(result.trades) == 1
+    assert result.trades[0].entry_kind == "pullback"
+    assert result.trades[0].direction == "LONG"
+    assert result.trades[0].exit_reason == "tp2"
+    assert len(result.pullback_trades) == 1
+    assert len(result.flip_trades) == 0
+    # pullback has no baseline/skipped counterpart -- shouldn't appear in the flip-only baseline book
+    assert len(result.all_flip_trades) == 0
 
 
 def test_compute_metrics_empty():

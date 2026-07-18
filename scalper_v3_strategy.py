@@ -81,6 +81,7 @@ class ScalperV3Signal:
     chop: float
     expansion: float
     funding_rate: float
+    entry_kind: str = "flip"    # "flip" (confluence_ok, SuperTrend flip required) | "pullback" (pullback_entry_ok, mid-trend continuation)
     setup_reason: str = "SuperTrend flip + Keltner confluence + regime filter"
 
 
@@ -227,12 +228,33 @@ def evaluate_symbol_v3(symbol: str, df: pd.DataFrame | None = None) -> ScalperV3
     """
     Evaluate one symbol for a v3 Super Scalper signal.
 
+    Two independent entry paths (both from super_scalper_v3.SuperScalper):
+      - "flip":     confluence_ok() -- requires a fresh SuperTrend flip on
+                    this candle, gated by regime + kc_pos/kc_slope/ao/strength.
+      - "pullback": pullback_entry_ok() -- no flip required, just an
+                    ongoing TRENDING regime plus the same kc_pos/kc_slope/ao
+                    alignment. Added after backtesting real BTC/ETH/SOL 5m
+                    data showed confluence_ok()'s kc_pos and kc_slope
+                    conditions are almost never simultaneously true AT a
+                    flip bar (kc_slope is still negative whenever kc_pos is
+                    low enough to qualify for a LONG, and vice versa for
+                    SHORT) -- flip-only entries produced ~0 qualifying
+                    trades across 6 weeks on any of the 3 symbols. This is
+                    the entry method super_scalper_v3.py itself appears to
+                    provide for exactly this gap (continuation pullback
+                    mid-trend, decoupled from the flip event).
+
     Returns:
-        ScalperV3Signal  -- confluence_ok() passed and all filters passed.
-        SkippedSignal    -- a flip fired but a filter rejected it (regime,
-                             confluence, funding, liq, or geometry).
-        None             -- no flip signal on the latest closed candle
-                             (nothing to log; this is the common case).
+        ScalperV3Signal  -- an entry path fired and all filters passed.
+        SkippedSignal    -- a flip fired but confluence_ok() (or a later
+                             filter) rejected it. Pullback misses are NOT
+                             logged as skips -- unlike a flip, "no pullback
+                             entry on this bar" is the normal continuous
+                             state during a trend, not a discrete rejected
+                             event, so logging every such bar would just
+                             flood skipped_signals with noise.
+        None             -- no flip and no pullback entry on the latest
+                             closed candle (the common case).
 
     `df` may be supplied directly (used by the backtester, which owns its
     own bar-by-bar window); otherwise the live rolling history is used.
@@ -252,17 +274,20 @@ def evaluate_symbol_v3(symbol: str, df: pd.DataFrame | None = None) -> ScalperV3
         logger.error("[V3-EVAL-ERROR] %s: %s", symbol, e, exc_info=True)
         return None
 
-    if sig["side"] is None:
-        return None  # no SuperTrend flip on this candle -- not worth logging
-
-    direction = "LONG" if sig["side"] == "BUY" else "SHORT"
-
-    if not engine.confluence_ok(sig, min_strength=cfg.SCALPER_V3_MIN_STRENGTH):
-        return SkippedSignal(
-            symbol=symbol, direction=direction, generated_at=now,
-            reason=_confluence_reject_reason(sig, direction),
-            details=sig,
-        )
+    if sig["side"] is not None:
+        direction = "LONG" if sig["side"] == "BUY" else "SHORT"
+        if not engine.confluence_ok(sig, min_strength=cfg.SCALPER_V3_MIN_STRENGTH):
+            return SkippedSignal(
+                symbol=symbol, direction=direction, generated_at=now,
+                reason=_confluence_reject_reason(sig, direction),
+                details=sig,
+            )
+        entry_kind = "flip"
+    else:
+        if sig["regime"] != "TRENDING" or not engine.pullback_entry_ok(sig):
+            return None
+        direction = "LONG" if sig["trend"] == "BULLISH" else "SHORT"
+        entry_kind = "pullback"
 
     entry = sig["price"]
     sl, tp1, tp2 = _calc_tp_sl(direction, sig)
@@ -306,6 +331,11 @@ def evaluate_symbol_v3(symbol: str, df: pd.DataFrame | None = None) -> ScalperV3
         chop=sig["chop"],
         expansion=sig["expansion"],
         funding_rate=funding_pct,
+        entry_kind=entry_kind,
+        setup_reason=(
+            "SuperTrend flip + Keltner confluence + regime filter" if entry_kind == "flip"
+            else "Mid-trend pullback continuation (pullback_entry_ok, TRENDING regime)"
+        ),
     )
 
 

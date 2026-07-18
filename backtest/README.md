@@ -145,6 +145,32 @@ Restart `mexc-bot` and watch `skipped_signals` and `signals` (filtered by
 `strategy_name = 'Super Scalper v3'`) accumulate for a while before
 considering `LIVE_ENABLED=true`.
 
+## Entry logic: flip vs. pullback
+
+Running this against real BTC/ETH/SOL 5m data surfaced a real finding
+worth knowing before reading a report: `confluence_ok()` (the
+flip-triggered entry -- requires a fresh SuperTrend flip AND `kc_pos`
+near the channel edge AND `kc_slope` already trending) essentially never
+fires. Tracing every flip on real data showed `kc_pos` and `kc_slope`
+are anti-correlated at the exact flip bar -- whenever price is still
+down near the lower band (satisfies `kc_pos`), the channel midline
+hasn't turned up yet (fails `kc_slope`), and by the time `kc_slope`
+turns positive, price has already run into the upper half of the
+channel. This produced 0 qualifying trades across 6 weeks on all 3
+symbols tested, regardless of grid parameters (none of the 5 tunable
+params touch the hardcoded ±0.05 `kc_slope` threshold).
+
+`super_scalper_v3.py` ships a second entry method, `pullback_entry_ok()`,
+that checks the same `kc_pos`/`kc_slope`/`ao` alignment but doesn't
+require a flip -- just an ongoing `TRENDING` regime. `backtest/engine.py`
+and `scalper_v3_strategy.py` now check both paths every bar: a flip
+signal goes through `confluence_ok()`, and if there's no flip but the
+symbol is in a `TRENDING` regime, `pullback_entry_ok()` gets a shot.
+Both paths share the same TP1/TP2/SL/breakeven/trailing-stop mechanics.
+The Phase 4 report's "Test trades" column breaks this out as
+`total (flip/pullback)` per window so you can see which path is actually
+producing the trades your param set relies on.
+
 ## What this backtest does NOT model
 
 - **Funding-rate and liq_estimator filters are not applied in the

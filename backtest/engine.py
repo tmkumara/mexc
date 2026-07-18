@@ -1,8 +1,9 @@
 """
 backtest/engine.py — event-driven, bar-by-bar backtester for Super
-Scalper v3, built on the same SuperScalper + confluence_ok + walk_trade
-code the live bot uses (scalper_v3_strategy.py), so backtested behavior
-can't silently drift from live behavior.
+Scalper v3, built on the same SuperScalper + confluence_ok +
+pullback_entry_ok + walk_trade code the live bot uses
+(scalper_v3_strategy.py), so backtested behavior can't silently drift
+from live behavior.
 
 No lookahead: a signal computed from bar N's CLOSE executes at bar N+1's
 OPEN. All indicators (SuperTrend, Keltner, AO, ADX, Choppiness, band
@@ -10,21 +11,34 @@ expansion) are causal (ewm/rolling/diff/shift only look backward), so
 vectorizing SuperScalper.compute() once over the full series is safe --
 row N's indicator values never depend on rows > N.
 
-Runs TWO parallel virtual books over one pass through the data so the
-Phase 3 "skipped vs accepted" comparison is apples-to-apples:
-  - "filtered" book: only signals where confluence_ok() passes (what the
-    live bot actually takes).
-  - "all_flips" book: every SuperTrend flip, confluence gate ignored --
-    the "SuperTrend-only" baseline. Trades in this book that failed
-    confluence_ok() are also tagged as the skipped-signal population.
-Each book enforces its own one-position-at-a-time exclusivity per
-symbol, so the two books can diverge in *timing* (a filtered-out flip
-doesn't block the filtered book's next real entry).
+Two entry paths feed the "filtered" (real/live) book, one position at a
+time per symbol:
+  - "flip":     confluence_ok() -- requires a fresh SuperTrend flip.
+  - "pullback": pullback_entry_ok() -- no flip required, just an ongoing
+                TRENDING regime with the same kc_pos/kc_slope/ao
+                alignment. Added after real BTC/ETH/SOL data showed
+                confluence_ok()'s kc_pos and kc_slope conditions are
+                almost never both true AT a flip bar (kc_slope is still
+                negative whenever kc_pos is low enough to qualify for a
+                LONG, and symmetrically for SHORT) -- flip-only entries
+                produced ~0 qualifying trades across 6 weeks on any of
+                the 3 symbols tested. See backtest/README.md.
+
+Also runs a SEPARATE "all_flips" baseline book in parallel over the same
+pass: every SuperTrend flip, confluence gate ignored (the
+"SuperTrend-only" baseline). Trades in this book that failed
+confluence_ok() are tagged as the skipped-signal population for the
+Phase 3 "skipped vs accepted" comparison. Pullback entries have no
+baseline/skipped counterpart -- pullback_entry_ok() has no
+confluence-disabled variant to compare against, unlike flip+
+confluence_ok(). Each book enforces its own one-position-at-a-time
+exclusivity per symbol, so the two books can diverge in *timing* (a
+filtered-out flip doesn't block the filtered book's next real entry).
 
 The funding-rate and liq_estimator safety filters from the live scanner
 are NOT applied here (Phase 2 only fetches OHLCV, not funding-rate
-history), so this measures the regime/channel confluence layer in
-isolation -- see backtest/README.md.
+history), so this measures the regime/channel confluence + pullback
+continuation logic in isolation -- see backtest/README.md.
 """
 
 from __future__ import annotations
@@ -78,15 +92,16 @@ class Trade:
     pnl_pct: float
     r_multiple: float
     equity_after: float
-    taken: bool                 # True = passed confluence_ok (the "filtered"/real book)
+    taken: bool                 # True = entered the filtered/real book (flip+confluence_ok, or pullback_entry_ok)
+    entry_kind: str = "flip"    # "flip" (confluence_ok) | "pullback" (pullback_entry_ok, no flip required)
     skip_reason: str | None = None
 
 
 @dataclass
 class BacktestResult:
     symbol: str
-    trades: list[Trade] = field(default_factory=list)          # filtered/real book
-    all_flip_trades: list[Trade] = field(default_factory=list)  # SuperTrend-only baseline (every flip)
+    trades: list[Trade] = field(default_factory=list)          # filtered/real book -- flip+confluence AND pullback entries, one position at a time
+    all_flip_trades: list[Trade] = field(default_factory=list)  # SuperTrend-only baseline (every flip, confluence gate ignored) -- flip entries only, pullback has no baseline-vs-filtered split to compare
     equity_curve: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
     baseline_equity_curve: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
     params: BacktestParams | None = None
@@ -94,6 +109,14 @@ class BacktestResult:
     @property
     def skipped_trades(self) -> list["Trade"]:
         return [t for t in self.all_flip_trades if not t.taken]
+
+    @property
+    def flip_trades(self) -> list["Trade"]:
+        return [t for t in self.trades if t.entry_kind == "flip"]
+
+    @property
+    def pullback_trades(self) -> list["Trade"]:
+        return [t for t in self.trades if t.entry_kind == "pullback"]
 
 
 # ── resampling ───────────────────────────────────────────────────────
@@ -135,6 +158,7 @@ def _simulate_trade(
     computed: pd.DataFrame, entry_idx: int,
     sl: float, tp1: float, tp2: float,
     equity: float, params: BacktestParams, taken: bool, skip_reason: str | None,
+    entry_kind: str = "flip",
 ) -> Trade | None:
     """entry_idx is bar N+1 -- the bar whose OPEN is the fill price."""
     if entry_idx >= len(computed):
@@ -166,7 +190,7 @@ def _simulate_trade(
             exit_time=None, exit_price=None, sl_price=sl, tp1_price=tp1, tp2_price=tp2,
             exit_reason=None, tp1_hit=result["tp1_hit"], bars_held=result["bars_held"],
             position_size=position_size, pnl=-entry_fee, pnl_pct=0.0, r_multiple=0.0,
-            equity_after=equity - entry_fee, taken=taken, skip_reason=skip_reason,
+            equity_after=equity - entry_fee, taken=taken, entry_kind=entry_kind, skip_reason=skip_reason,
         )
 
     raw_exit = result["exit_price"]
@@ -193,7 +217,7 @@ def _simulate_trade(
         sl_price=sl, tp1_price=tp1, tp2_price=tp2,
         exit_reason=result["exit_reason"], tp1_hit=result["tp1_hit"], bars_held=result["bars_held"],
         position_size=position_size, pnl=pnl, pnl_pct=pnl_pct, r_multiple=r_multiple,
-        equity_after=equity + pnl, taken=taken, skip_reason=skip_reason,
+        equity_after=equity + pnl, taken=taken, entry_kind=entry_kind, skip_reason=skip_reason,
     )
 
 
@@ -216,55 +240,70 @@ def run_backtest(df_1m: pd.DataFrame, symbol: str, params: BacktestParams) -> Ba
     filtered_curve: dict[pd.Timestamp, float] = {}
     baseline_curve: dict[pd.Timestamp, float] = {}
 
+    def _open_new(book_trades, entry_kind, direction, sl, tp1, tp2, signal_time, entry_idx,
+                   equity, open_until, curve, taken, skip_reason):
+        trade = _simulate_trade(
+            symbol, direction, signal_time, computed, entry_idx, sl, tp1, tp2,
+            equity, params, taken=taken, skip_reason=skip_reason, entry_kind=entry_kind,
+        )
+        if trade is None:
+            return equity, open_until
+        book_trades.append(trade)
+        if trade.exit_time is not None:
+            equity = trade.equity_after
+            open_until = computed.index.get_loc(trade.exit_time)
+            if isinstance(open_until, slice):
+                open_until = open_until.stop - 1
+        else:
+            open_until = n  # still open at data end -- book stays flat
+        curve[trade.entry_time] = equity
+        return equity, open_until
+
     n = len(computed)
     for i in range(params.warmup_bars, n - 1):  # need i+1 (entry bar) to exist
         sig = _row_signal(computed, i)
-        if sig["side"] is None:
-            continue
-
-        direction = "LONG" if sig["side"] == "BUY" else "SHORT"
-        sl, tp1, tp2 = v3s._calc_tp_sl(direction, sig)
-        if not v3s.valid_v3_geometry(direction, sig["price"], sl, tp1, tp2):
-            continue
-
         signal_time = computed.index[i]
         entry_idx = i + 1
-        confluence = engine.confluence_ok(sig, min_strength=params.min_strength)
 
-        # -- baseline book: every valid flip, no confluence gate --
-        if entry_idx > baseline_open_until:
-            trade = _simulate_trade(
-                symbol, direction, signal_time, computed, entry_idx, sl, tp1, tp2,
-                baseline_equity, params, taken=confluence,
-                skip_reason=None if confluence else v3s._confluence_reject_reason(sig, direction),
-            )
-            if trade is not None:
-                all_flip_trades.append(trade)
-                if trade.exit_time is not None:
-                    baseline_equity = trade.equity_after
-                    baseline_open_until = computed.index.get_loc(trade.exit_time)
-                    if isinstance(baseline_open_until, slice):
-                        baseline_open_until = baseline_open_until.stop - 1
-                else:
-                    baseline_open_until = n  # still open at data end -- book stays flat
-                baseline_curve[trade.entry_time] = baseline_equity
+        if sig["side"] is not None:
+            # -- flip signal: baseline book (every flip) + filtered book gated by confluence_ok() --
+            direction = "LONG" if sig["side"] == "BUY" else "SHORT"
+            sl, tp1, tp2 = v3s._calc_tp_sl(direction, sig)
+            if not v3s.valid_v3_geometry(direction, sig["price"], sl, tp1, tp2):
+                continue
 
-        # -- filtered book: only confluence_ok() passes (what live actually trades) --
-        if confluence and entry_idx > filtered_open_until:
-            trade = _simulate_trade(
-                symbol, direction, signal_time, computed, entry_idx, sl, tp1, tp2,
-                filtered_equity, params, taken=True, skip_reason=None,
-            )
-            if trade is not None:
-                filtered_trades.append(trade)
-                if trade.exit_time is not None:
-                    filtered_equity = trade.equity_after
-                    filtered_open_until = computed.index.get_loc(trade.exit_time)
-                    if isinstance(filtered_open_until, slice):
-                        filtered_open_until = filtered_open_until.stop - 1
-                else:
-                    filtered_open_until = n
-                filtered_curve[trade.entry_time] = filtered_equity
+            confluence = engine.confluence_ok(sig, min_strength=params.min_strength)
+
+            if entry_idx > baseline_open_until:
+                baseline_equity, baseline_open_until = _open_new(
+                    all_flip_trades, "flip", direction, sl, tp1, tp2, signal_time, entry_idx,
+                    baseline_equity, baseline_open_until, baseline_curve,
+                    taken=confluence,
+                    skip_reason=None if confluence else v3s._confluence_reject_reason(sig, direction),
+                )
+
+            if confluence and entry_idx > filtered_open_until:
+                filtered_equity, filtered_open_until = _open_new(
+                    filtered_trades, "flip", direction, sl, tp1, tp2, signal_time, entry_idx,
+                    filtered_equity, filtered_open_until, filtered_curve,
+                    taken=True, skip_reason=None,
+                )
+
+        elif sig["regime"] == "TRENDING" and engine.pullback_entry_ok(sig):
+            # -- no flip, but a mid-trend continuation pullback -- filtered book only.
+            # No baseline/skipped counterpart: pullback_entry_ok() has no confluence-
+            # disabled variant to compare against (unlike flip+confluence_ok()).
+            direction = "LONG" if sig["trend"] == "BULLISH" else "SHORT"
+            sl, tp1, tp2 = v3s._calc_tp_sl(direction, sig)
+            if not v3s.valid_v3_geometry(direction, sig["price"], sl, tp1, tp2):
+                continue
+
+            if entry_idx > filtered_open_until:
+                filtered_equity, filtered_open_until = _open_new(
+                    filtered_trades, "pullback", direction, sl, tp1, tp2, signal_time, entry_idx,
+                    filtered_equity, filtered_open_until, filtered_curve,
+                    taken=True, skip_reason=None,
+                )
 
     return BacktestResult(
         symbol=symbol,
