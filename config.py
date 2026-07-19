@@ -160,6 +160,11 @@ SCALPER_V3_CHOP_MAX: float = float(os.getenv("SCALPER_V3_CHOP_MAX", "50.0"))
 SCALPER_V3_EXPAND_PERIOD: int = int(os.getenv("SCALPER_V3_EXPAND_PERIOD", "20"))
 SCALPER_V3_EXPAND_MIN: float = float(os.getenv("SCALPER_V3_EXPAND_MIN", "1.10"))
 SCALPER_V3_MIN_STRENGTH: int = int(os.getenv("SCALPER_V3_MIN_STRENGTH", "3"))
+# regime() votes on 3 independent signals (ADX/Choppiness/band-expansion) and
+# labels anything with >=2 "TRENDING". Early live results showed 3/3-vote
+# signals never lost (2 win, 1 expired) while 2/3-vote signals were mixed
+# (1 win, 2 loss) -- default tightened to require unanimous votes.
+SCALPER_V3_MIN_REGIME_VOTES: int = int(os.getenv("SCALPER_V3_MIN_REGIME_VOTES", "3"))
 
 # Flat SL/TP sizing (replaces the structural SuperTrend-SL / Keltner-TP1-TP2
 # exits -- see scalper_v3_strategy._calc_tp_sl). Both entry paths use the

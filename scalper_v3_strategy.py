@@ -301,6 +301,13 @@ def evaluate_symbol_v3(symbol: str, df: pd.DataFrame | None = None) -> ScalperV3
         direction = "LONG" if sig["trend"] == "BULLISH" else "SHORT"
         entry_kind = "pullback"
 
+    if sig["regime_votes"] < cfg.SCALPER_V3_MIN_REGIME_VOTES:
+        return SkippedSignal(
+            symbol=symbol, direction=direction, generated_at=now,
+            reason=f"regime_votes_{sig['regime_votes']}_below_min_{cfg.SCALPER_V3_MIN_REGIME_VOTES}",
+            details=sig,
+        )
+
     entry = sig["price"]
     sl, tp1, tp2 = _calc_tp_sl(direction, sig)
 
