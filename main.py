@@ -65,6 +65,7 @@ from config import (
     MAX_SL_ROI_PCT,
     DRY_RUN,
     DRY_RUN_SAVE_SIGNALS,
+    STRATEGY_V1_ENABLED,
     SCALPER_V3_ENABLED,
     SCALPER_V3_TIMEFRAME,
     SCALPER_V3_SCAN_INTERVAL_MINUTES,
@@ -541,12 +542,16 @@ async def main():
 
     # Signal scanner -- every SCAN_INTERVAL_MINUTES, a few seconds after
     # candle close so MEXC has finalized the candle.
-    scheduler.add_job(
-        scan_and_fire_signals,
-        CronTrigger(minute=f"*/{SCAN_INTERVAL_MINUTES}", second=5),
-        args=[app],
-        id="signal_scanner",
-    )
+    if STRATEGY_V1_ENABLED:
+        logger.info("[V1] Simple Supertrend Pullback scanner ENABLED")
+        scheduler.add_job(
+            scan_and_fire_signals,
+            CronTrigger(minute=f"*/{SCAN_INTERVAL_MINUTES}", second=5),
+            args=[app],
+            id="signal_scanner",
+        )
+    else:
+        logger.info("[V1] Simple Supertrend Pullback scanner DISABLED (STRATEGY_V1_ENABLED=false)")
 
     scheduler.add_job(
         check_outcomes,
