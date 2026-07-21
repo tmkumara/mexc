@@ -372,7 +372,7 @@ def _confluence_reject_reason(sig: dict, direction: str) -> str:
             return "trend_mismatch"
         if sig["kc_pos"] > c.SCALPER_V3_ENTRY_ZONE:
             return "kc_pos_outside_entry_zone"
-        if sig["kc_slope"] <= 0.05:
+        if sig["kc_slope"] <= -0.02:
             return "kc_slope_flat"
         if not (sig["ao"] > 0 or sig["ao_rising"]):
             return "ao_bearish"
@@ -383,7 +383,7 @@ def _confluence_reject_reason(sig: dict, direction: str) -> str:
             return "trend_mismatch"
         if sig["kc_pos"] < 1 - c.SCALPER_V3_ENTRY_ZONE:
             return "kc_pos_outside_entry_zone"
-        if sig["kc_slope"] >= -0.05:
+        if sig["kc_slope"] >= 0.02:
             return "kc_slope_flat"
         if not (sig["ao"] < 0 or not sig["ao_rising"]):
             return "ao_bullish"

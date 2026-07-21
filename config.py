@@ -148,7 +148,7 @@ SCALPER_V3_ATR_MULT: float = float(os.getenv("SCALPER_V3_ATR_MULT", "2.5"))
 SCALPER_V3_KC_EMA: int = int(os.getenv("SCALPER_V3_KC_EMA", "20"))
 SCALPER_V3_KC_ATR_PERIOD: int = int(os.getenv("SCALPER_V3_KC_ATR_PERIOD", "14"))
 SCALPER_V3_KC_MULT: float = float(os.getenv("SCALPER_V3_KC_MULT", "2.0"))
-SCALPER_V3_ENTRY_ZONE: float = float(os.getenv("SCALPER_V3_ENTRY_ZONE", "0.45"))
+SCALPER_V3_ENTRY_ZONE: float = float(os.getenv("SCALPER_V3_ENTRY_ZONE", "0.55"))
 SCALPER_V3_SLOPE_LOOKBACK: int = int(os.getenv("SCALPER_V3_SLOPE_LOOKBACK", "3"))
 SCALPER_V3_AO_FAST: int = int(os.getenv("SCALPER_V3_AO_FAST", "5"))
 SCALPER_V3_AO_SLOW: int = int(os.getenv("SCALPER_V3_AO_SLOW", "34"))
@@ -159,12 +159,12 @@ SCALPER_V3_CHOP_PERIOD: int = int(os.getenv("SCALPER_V3_CHOP_PERIOD", "14"))
 SCALPER_V3_CHOP_MAX: float = float(os.getenv("SCALPER_V3_CHOP_MAX", "50.0"))
 SCALPER_V3_EXPAND_PERIOD: int = int(os.getenv("SCALPER_V3_EXPAND_PERIOD", "20"))
 SCALPER_V3_EXPAND_MIN: float = float(os.getenv("SCALPER_V3_EXPAND_MIN", "1.10"))
-SCALPER_V3_MIN_STRENGTH: int = int(os.getenv("SCALPER_V3_MIN_STRENGTH", "3"))
+SCALPER_V3_MIN_STRENGTH: int = int(os.getenv("SCALPER_V3_MIN_STRENGTH", "2"))
 # regime() votes on 3 independent signals (ADX/Choppiness/band-expansion) and
 # labels anything with >=2 "TRENDING". Early live results showed 3/3-vote
 # signals never lost (2 win, 1 expired) while 2/3-vote signals were mixed
 # (1 win, 2 loss) -- default tightened to require unanimous votes.
-SCALPER_V3_MIN_REGIME_VOTES: int = int(os.getenv("SCALPER_V3_MIN_REGIME_VOTES", "3"))
+SCALPER_V3_MIN_REGIME_VOTES: int = int(os.getenv("SCALPER_V3_MIN_REGIME_VOTES", "2"))
 
 # Flat SL/TP sizing (replaces the structural SuperTrend-SL / Keltner-TP1-TP2
 # exits -- see scalper_v3_strategy._calc_tp_sl). Both entry paths use the

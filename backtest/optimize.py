@@ -57,6 +57,7 @@ import matplotlib.pyplot as plt
 
 from backtest.engine import BacktestParams, run_backtest, compute_metrics
 import scalper_v3_strategy as v3s
+import config as cfg
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("optimize")
@@ -120,7 +121,7 @@ def _params_for(combo: dict, min_strength: int, entry_timeframe: str) -> Backtes
     kwargs.update({k: v for k, v in combo.items() if k != "min_strength"})
     return BacktestParams(
         scalper_kwargs=kwargs, min_strength=min_strength, entry_timeframe=entry_timeframe,
-        warmup_bars=250,
+        warmup_bars=250, min_regime_votes=cfg.SCALPER_V3_MIN_REGIME_VOTES,
     )
 
 

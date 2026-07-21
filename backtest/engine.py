@@ -62,6 +62,7 @@ import scalper_v3_strategy as v3s
 class BacktestParams:
     scalper_kwargs: dict
     min_strength: int = 3
+    min_regime_votes: int = 3       # mirrors live's SCALPER_V3_MIN_REGIME_VOTES gate (scalper_v3_strategy.py) -- not part of the grid, applied after confluence_ok/pullback_entry_ok just like live
     initial_equity: float = 10_000.0
     risk_pct: float = 0.01          # 1% of current equity risked per trade
     taker_fee_pct: float = 0.0      # per side; MEXC's v1 coin pool is zero-fee USDT perps (coin_scanner.py) -- override for fee-bearing symbols
@@ -273,16 +274,24 @@ def run_backtest(df_1m: pd.DataFrame, symbol: str, params: BacktestParams) -> Ba
                 continue
 
             confluence = engine.confluence_ok(sig, min_strength=params.min_strength)
+            votes_ok = sig["regime_votes"] >= params.min_regime_votes
+            taken = confluence and votes_ok
+            if not confluence:
+                skip_reason = v3s._confluence_reject_reason(sig, direction)
+            elif not votes_ok:
+                skip_reason = f"regime_votes_{sig['regime_votes']}_below_min_{params.min_regime_votes}"
+            else:
+                skip_reason = None
 
             if entry_idx > baseline_open_until:
                 baseline_equity, baseline_open_until = _open_new(
                     all_flip_trades, "flip", direction, sl, tp1, tp2, signal_time, entry_idx,
                     baseline_equity, baseline_open_until, baseline_curve,
-                    taken=confluence,
-                    skip_reason=None if confluence else v3s._confluence_reject_reason(sig, direction),
+                    taken=taken,
+                    skip_reason=skip_reason,
                 )
 
-            if confluence and entry_idx > filtered_open_until:
+            if taken and entry_idx > filtered_open_until:
                 filtered_equity, filtered_open_until = _open_new(
                     filtered_trades, "flip", direction, sl, tp1, tp2, signal_time, entry_idx,
                     filtered_equity, filtered_open_until, filtered_curve,
@@ -297,6 +306,8 @@ def run_backtest(df_1m: pd.DataFrame, symbol: str, params: BacktestParams) -> Ba
             sl, tp1, tp2 = v3s._calc_tp_sl(direction, sig)
             if not v3s.valid_v3_geometry(direction, sig["price"], sl, tp1, tp2):
                 continue
+            if sig["regime_votes"] < params.min_regime_votes:
+                continue  # mirrors live: pullback_entry_ok() passed but votes gate blocks it, no skip logging (matches scalper_v3_strategy.py's pullback-miss-not-logged convention)
 
             if entry_idx > filtered_open_until:
                 filtered_equity, filtered_open_until = _open_new(
