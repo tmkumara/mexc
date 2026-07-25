@@ -5,11 +5,23 @@ for the full design and success criteria.
 
 Sweeps a 27-combination grid (lookback_bars x move_threshold_pct x
 rs_threshold_pct) across the 8 already-fetched symbols, using the same
-20x/10%-ROI-TP/10%-ROI-SL flat sizing as the current live v3 strategy, so
-any edge found is attributable to the entry signal rather than a
+20x/10%-ROI-TP/10%-ROI-SL flat sizing as the current live v3 strategy (via
+config.py's SCALPER_V3_TP_PRICE_PCT / SCALPER_V3_MAX_SL_PRICE_PCT / LEVERAGE),
+so any edge found is attributable to the entry signal rather than a
 favorable TP:SL ratio. SL-first same-bar tie-break, one position at a
 time per symbol, no lookahead (signal as of a bar's close, entry at the
-next bar's open) -- matches backtest/engine.py's conventions.
+next bar's open), entry-bar-EXCLUSIVE TP/SL scan (the exit scan starts at
+entry_idx + 1, never checking the entry bar itself) -- matches
+backtest/engine.py's _simulate_trade conventions
+(bars_after = computed.iloc[entry_idx + 1:], scalper_v3_strategy.walk_trade's
+"strictly after the entry candle" contract).
+
+Caveats not modeled here:
+  - The 7 alt symbols all key off the same BTC return series, so trades
+    across symbols are correlated, not fully independent observations --
+    a large pooled trade count should not be read as N independent bets.
+  - Frictionless: no fees, no slippage. A real deployment would only do
+    worse than what's reported here, never better.
 """
 
 from __future__ import annotations
@@ -22,12 +34,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd
 
 from backtest.relative_strength import compute_returns, rs_signal
+from config import LEVERAGE, SCALPER_V3_MAX_SL_PRICE_PCT, SCALPER_V3_TP_PRICE_PCT
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
-LEVERAGE = 20
-TP_PCT = 0.10 / LEVERAGE  # 10% ROI target -> 0.5% price move
-SL_PCT = 0.10 / LEVERAGE  # 10% ROI stop   -> 0.5% price move
+TP_PCT = SCALPER_V3_TP_PRICE_PCT  # 10% ROI target -> 0.5% price move at 20x
+SL_PCT = SCALPER_V3_MAX_SL_PRICE_PCT  # 10% ROI stop   -> 0.5% price move at 20x
 
 LOOKBACK_BARS = [12, 24, 48]          # 1h, 2h, 4h at 5m resolution
 MOVE_THRESHOLDS = [0.5, 1.0, 2.0]     # BTC's own move, percent
@@ -39,7 +51,6 @@ def load_symbol(symbol: str) -> pd.DataFrame:
 
 
 def simulate(
-    alt_close: pd.Series,
     alt_high: pd.Series,
     alt_low: pd.Series,
     alt_open: pd.Series,
@@ -50,7 +61,7 @@ def simulate(
 ) -> list[dict]:
     """Walk forward bar by bar, open at most one position at a time,
     SL-first same-bar tie-break. Returns a list of closed-trade dicts."""
-    n = len(alt_close)
+    n = len(alt_open)
     trades: list[dict] = []
     open_until = -1
 
@@ -77,10 +88,17 @@ def simulate(
             tp_price = entry_price * (1 - TP_PCT)
             sl_price = entry_price * (1 + SL_PCT)
 
+        # Entry-bar-EXCLUSIVE: the scan starts at entry_idx + 1, never checking
+        # the entry bar itself. Matches engine.py's _simulate_trade, which feeds
+        # walk_trade only computed.iloc[entry_idx + 1:] -- "one row per CLOSED
+        # candle strictly after the entry candle" (scalper_v3_strategy.walk_trade).
+        # If entry_idx is the last (or second-to-last) usable bar, this range is
+        # empty and the trade falls through to the same "never resolved within
+        # available data" handling used below.
         exit_price = None
         exit_reason = None
         j_final = n - 1
-        for j in range(entry_idx, n):
+        for j in range(entry_idx + 1, n):
             high = float(alt_high.iloc[j])
             low = float(alt_low.iloc[j])
             if direction == "LONG":
@@ -115,6 +133,20 @@ def simulate(
     return trades
 
 
+def _wr_pf(trades: list[dict]) -> tuple[int, float, float | None]:
+    """(n, win_rate_pct, profit_factor) for a list of trade dicts. PF is None
+    for n==0, inf when there are gains but zero losses."""
+    n = len(trades)
+    if n == 0:
+        return 0, 0.0, None
+    wins = sum(1 for t in trades if t["win"])
+    wr = wins / n * 100.0
+    gains = sum(t["roi_pct"] for t in trades if t["roi_pct"] > 0)
+    losses = -sum(t["roi_pct"] for t in trades if t["roi_pct"] <= 0)
+    pf = gains / losses if losses > 0 else float("inf")
+    return n, wr, pf
+
+
 def main():
     symbols = sorted(p.stem.replace("_5m", "") for p in DATA_DIR.glob("*_5m.parquet"))
     if "BTC_USDT" not in symbols:
@@ -125,9 +157,15 @@ def main():
     btc_df = load_symbol("BTC_USDT")
     alt_dfs = {s: load_symbol(s) for s in alt_symbols}
 
-    print(f"Symbols: BTC_USDT (reference) + {alt_symbols}\n")
+    print(f"Symbols: BTC_USDT (reference) + {alt_symbols}")
+    print(
+        "Caveats: all alt symbols share one BTC return series -- trades are not fully "
+        "independent observations. No fees/slippage modeled -- a live result would be "
+        "at least as bad as this, not better.\n"
+    )
 
     results = []
+    trades_by_combo: dict[tuple[int, float, float], list[dict]] = {}
     for lookback_bars in LOOKBACK_BARS:
         btc_returns = compute_returns(btc_df["close"], lookback_bars)
         for move_threshold_pct in MOVE_THRESHOLDS:
@@ -137,21 +175,18 @@ def main():
                     aligned_btc = btc_returns.reindex(df.index, method="ffill")
                     alt_returns = compute_returns(df["close"], lookback_bars)
                     trades = simulate(
-                        alt_close=df["close"], alt_high=df["high"], alt_low=df["low"], alt_open=df["open"],
+                        alt_high=df["high"], alt_low=df["low"], alt_open=df["open"],
                         btc_returns=aligned_btc, alt_returns=alt_returns,
                         move_threshold_pct=move_threshold_pct, rs_threshold_pct=rs_threshold_pct,
                     )
+                    for t in trades:
+                        t["symbol"] = sym
                     all_trades.extend(trades)
 
-                n = len(all_trades)
-                if n == 0:
-                    results.append((lookback_bars, move_threshold_pct, rs_threshold_pct, 0, 0.0, None))
-                    continue
-                wins = sum(1 for t in all_trades if t["win"])
-                wr = wins / n * 100.0
-                gains = sum(t["roi_pct"] for t in all_trades if t["roi_pct"] > 0)
-                losses = -sum(t["roi_pct"] for t in all_trades if t["roi_pct"] <= 0)
-                pf = gains / losses if losses > 0 else float("inf")
+                combo_key = (lookback_bars, move_threshold_pct, rs_threshold_pct)
+                trades_by_combo[combo_key] = all_trades
+
+                n, wr, pf = _wr_pf(all_trades)
                 results.append((lookback_bars, move_threshold_pct, rs_threshold_pct, n, wr, pf))
 
     results.sort(key=lambda r: (r[5] is None, -(r[5] if r[5] is not None else 0)))
@@ -163,6 +198,33 @@ def main():
 
     qualifying = [r for r in results if r[5] is not None and r[5] > 1.0 and r[3] >= 200]
     print(f"\n{len(qualifying)}/{len(results)} combinations clear the Phase 1 bar (PF>1.0, n>=200 trades).")
+
+    if not results:
+        return
+
+    best_lookback, best_move, best_rs, best_n, best_wr, best_pf = results[0]
+    best_pf_str = f"{best_pf:.3f}" if isinstance(best_pf, float) else str(best_pf)
+    print(
+        f"\nBest combination: lookback={best_lookback}  move%={best_move:.1f}  "
+        f"rs%={best_rs:.1f}  (n={best_n}, WR={best_wr:.2f}%, PF={best_pf_str})"
+    )
+    best_trades = trades_by_combo[(best_lookback, best_move, best_rs)]
+
+    print(f"\nPer-symbol breakdown for the best combination:")
+    print(f"{'symbol':>12}  {'trades':>7}  {'WR%':>7}  {'PF':>8}")
+    for sym in alt_symbols:
+        sym_trades = [t for t in best_trades if t["symbol"] == sym]
+        n, wr, pf = _wr_pf(sym_trades)
+        pf_str = f"{pf:.3f}" if isinstance(pf, float) else str(pf)
+        print(f"{sym:>12}  {n:>7}  {wr:>6.2f}%  {pf_str:>8}")
+
+    print(f"\nPer-direction breakdown for the best combination:")
+    print(f"{'direction':>12}  {'trades':>7}  {'WR%':>7}  {'PF':>8}")
+    for direction in ("LONG", "SHORT"):
+        dir_trades = [t for t in best_trades if t["direction"] == direction]
+        n, wr, pf = _wr_pf(dir_trades)
+        pf_str = f"{pf:.3f}" if isinstance(pf, float) else str(pf)
+        print(f"{direction:>12}  {n:>7}  {wr:>6.2f}%  {pf_str:>8}")
 
 
 if __name__ == "__main__":
