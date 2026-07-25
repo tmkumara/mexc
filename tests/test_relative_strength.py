@@ -1,14 +1,9 @@
 """Unit tests for backtest/relative_strength.py -- pure functions, no network, no real data."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import math
 
-import numpy as np
 import pandas as pd
+import pytest
 
 from backtest.relative_strength import compute_returns, rs_signal
 
@@ -19,15 +14,8 @@ def test_compute_returns_basic():
     # bar 2: (102-100)/100*100 = 2.0%   bar 3: (105-101)/101*100 ~= 3.9604%
     assert math.isnan(result.iloc[0])
     assert math.isnan(result.iloc[1])
-    assert result.iloc[2] == pytest_approx(2.0)
-    assert result.iloc[3] == pytest_approx((105.0 - 101.0) / 101.0 * 100.0)
-
-
-def pytest_approx(x, tol=1e-9):
-    class _Approx:
-        def __eq__(self, other):
-            return abs(other - x) < tol
-    return _Approx()
+    assert result.iloc[2] == pytest.approx(2.0)
+    assert result.iloc[3] == pytest.approx((105.0 - 101.0) / 101.0 * 100.0)
 
 
 def test_rs_signal_long_when_btc_up_and_alt_outperforms():
