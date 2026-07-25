@@ -161,10 +161,12 @@ SCALPER_V3_EXPAND_PERIOD: int = int(os.getenv("SCALPER_V3_EXPAND_PERIOD", "20"))
 SCALPER_V3_EXPAND_MIN: float = float(os.getenv("SCALPER_V3_EXPAND_MIN", "1.10"))
 SCALPER_V3_MIN_STRENGTH: int = int(os.getenv("SCALPER_V3_MIN_STRENGTH", "2"))
 # regime() votes on 3 independent signals (ADX/Choppiness/band-expansion) and
-# labels anything with >=2 "TRENDING". Early live results showed 3/3-vote
-# signals never lost (2 win, 1 expired) while 2/3-vote signals were mixed
-# (1 win, 2 loss) -- default tightened to require unanimous votes.
-SCALPER_V3_MIN_REGIME_VOTES: int = int(os.getenv("SCALPER_V3_MIN_REGIME_VOTES", "2"))
+# labels anything with >=2 "TRENDING". 6978d54 relaxed this to 2 based on a
+# backtest fidelity fix, but 2026-07-21..25 live data (106 signals) showed
+# 2/3-vote trades net -241% ROI (69 trades) vs 3/3-vote trades roughly
+# breakeven at -10.5% ROI (35 trades) -- reverted back to requiring
+# unanimous votes.
+SCALPER_V3_MIN_REGIME_VOTES: int = int(os.getenv("SCALPER_V3_MIN_REGIME_VOTES", "3"))
 
 # Flat SL/TP sizing (replaces the structural SuperTrend-SL / Keltner-TP1-TP2
 # exits -- see scalper_v3_strategy._calc_tp_sl). Both entry paths use the
