@@ -54,6 +54,7 @@ import pandas as pd
 
 from super_scalper_v3 import SuperScalper
 import scalper_v3_strategy as v3s
+from strategy import calculate_ema, calculate_supertrend
 
 
 # ── config / result types ──────────────────────────────────────────────
@@ -71,6 +72,14 @@ class BacktestParams:
     entry_timeframe: str = "5m"
     warmup_bars: int = 250          # bars needed before indicators (esp. EMA200-scale ones) are trustworthy
     apply_breakeven: bool = True
+    # Optional BTC macro filter -- mirrors strategy.py's v1 build_btc_context()/
+    # _btc_filter_ok() (15m EMA200+SuperTrend trend agreement + extreme-move
+    # blocks), untested for v3 until proven here. None = disabled (default).
+    # Build with build_btc_context_15m() and pass in to enable.
+    btc_context_15m: pd.DataFrame | None = None
+    btc_max_single_candle_pct: float = 0.60
+    btc_max_three_candle_pct: float = 1.20
+    btc_max_opposing_pct: float = 0.20
 
 
 @dataclass
@@ -129,6 +138,44 @@ def resample_ohlcv(df_1m: pd.DataFrame, timeframe: str) -> pd.DataFrame:
     })
     out.dropna(inplace=True)
     return out
+
+
+def build_btc_context_15m(btc_df: pd.DataFrame, ema_period: int = 200,
+                           st_atr_period: int = 10, st_mult: float = 3.0) -> pd.DataFrame:
+    """15m EMA200 + SuperTrend + 1/3-candle move context, one row per CLOSED
+    15m bar -- mirrors strategy.build_btc_context()'s per-cycle snapshot, but
+    vectorized across the whole history for the backtester. Used via .asof()
+    lookups so a signal at time T only ever sees the BTC bar that had
+    actually closed by T (no lookahead)."""
+    df15 = resample_ohlcv(btc_df, "15m")
+    ema200 = calculate_ema(df15["close"], ema_period)
+    st = calculate_supertrend(df15, st_atr_period, st_mult)
+    close = df15["close"]
+    return pd.DataFrame({
+        "close": close,
+        "ema_200": ema200,
+        "supertrend_direction": st["supertrend_direction"],
+        "one_candle_move_pct": close.pct_change(1) * 100.0,
+        "three_candle_move_pct": close.pct_change(3) * 100.0,
+    }, index=df15.index)
+
+
+def _btc_filter_ok(direction: str, btc_row: pd.Series, params: "BacktestParams") -> bool:
+    if abs(btc_row["one_candle_move_pct"]) > params.btc_max_single_candle_pct:
+        return False
+    if abs(btc_row["three_candle_move_pct"]) > params.btc_max_three_candle_pct:
+        return False
+    if direction == "LONG":
+        return (
+            btc_row["close"] > btc_row["ema_200"]
+            and btc_row["supertrend_direction"] == 1
+            and btc_row["three_candle_move_pct"] >= -params.btc_max_opposing_pct
+        )
+    return (
+        btc_row["close"] < btc_row["ema_200"]
+        and btc_row["supertrend_direction"] == -1
+        and btc_row["three_candle_move_pct"] <= params.btc_max_opposing_pct
+    )
 
 
 # ── per-bar signal extraction (mirrors SuperScalper.latest_signal) ────
@@ -260,6 +307,17 @@ def run_backtest(df_1m: pd.DataFrame, symbol: str, params: BacktestParams) -> Ba
         curve[trade.entry_time] = equity
         return equity, open_until
 
+    def _btc_ok(direction: str, signal_time: pd.Timestamp) -> bool:
+        if params.btc_context_15m is None:
+            return True
+        pos = params.btc_context_15m.index.searchsorted(signal_time, side="right") - 1
+        if pos < 0:
+            return False  # no BTC bar has closed yet -- can't evaluate, block
+        row = params.btc_context_15m.iloc[pos]
+        if row[["close", "ema_200", "supertrend_direction"]].isna().any():
+            return False
+        return _btc_filter_ok(direction, row, params)
+
     n = len(computed)
     for i in range(params.warmup_bars, n - 1):  # need i+1 (entry bar) to exist
         sig = _row_signal(computed, i)
@@ -275,11 +333,14 @@ def run_backtest(df_1m: pd.DataFrame, symbol: str, params: BacktestParams) -> Ba
 
             confluence = engine.confluence_ok(sig, min_strength=params.min_strength)
             votes_ok = sig["regime_votes"] >= params.min_regime_votes
-            taken = confluence and votes_ok
+            btc_ok = _btc_ok(direction, signal_time)
+            taken = confluence and votes_ok and btc_ok
             if not confluence:
                 skip_reason = v3s._confluence_reject_reason(sig, direction)
             elif not votes_ok:
                 skip_reason = f"regime_votes_{sig['regime_votes']}_below_min_{params.min_regime_votes}"
+            elif not btc_ok:
+                skip_reason = "blocked_by_btc_filter"
             else:
                 skip_reason = None
 
@@ -308,6 +369,8 @@ def run_backtest(df_1m: pd.DataFrame, symbol: str, params: BacktestParams) -> Ba
                 continue
             if sig["regime_votes"] < params.min_regime_votes:
                 continue  # mirrors live: pullback_entry_ok() passed but votes gate blocks it, no skip logging (matches scalper_v3_strategy.py's pullback-miss-not-logged convention)
+            if not _btc_ok(direction, signal_time):
+                continue
 
             if entry_idx > filtered_open_until:
                 filtered_equity, filtered_open_until = _open_new(

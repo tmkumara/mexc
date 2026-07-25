@@ -194,6 +194,13 @@ SCALPER_V3_SCAN_INTERVAL_MINUTES: int = int(os.getenv("SCALPER_V3_SCAN_INTERVAL_
 SCALPER_V3_MAX_CONCURRENT_SIGNALS: int = int(os.getenv("SCALPER_V3_MAX_CONCURRENT_SIGNALS", "2"))
 SCALPER_V3_SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SCALPER_V3_SIGNAL_COOLDOWN_MINUTES", "240"))
 SCALPER_V3_EXPIRE_HOURS: int = int(os.getenv("SCALPER_V3_EXPIRE_HOURS", "6"))
+# 2026-07-21..25 live data (106 signals, mostly votes=2) fired up to 40/day
+# with only MAX_CONCURRENT_SIGNALS as a brake. With PF sitting at ~1.0-1.05
+# even under the restored votes=3 gate (see 2026-07-25 backtest), more
+# trades/day is pure variance, not more expectancy -- cap exposure while
+# the edge is this thin.
+SCALPER_V3_MAX_DAILY_SIGNALS: int = int(os.getenv("SCALPER_V3_MAX_DAILY_SIGNALS", "10"))
+SCALPER_V3_MIN_DAILY_SIGNAL_GAP_MINUTES: int = int(os.getenv("SCALPER_V3_MIN_DAILY_SIGNAL_GAP_MINUTES", "15"))
 STRATEGY_NAME_V3: str = os.getenv("STRATEGY_NAME_V3", "Super Scalper v3")
 
 # ── Live trading master switch -- paper-trade / backtest-only until

@@ -72,6 +72,8 @@ from config import (
     SCALPER_V3_MAX_CONCURRENT_SIGNALS,
     SCALPER_V3_SIGNAL_COOLDOWN_MINUTES,
     SCALPER_V3_EXPIRE_HOURS,
+    SCALPER_V3_MAX_DAILY_SIGNALS,
+    SCALPER_V3_MIN_DAILY_SIGNAL_GAP_MINUTES,
     STRATEGY_NAME_V3,
     LIVE_ENABLED,
 )
@@ -368,6 +370,17 @@ async def scan_and_fire_signals_v3(app: Application) -> None:
 
     now = datetime.now(timezone.utc)
     cooldown_since = now - timedelta(minutes=SCALPER_V3_SIGNAL_COOLDOWN_MINUTES)
+    today_start = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
+
+    signals_today = db.count_signals_since_by_strategy(today_start, STRATEGY_NAME_V3)
+    if signals_today >= SCALPER_V3_MAX_DAILY_SIGNALS:
+        logger.info("[SCAN-V3] Daily cap reached (%d/%d) — skipping", signals_today, SCALPER_V3_MAX_DAILY_SIGNALS)
+        return
+
+    last_sig = db.latest_signal_time_by_strategy(STRATEGY_NAME_V3)
+    if last_sig is not None and (now - last_sig).total_seconds() < SCALPER_V3_MIN_DAILY_SIGNAL_GAP_MINUTES * 60:
+        logger.info("[SCAN-V3] Min signal gap not met — skipping")
+        return
 
     active = db.count_active_signals_by_strategy(STRATEGY_NAME_V3)
     slots = SCALPER_V3_MAX_CONCURRENT_SIGNALS - active
@@ -375,12 +388,14 @@ async def scan_and_fire_signals_v3(app: Application) -> None:
         logger.info("[SCAN-V3] %d/%d active v3 signals — no slots", active, SCALPER_V3_MAX_CONCURRENT_SIGNALS)
         return
 
+    max_fire = min(slots, SCALPER_V3_MAX_DAILY_SIGNALS - signals_today)
+
     to_scan = [s for s in coins if not db.signal_exists_for_coin_strategy(s, cooldown_since, STRATEGY_NAME_V3)]
 
     fired = 0
     skipped = 0
     for symbol in to_scan:
-        if fired >= slots:
+        if fired >= max_fire:
             break
         try:
             result = v3.evaluate_symbol_v3(symbol)

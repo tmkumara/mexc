@@ -394,6 +394,29 @@ def latest_signal_time() -> datetime | None:
         return dt
 
 
+def count_signals_since_by_strategy(start: datetime, strategy_name: str) -> int:
+    with _conn() as con:
+        row = con.execute("""
+            SELECT COUNT(*) AS cnt FROM signals
+            WHERE generated_at >= ? AND strategy_name = ?
+        """, (start.isoformat(), strategy_name)).fetchone()
+        return int(row["cnt"] or 0)
+
+
+def latest_signal_time_by_strategy(strategy_name: str) -> datetime | None:
+    with _conn() as con:
+        row = con.execute("""
+            SELECT generated_at FROM signals WHERE strategy_name = ?
+            ORDER BY generated_at DESC LIMIT 1
+        """, (strategy_name,)).fetchone()
+        if not row:
+            return None
+        dt = datetime.fromisoformat(row["generated_at"])
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
+
 def signal_exists_for_coin(symbol: str, since: datetime) -> bool:
     with _conn() as con:
         row = con.execute("""

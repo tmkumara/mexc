@@ -171,6 +171,42 @@ The Phase 4 report's "Test trades" column breaks this out as
 `total (flip/pullback)` per window so you can see which path is actually
 producing the trades your param set relies on.
 
+## 2026-07-25 findings — votes=3 restored, three tuning ideas tested and rejected
+
+Live data (2026-07-21..25, 106 signals) showed the votes=2 relaxation from
+6978d54 was a net-losing regression (2/3-vote trades -241% ROI over 69
+trades vs 3/3-vote trades roughly breakeven at -10.5% ROI over 35 trades).
+`SCALPER_V3_MIN_REGIME_VOTES` default reverted to 3. A fresh 8-symbol,
+6-month backtest at the current live param set (entry_zone=0.55,
+adx_min=22, chop_max=50, min_strength=2, votes=3) gives **619 trades,
+WR=54.8%, PF=1.020** -- the honest baseline going forward. Three follow-up
+ideas were tested against this baseline and rejected:
+
+- **ADX ceiling.** Live data hinted ADX 35-40 was a bad bucket. Confirmed
+  in the larger backtest (n=54, PF=0.667), but ADX 40+ is the *best*
+  bucket (n=35, PF=1.332) -- not monotonic, so a blanket ceiling discards
+  the good trades along with the bad. Best candidate cap (<35) only moves
+  aggregate PF 1.020→1.045 (n=530, dropping 89 trades) -- noise-level, not
+  implemented.
+- **entry_zone / min_strength revert.** Not backtested fresh -- already
+  answered by the existing `reports_votes2*`/`reports_votes3` walk-forward
+  runs: the grid (`entry_zone ∈ [0.35, 0.45, 0.55]`, `min_strength ∈ [2, 3,
+  4]`) independently picked 0.55/2 (the current live values) as
+  train-optimal in nearly every window across every symbol tested. No
+  evidence supports tightening these.
+- **BTC macro filter** (v1-style 15m EMA200+SuperTrend gate, ported to
+  `backtest/engine.py` as `build_btc_context_15m()` / `BacktestParams.
+  btc_context_15m` for anyone who wants to re-test it). Aggregate PF
+  **drops** 1.020→0.886, WR 54.8%→51.3%, trade count -75% (619→156). Two
+  symbols (WLD, XPL) improved, six got worse. Not wired into
+  `scalper_v3_strategy.py`/`main.py` -- stayed backtest-only and disabled
+  (`btc_context_15m=None` by default, zero effect on existing runs).
+
+**Net read: PF≈1.02 over 619 trades is close to this gate's ceiling.**
+None of the three obvious tuning levers move it meaningfully. A real
+improvement likely needs a different signal/filter, not more grid search
+on the existing five params.
+
 ## What this backtest does NOT model
 
 - **Funding-rate and liq_estimator filters are not applied in the
