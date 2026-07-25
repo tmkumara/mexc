@@ -97,7 +97,7 @@ def simulate(
                 break
 
         if exit_price is None:
-            open_until = i  # never resolved within available data
+            open_until = n  # still open at data end -- book stays flat (matches engine.py:306)
             continue
 
         roi_pct = (
@@ -106,7 +106,11 @@ def simulate(
             else (entry_price - exit_price) / entry_price * LEVERAGE * 100.0
         )
         trades.append({"direction": direction, "roi_pct": roi_pct, "win": exit_reason == "tp"})
-        open_until = j_final
+        # engine.py's gate is `entry_idx > open_until` with entry_idx = i + 1, and open_until
+        # is set to the exit bar's index (j_final) -- i.e. reentry allowed once i >= j_final.
+        # This script's gate is `i <= open_until: continue`, so storing j_final - 1 makes it
+        # block i <= j_final - 1 (i.e. i < j_final) and allow i >= j_final, matching engine.py.
+        open_until = j_final - 1
 
     return trades
 
