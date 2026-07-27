@@ -230,20 +230,20 @@ def get_runtime_status() -> dict:
 
 
 def get_strategy_config() -> dict:
-    """Return dashboard-safe strategy/runtime configuration for Simple Supertrend Pullback v1."""
+    """Return dashboard-safe strategy/runtime configuration for Binocular Trend Confluence v1."""
     return {
-        "strategy": _safe_config_value("STRATEGY_NAME", "Simple Supertrend Pullback v1"),
+        "strategy": _safe_config_value("STRATEGY_NAME", "Binocular Trend Confluence v1"),
         "trend_tf": _safe_config_value("TREND_TF", "—"),
         "entry_tf": _safe_config_value("ENTRY_TF", "—"),
-        "trend_ema_period": _safe_config_value("TREND_EMA_PERIOD", "—"),
-        "entry_ema_period": _safe_config_value("ENTRY_EMA_PERIOD", "—"),
-        "trend_supertrend_atr_period": _safe_config_value("TREND_SUPERTREND_ATR_PERIOD", "—"),
-        "trend_supertrend_multiplier": _safe_config_value("TREND_SUPERTREND_MULTIPLIER", "—"),
-        "entry_supertrend_atr_period": _safe_config_value("ENTRY_SUPERTREND_ATR_PERIOD", "—"),
-        "entry_supertrend_multiplier": _safe_config_value("ENTRY_SUPERTREND_MULTIPLIER", "—"),
-        "rsi_long_range": f"{_safe_config_value('RSI_LONG_MIN', '—')}-{_safe_config_value('RSI_LONG_MAX', '—')}",
-        "rsi_short_range": f"{_safe_config_value('RSI_SHORT_MIN', '—')}-{_safe_config_value('RSI_SHORT_MAX', '—')}",
-        "min_volume_multiplier": _safe_config_value("MIN_VOLUME_MULTIPLIER", "—"),
+        "chandelier_atr_period": _safe_config_value("CHANDELIER_ATR_PERIOD", "—"),
+        "chandelier_multiplier": _safe_config_value("CHANDELIER_MULTIPLIER", "—"),
+        "pvt_signal_length": _safe_config_value("PVT_SIGNAL_LENGTH", "—"),
+        "rsi_fast_period": _safe_config_value("RSI_FAST_PERIOD", "—"),
+        "rsi_slow_period": _safe_config_value("RSI_SLOW_PERIOD", "—"),
+        "zone_swing_length": _safe_config_value("ZONE_SWING_LENGTH", "—"),
+        "zone_box_width": _safe_config_value("ZONE_BOX_WIDTH", "—"),
+        "zone_proximity_atr_mult": _safe_config_value("ZONE_PROXIMITY_ATR_MULT", "—"),
+        "entry_buffer_pct": _safe_config_value("ENTRY_BUFFER_PCT", "—"),
 
         "top_n_coins": _safe_config_value("TOP_N_COINS", "—"),
         "min_volume_usd": _safe_config_value("COIN_POOL_MIN_VOLUME_USD", "—"),
