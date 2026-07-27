@@ -1,9 +1,11 @@
 """
-Simple Supertrend Pullback v1.
+Binocular Trend Confluence v1.
 
-15m trend (EMA200 + Supertrend) gates direction; 5m EMA20 pullback +
-reclaim + RSI + volume + candle-quality confirms entry. Only completed
-candles are ever used. See docs/superpowers/specs/2026-07-15-supertrend-pullback-v1-design.md.
+15m Supply/Demand zones (pivot-based, BOS-tracked) provide structural
+confluence; 5m Chandelier Exit direction + Price-Volume-Trend-vs-signal
+momentum + dual-RSI(fast/slow) regime, confirmed by a breakout-buffer
+close, drive entries. Only completed candles are ever used. See
+docs/superpowers/specs/2026-07-27-binocular-trend-confluence-design.md.
 """
 
 from __future__ import annotations
@@ -259,17 +261,17 @@ def build_zones(
 from market_data import get_market_klines
 from config import (
     TREND_TF, ENTRY_TF, TREND_KLINE_COUNT, ENTRY_KLINE_COUNT,
-    TREND_EMA_PERIOD,
-    TREND_SUPERTREND_ATR_PERIOD, TREND_SUPERTREND_MULTIPLIER,
+    CHANDELIER_ATR_PERIOD, CHANDELIER_MULTIPLIER,
+    PVT_SIGNAL_LENGTH, PVT_SIGNAL_TYPE,
+    RSI_FAST_PERIOD, RSI_SLOW_PERIOD,
+    ENTRY_BUFFER_PCT,
+    ZONE_SWING_LENGTH, ZONE_ATR_PERIOD, ZONE_BOX_WIDTH,
+    ZONE_PROXIMITY_ATR_MULT, ZONE_MAX_AGE_BARS,
     SL_ATR_BUFFER_MULTIPLIER, LEVERAGE, TP_PRICE_PCT, MAX_SL_PRICE_PCT, MIN_RR,
+    TREND_EMA_PERIOD, TREND_SUPERTREND_ATR_PERIOD, TREND_SUPERTREND_MULTIPLIER,
     ENABLE_BTC_FILTER, BTC_FILTER_SYMBOL, BTC_FILTER_TF,
     BTC_MAX_OPPOSING_MOVE_PCT, BTC_MAX_SINGLE_CANDLE_MOVE_PCT, BTC_MAX_THREE_CANDLE_MOVE_PCT,
 )
-# TODO (Task 4-5): Restore strategy pipeline config when evaluate_symbol is rewritten
-# ENTRY_EMA_PERIOD, RSI_PERIOD, RSI_LONG_MIN, RSI_LONG_MAX, RSI_SHORT_MIN, RSI_SHORT_MAX,
-# ATR_PERIOD, ENTRY_SUPERTREND_ATR_PERIOD, ENTRY_SUPERTREND_MULTIPLIER,
-# VOLUME_MA_PERIOD, MIN_VOLUME_MULTIPLIER, PULLBACK_LOOKBACK_BARS, MAX_EMA_DISTANCE_PCT,
-# MAX_CONFIRMATION_CANDLE_ATR,
 
 
 def valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
@@ -290,135 +292,6 @@ def direction_slot_available(direction: str, active_long: int, active_short: int
     return active_short < MAX_ACTIVE_SHORT_SIGNALS
 
 
-def _ema_slope_ok(ema: pd.Series, direction: str, tolerance: float = 1e-9) -> bool:
-    current = ema.iloc[-1]
-    three_bars_ago = ema.iloc[-4]
-    if direction == "LONG":
-        return current >= three_bars_ago - tolerance
-    return current <= three_bars_ago + tolerance
-
-
-def _detect_trend(df_15m: pd.DataFrame) -> str | None:
-    ema200 = calculate_ema(df_15m["close"], TREND_EMA_PERIOD)
-    st = calculate_supertrend(df_15m, TREND_SUPERTREND_ATR_PERIOD, TREND_SUPERTREND_MULTIPLIER)
-    close = float(df_15m["close"].iloc[-1])
-    st_dir = int(st["supertrend_direction"].iloc[-1])
-
-    if close > float(ema200.iloc[-1]) and st_dir == 1 and _ema_slope_ok(ema200, "LONG"):
-        return "LONG"
-    if close < float(ema200.iloc[-1]) and st_dir == -1 and _ema_slope_ok(ema200, "SHORT"):
-        return "SHORT"
-    return None
-
-
-def _detect_pullback_and_confirmation(df_5m: pd.DataFrame, direction: str) -> tuple[bool, str, dict]:
-    """
-    Indexing convention (df_5m already closed-candles-only, so -1 is the
-    latest COMPLETED candle):
-      -1        confirmation candle
-      -4..-2    PULLBACK_LOOKBACK_BARS prior completed candles (pullback window)
-      -5        candle immediately before the pullback window, used to
-                confirm price was already on the correct side of EMA20
-                before the pullback began
-    """
-    ema20 = calculate_ema(df_5m["close"], ENTRY_EMA_PERIOD)
-    rsi = calculate_rsi(df_5m["close"], RSI_PERIOD)
-    atr = calculate_atr(df_5m, ATR_PERIOD)
-    st = calculate_supertrend(df_5m, ENTRY_SUPERTREND_ATR_PERIOD, ENTRY_SUPERTREND_MULTIPLIER)
-
-    close = float(df_5m["close"].iloc[-1])
-    open_ = float(df_5m["open"].iloc[-1])
-    high = float(df_5m["high"].iloc[-1])
-    low = float(df_5m["low"].iloc[-1])
-    ema20_last = float(ema20.iloc[-1])
-    rsi_last = float(rsi.iloc[-1])
-    atr_last = float(atr.iloc[-1])
-    st_dir_last = int(st["supertrend_direction"].iloc[-1])
-    vol_last = float(df_5m["volume"].iloc[-1])
-    vol_avg = float(df_5m["volume"].iloc[-(VOLUME_MA_PERIOD + 1):-1].mean())
-
-    pullback_lows = df_5m["low"].iloc[-(PULLBACK_LOOKBACK_BARS + 1):-1]
-    pullback_highs = df_5m["high"].iloc[-(PULLBACK_LOOKBACK_BARS + 1):-1]
-    pullback_ema = ema20.iloc[-(PULLBACK_LOOKBACK_BARS + 1):-1]
-    pre_pullback_close = float(df_5m["close"].iloc[-(PULLBACK_LOOKBACK_BARS + 2)])
-    pre_pullback_ema = float(ema20.iloc[-(PULLBACK_LOOKBACK_BARS + 2)])
-
-    rsi_min, rsi_max = (RSI_LONG_MIN, RSI_LONG_MAX) if direction == "LONG" else (RSI_SHORT_MIN, RSI_SHORT_MAX)
-
-    if direction == "LONG":
-        if pre_pullback_close <= pre_pullback_ema:
-            return False, "no prior uptrend above EMA20 before pullback", {}
-        if not bool((pullback_lows <= pullback_ema).any()):
-            return False, "no EMA20 pullback", {}
-        if not (close > ema20_last):
-            return False, "confirmation candle did not reclaim EMA20", {}
-        if not (close > open_):
-            return False, "confirmation candle not bullish", {}
-        if st_dir_last != 1:
-            return False, "5m supertrend not bullish", {}
-    else:
-        if pre_pullback_close >= pre_pullback_ema:
-            return False, "no prior downtrend below EMA20 before pullback", {}
-        if not bool((pullback_highs >= pullback_ema).any()):
-            return False, "no EMA20 pullback", {}
-        if not (close < ema20_last):
-            return False, "confirmation candle did not reclaim EMA20", {}
-        if not (close < open_):
-            return False, "confirmation candle not bearish", {}
-        if st_dir_last != -1:
-            return False, "5m supertrend not bearish", {}
-
-    if not (rsi_min <= rsi_last <= rsi_max):
-        return False, f"RSI {rsi_last:.1f} outside {direction.lower()} range", {}
-    if vol_avg <= 0 or not (vol_last >= MIN_VOLUME_MULTIPLIER * vol_avg):
-        ratio = (vol_last / vol_avg) if vol_avg else 0.0
-        return False, f"volume ratio {ratio:.2f} below {MIN_VOLUME_MULTIPLIER}", {}
-
-    candle_range = high - low
-    if atr_last <= 0 or candle_range > MAX_CONFIRMATION_CANDLE_ATR * atr_last:
-        return False, f"confirmation candle {candle_range / atr_last if atr_last else float('inf'):.2f} ATR", {}
-
-    if direction == "LONG":
-        distance_from_ema_pct = (close - ema20_last) / close
-    else:
-        distance_from_ema_pct = (ema20_last - close) / close
-    if distance_from_ema_pct > MAX_EMA_DISTANCE_PCT:
-        return False, f"price {distance_from_ema_pct * 100:.2f}% from EMA20 (chasing)", {}
-
-    details = {
-        "close": close,
-        "ema20": ema20_last,
-        "rsi": rsi_last,
-        "atr": atr_last,
-        "volume_ratio": vol_last / vol_avg if vol_avg else 0.0,
-        "recent_lows": pullback_lows,
-        "recent_highs": pullback_highs,
-    }
-    return True, "", details
-
-
-def _calculate_tp_sl(direction: str, entry: float, details: dict) -> tuple[float, float] | None:
-    atr_last = details["atr"]
-    if direction == "LONG":
-        tp = entry * (1 + TP_PRICE_PCT)
-        recent_low = float(details["recent_lows"].min())
-        structural_sl = recent_low - atr_last * SL_ATR_BUFFER_MULTIPLIER
-        if structural_sl >= entry:
-            return None
-        if (entry - structural_sl) / entry > MAX_SL_PRICE_PCT:
-            return None
-        return tp, structural_sl
-    else:
-        tp = entry * (1 - TP_PRICE_PCT)
-        recent_high = float(details["recent_highs"].max())
-        structural_sl = recent_high + atr_last * SL_ATR_BUFFER_MULTIPLIER
-        if structural_sl <= entry:
-            return None
-        if (structural_sl - entry) / entry > MAX_SL_PRICE_PCT:
-            return None
-        return tp, structural_sl
-
-
 def _calc_rr(direction: str, entry: float, tp: float, sl: float) -> float:
     reward = abs(tp - entry)
     risk = abs(entry - sl)
@@ -435,55 +308,132 @@ def _roi_pct(direction: str, entry: float, tp: float, sl: float) -> tuple[float,
     return round(tp_roi, 2), round(sl_roi, 2)
 
 
-def _score_candidate(direction: str, details: dict, rr: float) -> float:
-    score = 25.0  # 15m trend alignment -- already gated true/false upstream
-    score += 20.0  # 5m Supertrend alignment -- already gated
+def _detect_trigger(df_5m: pd.DataFrame) -> tuple[str | None, str, dict]:
+    close = df_5m["close"]
+    chand = calculate_chandelier_exit(df_5m, CHANDELIER_ATR_PERIOD, CHANDELIER_MULTIPLIER)
+    pvt = calculate_pvt(df_5m)
+    pvt_signal = calculate_pvt_signal(pvt, PVT_SIGNAL_LENGTH, PVT_SIGNAL_TYPE)
+    rsi_fast = calculate_rsi(close, RSI_FAST_PERIOD)
+    rsi_slow = calculate_rsi(close, RSI_SLOW_PERIOD)
 
-    distance_pct = abs(details["close"] - details["ema20"]) / details["close"]
-    reclaim_quality = max(0.0, 1.0 - (distance_pct / MAX_EMA_DISTANCE_PCT))
-    score += 20.0 * reclaim_quality
+    dir_last = int(chand["chandelier_direction"].iloc[-1])
+    close_last = float(close.iloc[-1])
+    prev_high = float(df_5m["high"].iloc[-2])
+    prev_low = float(df_5m["low"].iloc[-2])
+    pvt_last = float(pvt.iloc[-1])
+    pvt_signal_last = float(pvt_signal.iloc[-1])
+    rsi_fast_last = float(rsi_fast.iloc[-1])
+    rsi_slow_last = float(rsi_slow.iloc[-1])
 
-    vol_ratio = details["volume_ratio"]
-    vol_quality = min(1.0, max(0.0, (vol_ratio - MIN_VOLUME_MULTIPLIER) / (2.0 - MIN_VOLUME_MULTIPLIER)))
-    score += 15.0 * vol_quality
+    details = {
+        "close": close_last,
+        "prev_high": prev_high,
+        "prev_low": prev_low,
+        "pvt": pvt_last,
+        "pvt_signal": pvt_signal_last,
+        "rsi_fast": rsi_fast_last,
+        "rsi_slow": rsi_slow_last,
+        "chandelier_direction": dir_last,
+    }
 
-    rsi = details["rsi"]
+    if dir_last == 1:
+        if not (pvt_last > pvt_signal_last):
+            return None, "no PVT bullish momentum", details
+        if not (rsi_fast_last > rsi_slow_last):
+            return None, "RSI regime not bullish", details
+        if not (close_last > prev_high * (1 + ENTRY_BUFFER_PCT)):
+            return None, "no breakout confirmation", details
+        return "LONG", "", details
+
+    if not (pvt_last < pvt_signal_last):
+        return None, "no PVT bearish momentum", details
+    if not (rsi_fast_last < rsi_slow_last):
+        return None, "RSI regime not bearish", details
+    if not (close_last < prev_low * (1 - ENTRY_BUFFER_PCT)):
+        return None, "no breakout confirmation", details
+    return "SHORT", "", details
+
+
+def _find_confluence_zone(
+    zones: list[dict], direction: str, price: float, atr: float, proximity_mult: float
+) -> dict | None:
+    zone_type = "demand" if direction == "LONG" else "supply"
+    tolerance = atr * proximity_mult
+    candidates = [
+        z for z in zones
+        if z["type"] == zone_type and not z["bos"]
+        and (z["bottom"] - tolerance) <= price <= (z["top"] + tolerance)
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda z: z["formed_index"])
+
+
+def _calculate_tp_sl(direction: str, entry: float, zone: dict, atr_zone: float) -> tuple[float, float] | None:
+    if direction == "LONG":
+        tp = entry * (1 + TP_PRICE_PCT)
+        structural_sl = zone["bottom"] - atr_zone * SL_ATR_BUFFER_MULTIPLIER
+        if structural_sl >= entry:
+            return None
+        if (entry - structural_sl) / entry > MAX_SL_PRICE_PCT:
+            return None
+        return tp, structural_sl
+    else:
+        tp = entry * (1 - TP_PRICE_PCT)
+        structural_sl = zone["top"] + atr_zone * SL_ATR_BUFFER_MULTIPLIER
+        if structural_sl <= entry:
+            return None
+        if (structural_sl - entry) / entry > MAX_SL_PRICE_PCT:
+            return None
+        return tp, structural_sl
+
+
+def _score_candidate(direction: str, details: dict, zone: dict, rr: float) -> float:
+    zone_mid = (zone["top"] + zone["bottom"]) / 2.0
+    zone_half_width = max((zone["top"] - zone["bottom"]) / 2.0, 1e-9)
+    proximity_ratio = min(1.0, abs(details["close"] - zone_mid) / zone_half_width)
+    score = 25.0 * (1.0 - proximity_ratio)
+
+    pvt_gap = abs(details["pvt"] - details["pvt_signal"])
+    pvt_scale = max(abs(details["pvt_signal"]), 1.0)
+    pvt_quality = min(1.0, pvt_gap / (pvt_scale * 0.05))
+    score += 25.0 * pvt_quality
+
+    if direction == "LONG":
+        clearance = (details["close"] - details["prev_high"]) / details["prev_high"]
+    else:
+        clearance = (details["prev_low"] - details["close"]) / details["prev_low"]
+    breakout_quality = min(1.0, max(0.0, clearance / (ENTRY_BUFFER_PCT * 10)))
+    score += 20.0 * breakout_quality
+
+    rsi_fast = details["rsi_fast"]
     ideal_lo, ideal_hi = (55.0, 62.0) if direction == "LONG" else (38.0, 45.0)
-    if ideal_lo <= rsi <= ideal_hi:
+    if ideal_lo <= rsi_fast <= ideal_hi:
         rsi_quality = 1.0
     else:
-        dist = min(abs(rsi - ideal_lo), abs(rsi - ideal_hi))
+        dist = min(abs(rsi_fast - ideal_lo), abs(rsi_fast - ideal_hi))
         rsi_quality = max(0.0, 1.0 - dist / 15.0)
     score += 10.0 * rsi_quality
 
     rr_quality = min(1.0, max(0.0, (rr - MIN_RR) / (2.0 - MIN_RR))) if MIN_RR < 2.0 else (1.0 if rr >= MIN_RR else 0.0)
     score += 10.0 * rr_quality
 
+    freshness = 1.0 - min(1.0, zone["age_bars"] / max(ZONE_MAX_AGE_BARS, 1))
+    score += 10.0 * freshness
+
     return round(min(100.0, max(0.0, score)), 1)
 
 
 def _reason_bucket(reason: str) -> str:
-    """Collapse the free-text pullback/confirmation reject reason into a
-    stable category so scan-level rejects can be aggregated and counted."""
-    if "no prior" in reason:
-        return "no_prior_trend"
-    if "no EMA20 pullback" in reason:
-        return "no_pullback"
-    if "did not reclaim EMA20" in reason:
-        return "no_reclaim"
-    if "supertrend not" in reason:
-        return "supertrend_mismatch"
-    if "confirmation candle not" in reason:
-        return "wrong_candle_color"
-    if reason.startswith("RSI"):
-        return "rsi_out_of_band"
-    if reason.startswith("volume ratio"):
-        return "low_volume"
-    if "ATR" in reason:
-        return "candle_too_wide"
-    if "chasing" in reason:
-        return "chasing_price"
-    return "pullback_other"
+    """Collapse the free-text trigger reject reason into a stable category
+    so scan-level rejects can be aggregated and counted."""
+    if "PVT" in reason:
+        return "no_pvt_momentum"
+    if "RSI regime" in reason:
+        return "no_rsi_regime"
+    if "breakout confirmation" in reason:
+        return "no_breakout_confirmation"
+    return "trigger_other"
 
 
 def _bump(reject_sink: dict | None, key: str) -> None:
@@ -508,25 +458,27 @@ def evaluate_symbol(
         closed_15m = raw_15m.iloc[:-1].copy()
         closed_5m = raw_5m.iloc[:-1].copy()
 
-        if len(closed_15m) < TREND_EMA_PERIOD + 5:
+        if len(closed_15m) < ZONE_ATR_PERIOD + ZONE_SWING_LENGTH * 2 + 10:
             logger.debug("[REJECT] %s insufficient 15m candle history", symbol)
             _bump(reject_sink, "insufficient_history")
             return None
-        if len(closed_5m) < ENTRY_EMA_PERIOD + PULLBACK_LOOKBACK_BARS + 10:
+        if len(closed_5m) < RSI_SLOW_PERIOD + 20:
             logger.debug("[REJECT] %s insufficient 5m candle history", symbol)
             _bump(reject_sink, "insufficient_history")
             return None
 
-        direction = _detect_trend(closed_15m)
+        direction, reason, details = _detect_trigger(closed_5m)
         if direction is None:
-            logger.debug("[REJECT] %s no 15m trend", symbol)
-            _bump(reject_sink, "no_trend")
-            return None
-
-        ok, reason, details = _detect_pullback_and_confirmation(closed_5m, direction)
-        if not ok:
             logger.debug("[REJECT] %s %s", symbol, reason)
             _bump(reject_sink, _reason_bucket(reason))
+            return None
+
+        zones = build_zones(closed_15m, ZONE_SWING_LENGTH, ZONE_ATR_PERIOD, ZONE_BOX_WIDTH, ZONE_MAX_AGE_BARS)
+        atr_zone_last = float(calculate_atr(closed_15m, ZONE_ATR_PERIOD).iloc[-1])
+        zone = _find_confluence_zone(zones, direction, details["close"], atr_zone_last, ZONE_PROXIMITY_ATR_MULT)
+        if zone is None:
+            logger.debug("[REJECT] %s no zone confluence", symbol)
+            _bump(reject_sink, "no_zone_confluence")
             return None
 
         if ENABLE_BTC_FILTER:
@@ -542,7 +494,7 @@ def evaluate_symbol(
                 return None
 
         entry = details["close"]
-        tp_sl = _calculate_tp_sl(direction, entry, details)
+        tp_sl = _calculate_tp_sl(direction, entry, zone, atr_zone_last)
         if tp_sl is None:
             logger.debug("[REJECT] %s structural stop too wide", symbol)
             _bump(reject_sink, "stop_too_wide")
@@ -561,7 +513,7 @@ def evaluate_symbol(
             return None
 
         tp_roi, sl_roi = _roi_pct(direction, entry, tp, sl)
-        score = _score_candidate(direction, details, rr)
+        score = _score_candidate(direction, details, zone, rr)
 
         logger.info(
             "[CANDIDATE] %s %s score=%.1f entry=%.6g tp=%.6g sl=%.6g rr=%.2f",
@@ -577,7 +529,7 @@ def evaluate_symbol(
             leverage=LEVERAGE,
             tp_roi_pct=tp_roi,
             sl_roi_pct=sl_roi,
-            timeframe_summary=f"15m {direction.lower()} trend + 5m EMA20 pullback reclaim",
+            timeframe_summary="15m demand/supply zone + 5m Chandelier/PVT/RSI breakout",
             generated_at=datetime.now(timezone.utc),
             rr=round(rr, 2),
             score=score,
