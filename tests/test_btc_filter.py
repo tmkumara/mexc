@@ -1,6 +1,6 @@
 import strategy
 from strategy import BtcContext, evaluate_symbol
-from tests.strategy_fixtures import make_15m_trend_df, make_5m_pullback_df, patch_klines
+from tests.strategy_fixtures import make_15m_zone_df, make_5m_trigger_df, make_15m_trend_df, patch_klines
 
 
 def _bullish_btc() -> BtcContext:
@@ -25,8 +25,8 @@ def _extreme_single_candle_btc() -> BtcContext:
 
 
 def test_long_allowed_when_btc_bullish(monkeypatch):
-    df_15m = make_15m_trend_df("LONG")
-    df_5m = make_5m_pullback_df("LONG")
+    df_15m = make_15m_zone_df("LONG", zone_price=90.0)
+    df_5m = make_5m_trigger_df("LONG", base_price=90.0)
     patch_klines(monkeypatch, strategy, df_15m, df_5m)
 
     sig = evaluate_symbol("TEST_USDT", btc_context=_bullish_btc())
@@ -34,8 +34,8 @@ def test_long_allowed_when_btc_bullish(monkeypatch):
 
 
 def test_long_blocked_when_btc_bearish(monkeypatch):
-    df_15m = make_15m_trend_df("LONG")
-    df_5m = make_5m_pullback_df("LONG")
+    df_15m = make_15m_zone_df("LONG", zone_price=90.0)
+    df_5m = make_5m_trigger_df("LONG", base_price=90.0)
     patch_klines(monkeypatch, strategy, df_15m, df_5m)
 
     sig = evaluate_symbol("TEST_USDT", btc_context=_bearish_btc())
@@ -43,8 +43,8 @@ def test_long_blocked_when_btc_bearish(monkeypatch):
 
 
 def test_short_allowed_when_btc_bearish(monkeypatch):
-    df_15m = make_15m_trend_df("SHORT")
-    df_5m = make_5m_pullback_df("SHORT")
+    df_15m = make_15m_zone_df("SHORT", zone_price=110.0)
+    df_5m = make_5m_trigger_df("SHORT", base_price=110.0)
     patch_klines(monkeypatch, strategy, df_15m, df_5m)
 
     sig = evaluate_symbol("TEST_USDT", btc_context=_bearish_btc())
@@ -52,8 +52,8 @@ def test_short_allowed_when_btc_bearish(monkeypatch):
 
 
 def test_short_blocked_when_btc_bullish(monkeypatch):
-    df_15m = make_15m_trend_df("SHORT")
-    df_5m = make_5m_pullback_df("SHORT")
+    df_15m = make_15m_zone_df("SHORT", zone_price=110.0)
+    df_5m = make_5m_trigger_df("SHORT", base_price=110.0)
     patch_klines(monkeypatch, strategy, df_15m, df_5m)
 
     sig = evaluate_symbol("TEST_USDT", btc_context=_bullish_btc())
@@ -61,8 +61,8 @@ def test_short_blocked_when_btc_bullish(monkeypatch):
 
 
 def test_signal_blocked_during_extreme_btc_move(monkeypatch):
-    df_15m = make_15m_trend_df("LONG")
-    df_5m = make_5m_pullback_df("LONG")
+    df_15m = make_15m_zone_df("LONG", zone_price=90.0)
+    df_5m = make_5m_trigger_df("LONG", base_price=90.0)
     patch_klines(monkeypatch, strategy, df_15m, df_5m)
 
     sig = evaluate_symbol("TEST_USDT", btc_context=_extreme_single_candle_btc())
