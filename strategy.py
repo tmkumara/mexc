@@ -196,6 +196,64 @@ def find_pivot_lows(df: pd.DataFrame, swing_length: int) -> pd.Series:
     return result
 
 
+def build_zones(
+    df: pd.DataFrame,
+    swing_length: int,
+    atr_period: int,
+    box_width: float,
+    max_age_bars: int,
+) -> list[dict]:
+    atr = calculate_atr(df, atr_period)
+    pivot_highs = find_pivot_highs(df, swing_length)
+    pivot_lows = find_pivot_lows(df, swing_length)
+
+    zones: list[dict] = []
+    n = len(df)
+
+    for i in range(n):
+        atr_i = float(atr.iloc[i])
+        atr_buffer = atr_i * (box_width / 10.0)
+
+        if not np.isnan(pivot_highs.iloc[i]):
+            top = float(pivot_highs.iloc[i])
+            bottom = top - atr_buffer
+            poi = (top + bottom) / 2.0
+            overlap = any(
+                z["type"] == "supply" and not z["bos"]
+                and abs(poi - (z["top"] + z["bottom"]) / 2.0) <= 2 * atr_i
+                for z in zones
+            )
+            if not overlap:
+                zones.append({"type": "supply", "top": top, "bottom": bottom, "formed_index": i, "bos": False})
+
+        if not np.isnan(pivot_lows.iloc[i]):
+            bottom = float(pivot_lows.iloc[i])
+            top = bottom + atr_buffer
+            poi = (top + bottom) / 2.0
+            overlap = any(
+                z["type"] == "demand" and not z["bos"]
+                and abs(poi - (z["top"] + z["bottom"]) / 2.0) <= 2 * atr_i
+                for z in zones
+            )
+            if not overlap:
+                zones.append({"type": "demand", "top": top, "bottom": bottom, "formed_index": i, "bos": False})
+
+        close_i = float(df["close"].iloc[i])
+        for z in zones:
+            if z["bos"] or z["formed_index"] >= i:
+                continue
+            if z["type"] == "supply" and close_i >= z["top"]:
+                z["bos"] = True
+            elif z["type"] == "demand" and close_i <= z["bottom"]:
+                z["bos"] = True
+
+    latest_index = n - 1
+    for z in zones:
+        z["age_bars"] = latest_index - z["formed_index"]
+
+    return [z for z in zones if z["age_bars"] <= max_age_bars]
+
+
 # ── evaluate_symbol pipeline ─────────────────────────────────────────
 
 from market_data import get_market_klines
