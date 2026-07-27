@@ -262,7 +262,7 @@ def backtest_symbol(symbol: str, stats: BacktestStats) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Backtest Simple Supertrend Pullback v1")
+    parser = argparse.ArgumentParser(description="Backtest Binocular Trend Confluence v1")
     parser.add_argument("--symbols", nargs="+", required=True, help="e.g. XRP_USDT DOGE_USDT")
     parser.add_argument("--days", type=int, default=30, help="requested lookback in days (best-effort, see limitation note)")
     args = parser.parse_args()
