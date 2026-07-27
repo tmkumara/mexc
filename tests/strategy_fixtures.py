@@ -33,76 +33,6 @@ def make_15m_trend_df(direction: str = "LONG", bars: int = 220, start_price: flo
     return pd.concat([df, df.iloc[[-1]]])
 
 
-def make_5m_pullback_df(
-    direction: str = "LONG",
-    bars: int = 60,
-    reclaim_offset: float = 0.15,
-    confirm_body: float = 0.20,
-    confirm_volume_mult: float = 1.5,
-    dip_depth: float = 0.3,
-) -> pd.DataFrame:
-    """
-    A 5m series: steady trend on the correct side of EMA20 for its first
-    `bars - 5` bars, a 3-bar pullback (positions -4..-2) that dips/pokes
-    through EMA20, then a confirmation candle (position -1) reclaiming
-    EMA20 by `reclaim_offset` over the EMA level at the prior bar (-2),
-    which keeps the anti-chase distance comfortably under
-    MAX_EMA_DISTANCE_PCT (0.3%). Ends with one extra duplicated row so
-    callers can safely `iloc[:-1]`.
-
-    dip_depth default changed from 1.0 to 0.3: the original value flipped
-    the 5m Supertrend bearish and it never recovered bullish by the
-    confirmation candle, making valid LONG signals impossible.
-
-    Indexing (0-indexed, `bars` total rows before the forming-candle dupe):
-      bars-1            confirmation candle (position -1)
-      bars-4..bars-2     3-bar pullback window (positions -4..-2)
-      bars-5            pre-pullback reference bar (position -5)
-    """
-    sign = 1.0 if direction == "LONG" else -1.0
-    idx = pd.date_range("2026-01-01", periods=bars, freq="5min")
-
-    step = 0.05
-    closes = np.zeros(bars)
-    closes[: bars - 4] = 100.0 + sign * np.arange(bars - 4) * step
-
-    base = closes[bars - 5]
-    closes[bars - 4] = base + sign * (-dip_depth)          # sharp dip/poke
-    closes[bars - 3] = closes[bars - 4] + sign * (-0.2)     # continued softness
-    closes[bars - 2] = closes[bars - 3] + sign * 0.3        # stabilizing
-
-    opens = np.empty(bars)
-    opens[0] = closes[0] - sign * step
-    opens[1:bars - 1] = closes[0:bars - 2]
-    # Confirmation candle's open is set below once its close is known.
-
-    volumes = np.full(bars, 1000.0)
-    volumes[-1] = 1000.0 * confirm_volume_mult
-
-    # EMA20 evolves recursively; rather than re-derive it by hand for the
-    # confirmation candle, compute the running EMA of everything up to
-    # bars-2 and place the confirmation close `reclaim_offset` above/below
-    # (LONG/SHORT) the EMA level AT bar bars-2 -- since EMA's one-step
-    # update satisfies sign(close - ema_new) == sign(close - ema_prior),
-    # this guarantees the reclaim condition with the same margin regardless
-    # of the exact smoothing constant.
-    partial_close = pd.Series(closes[: bars - 1])
-    ema20_partial = partial_close.ewm(span=20, adjust=False).mean()
-    ema_at_prior_bar = float(ema20_partial.iloc[-1])
-
-    closes[bars - 1] = ema_at_prior_bar + sign * reclaim_offset
-    opens[bars - 1] = closes[bars - 1] - sign * confirm_body
-
-    highs = np.maximum(opens, closes) + 0.2
-    lows = np.minimum(opens, closes) - 0.2
-
-    df = pd.DataFrame(
-        {"open": opens, "high": highs, "low": lows, "close": closes, "volume": volumes},
-        index=idx,
-    )
-    return pd.concat([df, df.iloc[[-1]]])
-
-
 def patch_klines(monkeypatch, strategy_module, df_15m: pd.DataFrame, df_5m: pd.DataFrame) -> None:
     """Route strategy.get_market_klines(symbol, interval, count) to fixtures by interval."""
 
@@ -199,7 +129,7 @@ def make_5m_trigger_df(
     safely `iloc[:-1]`.
 
     Numeric constants here are reasoned, not hand-executed against pandas
-    -- same convention as make_5m_pullback_df above. If Chandelier
+    -- same convention as the module docstring above. If Chandelier
     direction, PVT-vs-signal, or RSI-fast-vs-slow don't land as expected
     for the intended direction, widen `push_step`, extend the push window,
     or steepen the volume ramp below and re-run; that is expected TDD

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import bot
 from bot import format_signal
 from strategy import Signal
 
@@ -23,7 +24,11 @@ def _sample_signal() -> Signal:
     )
 
 
-def test_format_signal_contains_key_fields():
+def test_format_signal_contains_key_fields(monkeypatch):
+    # STRATEGY_NAME is env-overridable (config.py falls back to the
+    # current default only when unset), so pin it here rather than
+    # asserting on whatever the ambient environment happens to provide.
+    monkeypatch.setattr(bot, "STRATEGY_NAME", "Binocular Trend Confluence v1")
     msg = format_signal(_sample_signal(), signal_id=12)
 
     assert "XRP/USDT" in msg
@@ -33,7 +38,7 @@ def test_format_signal_contains_key_fields():
     assert "1:1.72" in msg
     assert "20x" in msg
     assert "15m bullish trend + 5m EMA20 pullback reclaim" in msg
-    assert "Simple Supertrend Pullback v1" in msg
+    assert "Binocular Trend Confluence v1" in msg
     assert "12" in msg
 
 

@@ -171,7 +171,7 @@ def calculate_pvt(df: pd.DataFrame) -> pd.Series:
 
 
 def calculate_pvt_signal(pvt: pd.Series, length: int, ma_type: str) -> pd.Series:
-    if ma_type == "EMA":
+    if ma_type.upper() == "EMA":
         return pvt.ewm(span=length, adjust=False).mean()
     return pvt.rolling(length, min_periods=1).mean()
 
@@ -403,7 +403,7 @@ def _score_candidate(direction: str, details: dict, zone: dict, rr: float) -> fl
         clearance = (details["close"] - details["prev_high"]) / details["prev_high"]
     else:
         clearance = (details["prev_low"] - details["close"]) / details["prev_low"]
-    breakout_quality = min(1.0, max(0.0, clearance / (ENTRY_BUFFER_PCT * 10)))
+    breakout_quality = min(1.0, max(0.0, clearance / (max(ENTRY_BUFFER_PCT, 1e-6) * 10)))
     score += 20.0 * breakout_quality
 
     rsi_fast = details["rsi_fast"]

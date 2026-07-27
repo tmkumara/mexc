@@ -784,7 +784,7 @@ tr:hover td {
   <div class="section-title">Current Strategy Setup</div>
   <div class="grid config-grid">
     <div class="card"><div class="card-label">Timeframes</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">Trend / Entry</div></div>
-    <div class="card"><div class="card-label">RSI Filter</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">Long / Short RSI range</div></div>
+    <div class="card"><div class="card-label">RSI Regime</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">Fast / Slow RSI period</div></div>
     <div class="card"><div class="card-label">BTC Filter</div><div class="card-value green" id="cfg-confirm">—</div><div class="card-small" id="cfg-confirm-sub">—</div></div>
     <div class="card"><div class="card-label">Risk Model</div><div class="card-value orange" id="cfg-rr">—</div><div class="card-small" id="cfg-rr-sub">—</div></div>
   </div>
@@ -971,9 +971,9 @@ function renderConfig() {
   const c = data.config;
 
   set("cfg-tf", `${c.trend_tf} / ${c.entry_tf}`);
-  set("cfg-quality", `${c.rsi_long_range} / ${c.rsi_short_range}`);
+  set("cfg-quality", `RSI(${c.rsi_fast_period}) / RSI(${c.rsi_slow_period})`);
   set("cfg-confirm", boolLabel(c.enable_btc_filter));
-  set("cfg-confirm-sub", `Trend ${c.trend_tf} EMA${c.trend_ema_period}+ST(${c.trend_supertrend_atr_period},${c.trend_supertrend_multiplier}) | Entry ${c.entry_tf} EMA${c.entry_ema_period}+ST(${c.entry_supertrend_atr_period},${c.entry_supertrend_multiplier}) | BTC filter ${boolLabel(c.enable_btc_filter)}`);
+  set("cfg-confirm-sub", `Zone ${c.trend_tf} (swing ${c.zone_swing_length}, box ${c.zone_box_width}) | Trigger ${c.entry_tf} Chandelier(${c.chandelier_atr_period},${c.chandelier_multiplier})+PVT(${c.pvt_signal_length}) | BTC filter ${boolLabel(c.enable_btc_filter)}`);
   set("cfg-rr", `${c.min_rr}R min`);
   set("cfg-rr-sub", `TP ${c.target_roi_pct}% | SL ≤ ${c.max_sl_roi_pct}% | ${c.leverage}x`);
 }

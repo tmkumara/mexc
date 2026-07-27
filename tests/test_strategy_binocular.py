@@ -186,3 +186,11 @@ def test_short_rejected_when_rr_too_low(monkeypatch):
     monkeypatch.setattr(strategy, "MIN_RR", 50.0)
 
     assert evaluate_symbol("TEST_USDT") is None
+
+
+def test_risk_formula_matches_roi_targets():
+    from config import TP_PRICE_PCT, MAX_SL_PRICE_PCT
+    import pytest
+
+    assert TP_PRICE_PCT == pytest.approx(0.0075, abs=1e-9)
+    assert MAX_SL_PRICE_PCT == pytest.approx(0.005, abs=1e-9)

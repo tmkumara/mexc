@@ -1,12 +1,14 @@
-> **Current strategy (`feature/supertrend-pullback-v1`): Simple Supertrend Pullback v1.**
-> 15m trend filter (EMA200 + Supertrend) gates direction; 5m EMA20 pullback
-> + reclaim + RSI + volume + candle-quality confirms entry, with a BTC
-> market safety filter and one-active-signal-per-direction correlation
-> limit. Target ~0.75% price move (15% ROI at 20x), max ~0.50% stop
-> (10% ROI), min 1.5 RR, max 3 signals/day. See `CLAUDE.md` for the full
-> architecture and
-> `docs/superpowers/specs/2026-07-15-supertrend-pullback-v1-design.md` /
-> `docs/superpowers/plans/2026-07-15-supertrend-pullback-v1.md` for the
+> **Current strategy (`feature/binocular-trend-confluence`): Binocular Trend Confluence v1.**
+> 15m Supply/Demand zone detection (pivot highs/lows, BOS invalidation)
+> provides structural confluence; a 5m trigger combining Chandelier Exit
+> direction, Price-Volume-Trend-vs-signal momentum, and a dual-RSI
+> (fast/slow) regime filter, confirmed by a breakout-buffer close, drives
+> entries — gated by the same BTC market safety filter and
+> one-active-signal-per-direction correlation limit as before. Target
+> ~0.75% price move (15% ROI at 20x), max ~0.50% stop (10% ROI), min 1.5
+> RR, max 3 signals/day. See `CLAUDE.md` for the full architecture and
+> `docs/superpowers/specs/2026-07-27-binocular-trend-confluence-design.md` /
+> `docs/superpowers/plans/2026-07-27-binocular-trend-confluence.md` for the
 > design and implementation plan.
 >
 > **Limitations (v1):** no automatic breakeven/stop-trailing; the backtest

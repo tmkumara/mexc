@@ -82,12 +82,13 @@ Runs every `OUTCOME_CHECK_MINUTES` (default 1). For each `pending` DB signal, fe
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TREND_TF` / `ENTRY_TF` | 15m / 5m | Trend and entry timeframes |
-| `TREND_EMA_PERIOD` / `ENTRY_EMA_PERIOD` | 200 / 20 | EMA periods used on each timeframe |
-| `TREND_SUPERTREND_ATR_PERIOD` / `TREND_SUPERTREND_MULTIPLIER` | 10 / 3.0 | 15m Supertrend params |
-| `ENTRY_SUPERTREND_ATR_PERIOD` / `ENTRY_SUPERTREND_MULTIPLIER` | 10 / 2.0 | 5m Supertrend params |
-| `RSI_LONG_MIN` / `RSI_LONG_MAX` | 50 / 68 | 5m RSI band for LONG confirmation |
-| `RSI_SHORT_MIN` / `RSI_SHORT_MAX` | 32 / 50 | 5m RSI band for SHORT confirmation |
+| `TREND_TF` / `ENTRY_TF` | 15m / 5m | Zone (structural) timeframe and trigger (entry) timeframe |
+| `CHANDELIER_ATR_PERIOD` / `CHANDELIER_MULTIPLIER` | 10 / 2.2 | 5m Chandelier Exit params (trigger direction) |
+| `PVT_SIGNAL_LENGTH` / `PVT_SIGNAL_TYPE` | 21 / SMA | PVT signal-average length and MA type (SMA or EMA) |
+| `RSI_FAST_PERIOD` / `RSI_SLOW_PERIOD` | 25 / 55 | Dual-RSI regime filter periods (fast vs slow agreement) |
+| `ZONE_SWING_LENGTH` / `ZONE_ATR_PERIOD` / `ZONE_BOX_WIDTH` | 10 / 50 / 2.5 | 15m pivot lookback, ATR period, and zone box width (ATR-buffer/10) |
+| `ZONE_PROXIMITY_ATR_MULT` / `ZONE_MAX_AGE_BARS` | 0.5 / 100 | Confluence-zone proximity tolerance (x ATR) and max zone age in bars |
+| `ENTRY_BUFFER_PCT` | 0.0002 | Breakout-buffer fraction the trigger close must clear beyond the prior high/low |
 | `LEVERAGE` | 20 | Bot's own position leverage; scales ROI% ↔ price% |
 | `TARGET_ROI_PCT` / `MAX_SL_ROI_PCT` | 15.0 / 10.0 | TP/SL sizing at leverage (→ `TP_PRICE_PCT`, `MAX_SL_PRICE_PCT`) |
 | `MIN_RR` | 1.5 | Minimum reward:risk to fire |
@@ -100,42 +101,51 @@ Runs every `OUTCOME_CHECK_MINUTES` (default 1). For each `pending` DB signal, fe
 | `EXCLUDE_COINS` | BTC/ETH/SOL/XAUT | Always excluded |
 | `ENABLE_BTC_FILTER` | true | Gate all signals on BTC's own 15m trend/volatility |
 
-## Signal Logic (strategy.py) — Simple Supertrend Pullback v1
+## Signal Logic (strategy.py) — Binocular Trend Confluence v1
 
 Single-pass evaluation per scan cycle, no persisted setup state:
 
 ```
 strategy.evaluate_symbol(symbol, btc_context=None):
-  1. _detect_trend(df_15m):
-     close > EMA(200) AND 15m Supertrend bullish AND EMA200 not falling -> LONG
-     close < EMA(200) AND 15m Supertrend bearish AND EMA200 not rising  -> SHORT
-     otherwise -> no trade
+  1. build_zones(df_15m, ...):
+     finds pivot highs/lows (ZONE_SWING_LENGTH) on closed 15m candles,
+     turns each into a supply (pivot high) or demand (pivot low) box
+     sized by ATR(ZONE_ATR_PERIOD) x (ZONE_BOX_WIDTH / 10), and marks a
+     zone invalidated (BOS) once a later close trades through it. Zones
+     older than ZONE_MAX_AGE_BARS are dropped; only active
+     (non-BOS, in-range) zones are kept.
 
-  2. _detect_pullback_and_confirmation(df_5m, direction):
-     price was on the correct side of EMA(20) before the pullback,
-     pulled back to touch/cross EMA(20) within the last
-     PULLBACK_LOOKBACK_BARS candles, then the latest CLOSED candle:
-       - reclaims EMA(20) and closes in the trend direction
-       - 5m Supertrend agrees with the trend direction
-       - RSI(14) inside the direction's band
-       - volume >= MIN_VOLUME_MULTIPLIER x trailing VOLUME_MA_PERIOD avg
-       - candle range <= MAX_CONFIRMATION_CANDLE_ATR x ATR(14) (not a spike)
-       - distance from EMA(20) <= MAX_EMA_DISTANCE_PCT (not chasing)
+  2. _detect_trigger(df_5m):
+     on the latest CLOSED 5m candle:
+       - Chandelier Exit (CHANDELIER_ATR_PERIOD, CHANDELIER_MULTIPLIER)
+         direction must be bullish (LONG) or bearish (SHORT)
+       - PVT vs its signal average (PVT_SIGNAL_LENGTH, PVT_SIGNAL_TYPE)
+         must agree with that direction (PVT above/below signal)
+       - RSI_FAST vs RSI_SLOW must agree with that direction
+         (fast > slow for LONG, fast < slow for SHORT)
+       - close must clear the prior candle's high/low by
+         ENTRY_BUFFER_PCT (breakout confirmation)
+     any failed check -> no trade, otherwise -> LONG or SHORT
 
-  3. If ENABLE_BTC_FILTER, build_btc_context()/_btc_filter_ok() must pass
+  3. _find_confluence_zone(): requires an active opposing-type zone
+     (demand zone for LONG, supply zone for SHORT) within
+     ZONE_PROXIMITY_ATR_MULT x ATR(ZONE_ATR_PERIOD) of the trigger
+     price; no such zone -> no trade.
+
+  4. If ENABLE_BTC_FILTER, build_btc_context()/_btc_filter_ok() must pass
      (see below).
 
-  4. _calculate_tp_sl(): fixed-distance TP at TP_PRICE_PCT
-     (= TARGET_ROI_PCT / 100 / LEVERAGE); SL placed structurally beyond
-     the pullback swing low/high plus an ATR buffer
-     (SL_ATR_BUFFER_MULTIPLIER), capped at MAX_SL_PRICE_PCT
-     (= MAX_SL_ROI_PCT / 100 / LEVERAGE).
+  5. _calculate_tp_sl(): fixed-distance TP at TP_PRICE_PCT
+     (= TARGET_ROI_PCT / 100 / LEVERAGE); SL placed at the confluence
+     zone's far boundary plus an ATR buffer (SL_ATR_BUFFER_MULTIPLIER),
+     capped at MAX_SL_PRICE_PCT (= MAX_SL_ROI_PCT / 100 / LEVERAGE).
 
-  5. RR = reward / risk must be >= MIN_RR.
+  6. RR = reward / risk must be >= MIN_RR.
 
-  6. _score_candidate(): 0-100 composite (trend/Supertrend alignment,
-     EMA-reclaim quality, volume quality, RSI quality, RR quality) used
-     to rank multiple candidates within a scan.
+  7. _score_candidate(): 0-100 composite — zone proximity (25),
+     PVT-vs-signal momentum magnitude (25), breakout clearance (20),
+     RSI_FAST ideal-band quality (10), RR quality (10), zone freshness
+     (10) — used to rank multiple candidates within a scan.
 ```
 
 `main.scan_and_fire_signals` evaluates the whole coin pool in a thread pool, sorts candidates by score, and fires the top ones subject to `MAX_DAILY_SIGNALS`, `MIN_DAILY_SIGNAL_GAP_MINUTES`, `MAX_CONCURRENT_SIGNALS`, `SIGNALS_PER_SCAN`, per-coin `SIGNAL_COOLDOWN_MINUTES`, and `direction_slot_available()` (the `MAX_ACTIVE_LONG_SIGNALS`/`MAX_ACTIVE_SHORT_SIGNALS` correlation limit).
