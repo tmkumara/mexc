@@ -121,22 +121,97 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
     )
 
 
+def calculate_chandelier_exit(df: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
+    close = df["close"].to_numpy()
+    atr = (multiplier * calculate_atr(df, atr_period)).to_numpy()
+    highest_close = df["close"].rolling(atr_period, min_periods=1).max().to_numpy()
+    lowest_close = df["close"].rolling(atr_period, min_periods=1).min().to_numpy()
+
+    n = len(df)
+    long_stop = np.zeros(n)
+    short_stop = np.zeros(n)
+    direction = np.ones(n, dtype=int)
+
+    for i in range(n):
+        raw_long = highest_close[i] - atr[i]
+        raw_short = lowest_close[i] + atr[i]
+        if i == 0:
+            long_stop[i] = raw_long
+            short_stop[i] = raw_short
+            direction[i] = 1
+            continue
+
+        long_stop_prev = long_stop[i - 1]
+        short_stop_prev = short_stop[i - 1]
+        long_stop[i] = max(raw_long, long_stop_prev) if close[i - 1] > long_stop_prev else raw_long
+        short_stop[i] = min(raw_short, short_stop_prev) if close[i - 1] < short_stop_prev else raw_short
+
+        if close[i] > short_stop_prev:
+            direction[i] = 1
+        elif close[i] < long_stop_prev:
+            direction[i] = -1
+        else:
+            direction[i] = direction[i - 1]
+
+    return pd.DataFrame(
+        {
+            "chandelier_long_stop": long_stop,
+            "chandelier_short_stop": short_stop,
+            "chandelier_direction": direction,
+        },
+        index=df.index,
+    )
+
+
+def calculate_pvt(df: pd.DataFrame) -> pd.Series:
+    pct_change = df["close"].pct_change().fillna(0.0)
+    return (pct_change * df["volume"]).cumsum().rename("pvt")
+
+
+def calculate_pvt_signal(pvt: pd.Series, length: int, ma_type: str) -> pd.Series:
+    if ma_type == "EMA":
+        return pvt.ewm(span=length, adjust=False).mean()
+    return pvt.rolling(length, min_periods=1).mean()
+
+
+def find_pivot_highs(df: pd.DataFrame, swing_length: int) -> pd.Series:
+    high = df["high"]
+    n = len(df)
+    result = pd.Series(np.nan, index=df.index, dtype=float)
+    for i in range(swing_length, n - swing_length):
+        window = high.iloc[i - swing_length: i + swing_length + 1]
+        if high.iloc[i] == window.max():
+            result.iloc[i] = high.iloc[i]
+    return result
+
+
+def find_pivot_lows(df: pd.DataFrame, swing_length: int) -> pd.Series:
+    low = df["low"]
+    n = len(df)
+    result = pd.Series(np.nan, index=df.index, dtype=float)
+    for i in range(swing_length, n - swing_length):
+        window = low.iloc[i - swing_length: i + swing_length + 1]
+        if low.iloc[i] == window.min():
+            result.iloc[i] = low.iloc[i]
+    return result
+
+
 # ── evaluate_symbol pipeline ─────────────────────────────────────────
 
 from market_data import get_market_klines
 from config import (
     TREND_TF, ENTRY_TF, TREND_KLINE_COUNT, ENTRY_KLINE_COUNT,
-    TREND_EMA_PERIOD, ENTRY_EMA_PERIOD,
-    RSI_PERIOD, RSI_LONG_MIN, RSI_LONG_MAX, RSI_SHORT_MIN, RSI_SHORT_MAX,
-    ATR_PERIOD,
+    TREND_EMA_PERIOD,
     TREND_SUPERTREND_ATR_PERIOD, TREND_SUPERTREND_MULTIPLIER,
-    ENTRY_SUPERTREND_ATR_PERIOD, ENTRY_SUPERTREND_MULTIPLIER,
-    VOLUME_MA_PERIOD, MIN_VOLUME_MULTIPLIER,
-    PULLBACK_LOOKBACK_BARS, MAX_EMA_DISTANCE_PCT, MAX_CONFIRMATION_CANDLE_ATR,
     SL_ATR_BUFFER_MULTIPLIER, LEVERAGE, TP_PRICE_PCT, MAX_SL_PRICE_PCT, MIN_RR,
     ENABLE_BTC_FILTER, BTC_FILTER_SYMBOL, BTC_FILTER_TF,
     BTC_MAX_OPPOSING_MOVE_PCT, BTC_MAX_SINGLE_CANDLE_MOVE_PCT, BTC_MAX_THREE_CANDLE_MOVE_PCT,
 )
+# TODO (Task 4-5): Restore strategy pipeline config when evaluate_symbol is rewritten
+# ENTRY_EMA_PERIOD, RSI_PERIOD, RSI_LONG_MIN, RSI_LONG_MAX, RSI_SHORT_MIN, RSI_SHORT_MAX,
+# ATR_PERIOD, ENTRY_SUPERTREND_ATR_PERIOD, ENTRY_SUPERTREND_MULTIPLIER,
+# VOLUME_MA_PERIOD, MIN_VOLUME_MULTIPLIER, PULLBACK_LOOKBACK_BARS, MAX_EMA_DISTANCE_PCT,
+# MAX_CONFIRMATION_CANDLE_ATR,
 
 
 def valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
