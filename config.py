@@ -54,10 +54,10 @@ MIN_24H_VOLUME_USD: float            = float(os.getenv("MIN_24H_VOLUME_USD", str
 MAX_SPREAD_PCT: float                = float(os.getenv("MAX_SPREAD_PCT", "0.35"))
 MIN_PRICE_CHANGE_24H_PCT: float      = float(os.getenv("MIN_PRICE_CHANGE_24H_PCT", "0.0"))
 
-# ── Strategy: Simple Supertrend Pullback v1 ─────────────────────────
+# ── Strategy: Binocular Trend Confluence v1 ─────────────────────────
 STRATEGY_NAME: str = os.getenv(
     "STRATEGY_NAME",
-    "Simple Supertrend Pullback v1",
+    "Binocular Trend Confluence v1",
 )
 
 TREND_TF: str = os.getenv("TREND_TF", "15m")
@@ -66,31 +66,34 @@ ENTRY_TF: str = os.getenv("ENTRY_TF", "5m")
 TREND_KLINE_COUNT: int = int(os.getenv("TREND_KLINE_COUNT", "260"))
 ENTRY_KLINE_COUNT: int = int(os.getenv("ENTRY_KLINE_COUNT", "120"))
 
+# Still used by the BTC safety filter's own trend gate (build_btc_context),
+# not by the main strategy's trigger -- do not remove.
 TREND_EMA_PERIOD: int = int(os.getenv("TREND_EMA_PERIOD", "200"))
-ENTRY_EMA_PERIOD: int = int(os.getenv("ENTRY_EMA_PERIOD", "20"))
-
-RSI_PERIOD: int = int(os.getenv("RSI_PERIOD", "14"))
-RSI_LONG_MIN: float = float(os.getenv("RSI_LONG_MIN", "50"))
-RSI_LONG_MAX: float = float(os.getenv("RSI_LONG_MAX", "68"))
-RSI_SHORT_MIN: float = float(os.getenv("RSI_SHORT_MIN", "32"))
-RSI_SHORT_MAX: float = float(os.getenv("RSI_SHORT_MAX", "50"))
-
-ATR_PERIOD: int = int(os.getenv("ATR_PERIOD", "14"))
-
 TREND_SUPERTREND_ATR_PERIOD: int = int(os.getenv("TREND_SUPERTREND_ATR_PERIOD", "10"))
 TREND_SUPERTREND_MULTIPLIER: float = float(os.getenv("TREND_SUPERTREND_MULTIPLIER", "3.0"))
 
-ENTRY_SUPERTREND_ATR_PERIOD: int = int(os.getenv("ENTRY_SUPERTREND_ATR_PERIOD", "10"))
-ENTRY_SUPERTREND_MULTIPLIER: float = float(os.getenv("ENTRY_SUPERTREND_MULTIPLIER", "2.0"))
+# 5m Chandelier Exit (trigger direction)
+CHANDELIER_ATR_PERIOD: int = int(os.getenv("CHANDELIER_ATR_PERIOD", "10"))
+CHANDELIER_MULTIPLIER: float = float(os.getenv("CHANDELIER_MULTIPLIER", "2.2"))
 
-VOLUME_MA_PERIOD: int = int(os.getenv("VOLUME_MA_PERIOD", "20"))
-MIN_VOLUME_MULTIPLIER: float = float(os.getenv("MIN_VOLUME_MULTIPLIER", "1.2"))
+# 5m Price-Volume-Trend vs its smoothed signal (momentum confirmation)
+PVT_SIGNAL_LENGTH: int = int(os.getenv("PVT_SIGNAL_LENGTH", "21"))
+PVT_SIGNAL_TYPE: str = os.getenv("PVT_SIGNAL_TYPE", "SMA")  # "SMA" | "EMA"
 
-PULLBACK_LOOKBACK_BARS: int = int(os.getenv("PULLBACK_LOOKBACK_BARS", "3"))
+# 5m dual-RSI regime filter
+RSI_FAST_PERIOD: int = int(os.getenv("RSI_FAST_PERIOD", "25"))
+RSI_SLOW_PERIOD: int = int(os.getenv("RSI_SLOW_PERIOD", "55"))
 
-MAX_EMA_DISTANCE_PCT: float = float(os.getenv("MAX_EMA_DISTANCE_PCT", "0.003"))
+# Breakout confirmation buffer (close must clear the previous candle's
+# high/low by this fraction)
+ENTRY_BUFFER_PCT: float = float(os.getenv("ENTRY_BUFFER_PCT", "0.0002"))
 
-MAX_CONFIRMATION_CANDLE_ATR: float = float(os.getenv("MAX_CONFIRMATION_CANDLE_ATR", "1.8"))
+# 15m Supply/Demand zone detection
+ZONE_SWING_LENGTH: int = int(os.getenv("ZONE_SWING_LENGTH", "10"))
+ZONE_ATR_PERIOD: int = int(os.getenv("ZONE_ATR_PERIOD", "50"))
+ZONE_BOX_WIDTH: float = float(os.getenv("ZONE_BOX_WIDTH", "2.5"))
+ZONE_PROXIMITY_ATR_MULT: float = float(os.getenv("ZONE_PROXIMITY_ATR_MULT", "0.5"))
+ZONE_MAX_AGE_BARS: int = int(os.getenv("ZONE_MAX_AGE_BARS", "100"))
 
 SL_ATR_BUFFER_MULTIPLIER: float = float(os.getenv("SL_ATR_BUFFER_MULTIPLIER", "0.10"))
 
