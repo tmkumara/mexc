@@ -276,12 +276,22 @@ other existing config (`LEVERAGE`, `TARGET_ROI_PCT`, `MAX_SL_ROI_PCT`,
 
 ## Database / Telegram / Dashboard
 
-No schema or template changes required — `Signal` dataclass and
-`STRATEGY_NAME` are unchanged in shape, and `bot.py`/`webui.py` already
-read them generically rather than hardcoding old-strategy wording. Only
-the config values and `Signal.timeframe_summary` text
-(`"15m demand/supply zone + 5m Chandelier/PVT/RSI breakout"`) change what
-gets displayed.
+No DB schema changes required — `Signal` dataclass is unchanged in shape.
+
+`bot.py` and `webui.py` **do** need targeted edits, correcting an earlier
+assumption in this spec: `bot.py:cmd_status` directly imports
+`TREND_EMA_PERIOD, ENTRY_EMA_PERIOD, RSI_LONG_MIN, RSI_LONG_MAX,
+RSI_SHORT_MIN, RSI_SHORT_MAX` from `config` and formats them into the
+`/status` message (`bot.py:208-223,244-246`) — removing those config
+constants without updating `bot.py` would raise `ImportError` the next
+time `/status` runs. `webui.py:get_strategy_config()` (`webui.py:232-267`)
+hardcodes the same old field names via `_safe_config_value` — that helper
+degrades missing attributes to `"—"` rather than crashing, but the
+dashboard would silently show stale/blank old-strategy fields forever.
+Both need their old-strategy-specific lines replaced with Chandelier/PVT/
+RSI/zone-relevant fields, the same way the prior Supertrend Pullback v1
+migration rewrote both message templates when the underlying config
+changed shape.
 
 ## Outcome checking
 
@@ -322,9 +332,19 @@ prior strategy migration. `tests/test_indicators.py` keeps
 ## Backtest utility
 
 `scripts/backtest_simple_strategy.py` (existing, calls `evaluate_symbol`
-directly) needs no structural changes — it's strategy-agnostic already.
-Re-run it against the new strategy once implemented to sanity-check trade
-frequency/quality before enabling live/dry-run on the server.
+directly) is mostly strategy-agnostic, but **does** need a small fix,
+correcting another earlier assumption in this spec: it imports
+`TREND_EMA_PERIOD, ENTRY_EMA_PERIOD, PULLBACK_LOOKBACK_BARS` at module
+level (`scripts/backtest_simple_strategy.py:37`) and uses them to compute
+`min_start`, the first index it's willing to evaluate
+(`scripts/backtest_simple_strategy.py:256`) — removing those constants
+without updating this file breaks it at import time. `min_start` must be
+recomputed from the new strategy's minimum-history requirements
+(`ZONE_ATR_PERIOD + ZONE_SWING_LENGTH * 2 + 10` for the 15m side,
+`RSI_SLOW_PERIOD + 20` for the 5m side, combined with the same `max(...)`
+the file already uses). Once fixed, re-run it against the new strategy to
+sanity-check trade frequency/quality before enabling live/dry-run on the
+server.
 
 ## Migration order (drives the implementation plan's phases)
 
