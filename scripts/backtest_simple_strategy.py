@@ -1,5 +1,5 @@
 """
-Backtest utility for Simple Supertrend Pullback v1.
+Backtest utility for Binocular Trend Confluence v1.
 
 Walks 5m candles forward in time, at each completed bar building an
 "as-of" view (all 15m/5m/BTC candles up to and including that bar, plus a
@@ -31,7 +31,8 @@ from config import (
     ENTRY_TF, TREND_TF, BTC_FILTER_SYMBOL, BTC_FILTER_TF,
     SIGNAL_EXPIRE_HOURS, CANDLE_MINUTES, _TF_MINUTES,
     ESTIMATED_ENTRY_FEE_PCT, ESTIMATED_EXIT_FEE_PCT, ESTIMATED_SLIPPAGE_PCT,
-    TREND_EMA_PERIOD, ENTRY_EMA_PERIOD, PULLBACK_LOOKBACK_BARS,
+    ZONE_ATR_PERIOD, ZONE_SWING_LENGTH, RSI_SLOW_PERIOD,
+    TREND_KLINE_COUNT, ENTRY_KLINE_COUNT,
 )
 
 MAX_REST_COUNT = 2000   # single-request ceiling this script asks MEXC for
@@ -199,7 +200,7 @@ def backtest_symbol(symbol: str, stats: BacktestStats) -> None:
         f"{len(df_5m_full)} x {ENTRY_TF} bars"
     )
 
-    min_start = max(TREND_EMA_PERIOD + 5, ENTRY_EMA_PERIOD + PULLBACK_LOOKBACK_BARS + 15)
+    min_start = max(ZONE_ATR_PERIOD + ZONE_SWING_LENGTH * 2 + 10, RSI_SLOW_PERIOD + 20)
     in_trade_until_idx = -1
 
     original_get_market_klines = strategy.get_market_klines
