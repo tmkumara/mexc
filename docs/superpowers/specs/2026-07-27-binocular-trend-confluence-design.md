@@ -53,18 +53,22 @@ trend/entry trigger logic being replaced.
 
 - `_detect_trend` (15m EMA200 + Supertrend trend gate)
 - `_detect_pullback_and_confirmation` (5m EMA20 pullback/reclaim logic)
-- `TREND_EMA_PERIOD`, `ENTRY_EMA_PERIOD`, `PULLBACK_LOOKBACK_BARS`,
+- `ENTRY_EMA_PERIOD`, `RSI_PERIOD`, `ATR_PERIOD`, `PULLBACK_LOOKBACK_BARS`,
   `MAX_EMA_DISTANCE_PCT`, `MAX_CONFIRMATION_CANDLE_ATR`,
   `MIN_VOLUME_MULTIPLIER`, `VOLUME_MA_PERIOD`,
-  `TREND_SUPERTREND_ATR_PERIOD`/`MULTIPLIER`,
-  `ENTRY_SUPERTREND_ATR_PERIOD`/`MULTIPLIER` (the 15m/5m Supertrend used by
-  the old trend/entry gates — the new strategy uses Chandelier Exit
-  instead, a related but distinct stop-line indicator, so these are
-  replaced rather than reused)
+  `ENTRY_SUPERTREND_ATR_PERIOD`/`MULTIPLIER` (the 5m Supertrend used only by
+  the old entry-confirmation gate — the new trigger uses Chandelier Exit
+  instead), `RSI_LONG_MIN`/`MAX`, `RSI_SHORT_MIN`/`MAX` (the old single-RSI
+  band bounds — the new trigger uses a dual-RSI crossover instead)
 
-`calculate_ema`, `calculate_rsi`, `calculate_atr` are kept (still used, RSI
-now called with two different periods). `calculate_supertrend` is deleted
-from `strategy.py` (no longer referenced by anything in the new pipeline).
+**Correction — do not remove `TREND_EMA_PERIOD`, `TREND_SUPERTREND_ATR_PERIOD`,
+`TREND_SUPERTREND_MULTIPLIER`, or `calculate_supertrend`.** All three
+config constants and the function are still used by `build_btc_context`
+(kept verbatim, see below) even though the *main strategy's* 15m trend
+gate that used to share them is gone. `calculate_ema`, `calculate_rsi`,
+`calculate_atr`, `calculate_supertrend` are all kept in `strategy.py`
+(RSI now also called with two new periods; Supertrend now serves only the
+BTC filter, not the main trigger).
 
 ## New strategy: indicators
 
@@ -246,11 +250,16 @@ Mirrors the shape of today's `_score_candidate` with new inputs:
 
 ## Configuration (`config.py`)
 
-Remove: `TREND_EMA_PERIOD`, `ENTRY_EMA_PERIOD`, `PULLBACK_LOOKBACK_BARS`,
-`MAX_EMA_DISTANCE_PCT`, `MAX_CONFIRMATION_CANDLE_ATR`,
-`MIN_VOLUME_MULTIPLIER`, `VOLUME_MA_PERIOD`, `TREND_SUPERTREND_ATR_PERIOD`,
-`TREND_SUPERTREND_MULTIPLIER`, `ENTRY_SUPERTREND_ATR_PERIOD`,
-`ENTRY_SUPERTREND_MULTIPLIER`.
+Remove: `ENTRY_EMA_PERIOD`, `RSI_PERIOD`, `ATR_PERIOD`,
+`PULLBACK_LOOKBACK_BARS`, `MAX_EMA_DISTANCE_PCT`,
+`MAX_CONFIRMATION_CANDLE_ATR`, `MIN_VOLUME_MULTIPLIER`,
+`VOLUME_MA_PERIOD`, `ENTRY_SUPERTREND_ATR_PERIOD`,
+`ENTRY_SUPERTREND_MULTIPLIER`, `RSI_LONG_MIN`, `RSI_LONG_MAX`,
+`RSI_SHORT_MIN`, `RSI_SHORT_MAX`.
+
+**Keep** (still used by `build_btc_context`/`_btc_filter_ok`, not just the
+retired main-strategy trend gate): `TREND_EMA_PERIOD`,
+`TREND_SUPERTREND_ATR_PERIOD`, `TREND_SUPERTREND_MULTIPLIER`.
 
 Add:
 ```python
@@ -318,16 +327,23 @@ New `tests/test_strategy_binocular.py`: long + short variants of
 `test_active_last_candle_is_ignored`; `test_long_trade_geometry`,
 `test_short_trade_geometry`, `test_invalid_geometry_rejected`.
 
-`tests/test_btc_filter.py` is unaffected (BTC filter unchanged) — kept as
-regression coverage.
+**Correction:** `tests/test_btc_filter.py`'s *assertions* (BTC-context
+gating behavior) are unaffected, but its fixtures are not — it calls
+`evaluate_symbol` through `make_15m_trend_df`/`make_5m_pullback_df` (the
+old pullback-strategy shape), which no longer produces a signal in the
+new pipeline (rejected before the BTC-filter check even runs, for lacking
+zone confluence). Its fixture calls must be swapped to the new
+`make_15m_zone_df`/`make_5m_trigger_df` builders so a candidate actually
+reaches the BTC-filter gate; test names and assertions stay the same.
 
-**Legacy test cleanup:** `tests/test_strategy_supertrend_pullback.py` (if
-it exists under that name) is **deleted** in this work, since it exercises
+**Legacy test cleanup:** `tests/test_strategy_supertrend_pullback.py` is
+**deleted** in this work, since it exercises
 `_detect_trend`/`_detect_pullback_and_confirmation`, which no longer exist
 — same "suite reflects only what's actually running" policy used in the
-prior strategy migration. `tests/test_indicators.py` keeps
-`calculate_ema`/`calculate_rsi`/`calculate_atr` coverage but drops
-`calculate_supertrend` tests (function removed).
+prior strategy migration. `tests/test_indicators.py` is **unaffected** —
+`calculate_supertrend` is still used (by `build_btc_context`), so its
+tests stay as-is; the new Chandelier/PVT/pivot tests live in the new
+`tests/test_binocular_indicators.py` file instead.
 
 ## Backtest utility
 
@@ -356,24 +372,32 @@ server.
    filter code is moved as-is, not rewritten.
 4. **Config** — remove old trend/pullback settings, add new Chandelier/
    PVT/RSI/zone settings, update `STRATEGY_NAME`, `.env.example`.
-5. **Cleanup** — delete superseded tests, full suite green, run
+5. **Dependents** — fix `bot.py:cmd_status` and `webui.py:get_strategy_config`
+   (old field names removed from config), fix
+   `scripts/backtest_simple_strategy.py`'s `min_start` computation (old
+   config names removed).
+6. **Cleanup** — update `tests/test_btc_filter.py` fixtures, delete
+   superseded tests, full suite green, run
    `scripts/backtest_simple_strategy.py` against a handful of symbols,
    dry-run smoke test (`DRY_RUN=true DRY_RUN_SAVE_SIGNALS=false python main.py`).
 
 ## Acceptance criteria
 
-- No `_detect_trend`/`_detect_pullback_and_confirmation`/
-  `calculate_supertrend` references remain in `strategy.py`
+- No `_detect_trend`/`_detect_pullback_and_confirmation` references remain
+  in `strategy.py` (`calculate_supertrend` correctly still remains — it
+  backs `build_btc_context`)
 - Zone detection and Chandelier/PVT/RSI trigger both operate only on
   completed candles (no forming-candle access)
-- BTC filter behavior is unchanged (existing BTC filter tests still pass
-  unmodified)
+- BTC filter *behavior* is unchanged (same gating logic, same defaults);
+  its tests are updated to use the new strategy's fixtures so a candidate
+  actually reaches the BTC-filter gate
 - Every accepted signal satisfies `valid_trade_geometry`, `rr >= MIN_RR`,
   and structural SL distance `<= MAX_SL_ROI_PCT/100/LEVERAGE`
 - `evaluate_symbol` signature and `Signal`/`BtcContext` dataclasses are
   byte-for-byte unchanged from today
-- `main.py`, `bot.py`, `webui.py`, `database.py` require no code changes
-  (config/display values only)
+- `main.py` and `database.py` require no code changes. `bot.py`, `webui.py`,
+  and `scripts/backtest_simple_strategy.py` **do** require targeted edits
+  (they reference removed config names directly) — done in this work
 - All tests pass; `scripts/backtest_simple_strategy.py` runs against the
   new strategy with no future-data leakage; dry-run boots cleanly and logs
   the new strategy name, zone/trigger config, target ROI, max SL ROI,
