@@ -8,9 +8,9 @@ strategy.evaluate_symbol against it -- the exact same function the live
 bot uses, so backtest and live share one source of truth and no signal
 logic is duplicated here.
 
-Known limitation (documented, not solved, in this first version): MEXC's
-kline endpoint only accepts a candle `count`, not a start/end range, so
-the achieved history length may be shorter than --days asks for. The
+History beyond a single REST request's cap (MAX_REST_COUNT) is assembled
+by paging backward via `end` cursors (see get_klines_extended). The
+exchange may still run out of older data before --days is satisfied; the
 script reports what it actually achieved.
 """
 
@@ -18,7 +18,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -32,9 +35,48 @@ from config import (
     SIGNAL_EXPIRE_HOURS, CANDLE_MINUTES, _TF_MINUTES,
     ESTIMATED_ENTRY_FEE_PCT, ESTIMATED_EXIT_FEE_PCT, ESTIMATED_SLIPPAGE_PCT,
     ZONE_ATR_PERIOD, ZONE_SWING_LENGTH, RSI_SLOW_PERIOD,
+    TREND_KLINE_COUNT, ENTRY_KLINE_COUNT,
 )
 
 MAX_REST_COUNT = 2000   # single-request ceiling this script asks MEXC for
+
+
+def get_klines_extended(symbol: str, interval: str, days: int) -> pd.DataFrame:
+    """Page backward past MEXC's single-request ceiling via `end` cursors to
+    assemble up to `days` of history. Stops early if the exchange runs out
+    of older data (returns fewer, or a short final page)."""
+    tf_minutes = _TF_MINUTES.get(interval, 5)
+    target_start = datetime.utcnow() - timedelta(days=days)
+
+    chunks: list[pd.DataFrame] = []
+    cursor_end: datetime | None = None
+    seen_earliest: datetime | None = None
+
+    while True:
+        end_param = int(cursor_end.timestamp()) if cursor_end is not None else None
+        df = get_klines(symbol, interval, count=MAX_REST_COUNT, end=end_param)
+        if df.empty:
+            break
+
+        chunks.append(df)
+        earliest = df.index[0].to_pydatetime()
+        if seen_earliest is not None and earliest >= seen_earliest:
+            break  # exchange stopped returning older data -- avoid looping forever
+        seen_earliest = earliest
+
+        if earliest <= target_start or len(df) < MAX_REST_COUNT:
+            break
+
+        cursor_end = earliest - timedelta(minutes=tf_minutes)
+        time.sleep(0.25)
+
+    if not chunks:
+        return pd.DataFrame()
+
+    combined = pd.concat(chunks)
+    combined = combined[~combined.index.duplicated(keep="first")]
+    combined.sort_index(inplace=True)
+    return combined[combined.index >= target_start]
 
 
 @dataclass
@@ -123,11 +165,18 @@ class BacktestStats:
             _bucket_report(f"  {symbol}", [t for t in self.trades if t.symbol == symbol])
 
 
-def _with_forming_row(df: pd.DataFrame, upto_idx: int) -> pd.DataFrame:
-    """Rows [0, upto_idx] plus a duplicated last row standing in for the
-    still-forming candle, so evaluate_symbol's iloc[:-1] leaves exactly
-    rows [0, upto_idx] as 'completed'."""
-    window = df.iloc[: upto_idx + 1]
+def _with_forming_row(df: pd.DataFrame, upto_idx: int, window_count: int) -> pd.DataFrame:
+    """Last `window_count` rows ending at upto_idx, plus a duplicated last
+    row standing in for the still-forming candle, so evaluate_symbol's
+    iloc[:-1] leaves exactly that trailing window as 'completed'.
+
+    Bounded to `window_count` (TREND_KLINE_COUNT / ENTRY_KLINE_COUNT) to
+    match what the live bot's get_market_klines(count=...) actually
+    fetches -- an unbounded from-the-start slice would both diverge from
+    live behavior and make indicator recomputation cost grow O(n^2) with
+    history length."""
+    start = max(0, upto_idx + 1 - window_count)
+    window = df.iloc[start : upto_idx + 1]
     return pd.concat([window, window.iloc[[-1]]])
 
 
@@ -185,18 +234,23 @@ def _roi_with_costs(direction: str, entry: float, exit_price: float, outcome: st
     return round(gross_roi, 3), round(net_roi, 3)
 
 
-def backtest_symbol(symbol: str, stats: BacktestStats) -> None:
-    df_15m_full = get_klines(symbol, TREND_TF, count=MAX_REST_COUNT)
-    df_5m_full = get_klines(symbol, ENTRY_TF, count=MAX_REST_COUNT)
-    df_btc_full = get_klines(BTC_FILTER_SYMBOL, BTC_FILTER_TF, count=MAX_REST_COUNT)
+def backtest_symbol(symbol: str, days: int, df_btc_full: pd.DataFrame) -> list[Trade]:
+    """Runs in its own worker process (see main()) -- returns this symbol's
+    trades rather than mutating shared state, since process pool workers
+    don't share memory."""
+    trades: list[Trade] = []
+
+    df_15m_full = get_klines_extended(symbol, TREND_TF, days)
+    df_5m_full = get_klines_extended(symbol, ENTRY_TF, days)
 
     if df_15m_full.empty or df_5m_full.empty:
-        print(f"[{symbol}] no candle history returned -- skipping")
-        return
+        print(f"[{symbol}] no candle history returned -- skipping", flush=True)
+        return trades
 
     print(
         f"[{symbol}] achieved history: {len(df_15m_full)} x {TREND_TF} bars, "
-        f"{len(df_5m_full)} x {ENTRY_TF} bars"
+        f"{len(df_5m_full)} x {ENTRY_TF} bars",
+        flush=True,
     )
 
     min_start = max(ZONE_ATR_PERIOD + ZONE_SWING_LENGTH * 2 + 10, RSI_SLOW_PERIOD + 20)
@@ -221,9 +275,9 @@ def backtest_symbol(symbol: str, stats: BacktestStats) -> None:
             if trend_idx is None or trend_idx < min_start:
                 continue
 
-            as_of_5m = _with_forming_row(df_5m_full, i)
-            as_of_15m = _with_forming_row(df_15m_full, trend_idx)
-            as_of_btc = _with_forming_row(df_btc_full, btc_idx) if btc_idx is not None else None
+            as_of_5m = _with_forming_row(df_5m_full, i, ENTRY_KLINE_COUNT)
+            as_of_15m = _with_forming_row(df_15m_full, trend_idx, TREND_KLINE_COUNT)
+            as_of_btc = _with_forming_row(df_btc_full, btc_idx, TREND_KLINE_COUNT) if btc_idx is not None else None
 
             def _fake(sym: str, interval: str, count: int = 100, _5m=as_of_5m, _15m=as_of_15m, _btc=as_of_btc):
                 if sym == BTC_FILTER_SYMBOL and interval == BTC_FILTER_TF:
@@ -249,7 +303,7 @@ def backtest_symbol(symbol: str, stats: BacktestStats) -> None:
             )
             gross_roi, net_roi = _roi_with_costs(sig.direction, sig.entry_price, exit_price, outcome)
 
-            stats.add(Trade(
+            trades.append(Trade(
                 symbol=symbol, direction=sig.direction, entry_price=sig.entry_price,
                 tp_price=sig.tp_price, sl_price=sig.sl_price, rr=sig.rr,
                 outcome=outcome, gross_roi_pct=gross_roi, net_roi_pct=net_roi,
@@ -259,18 +313,35 @@ def backtest_symbol(symbol: str, stats: BacktestStats) -> None:
     finally:
         strategy.get_market_klines = original_get_market_klines
 
+    return trades
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backtest Binocular Trend Confluence v1")
     parser.add_argument("--symbols", nargs="+", required=True, help="e.g. XRP_USDT DOGE_USDT")
-    parser.add_argument("--days", type=int, default=30, help="requested lookback in days (best-effort, see limitation note)")
+    parser.add_argument("--days", type=int, default=30, help="requested lookback in days (best-effort, paginated via start/end)")
+    parser.add_argument("--workers", type=int, default=6, help="parallel worker processes, one symbol each")
     args = parser.parse_args()
 
-    print(f"Requested lookback: {args.days} days (best-effort -- single REST request, no pagination)")
+    print(f"Requested lookback: {args.days} days (best-effort -- paginated via MEXC start/end)")
+
+    print(f"[{BTC_FILTER_SYMBOL}] fetching shared BTC context ({BTC_FILTER_TF})...")
+    df_btc_full = get_klines_extended(BTC_FILTER_SYMBOL, BTC_FILTER_TF, args.days)
+    print(f"[{BTC_FILTER_SYMBOL}] achieved history: {len(df_btc_full)} x {BTC_FILTER_TF} bars")
 
     stats = BacktestStats()
-    for symbol in args.symbols:
-        backtest_symbol(symbol, stats)
+    with ProcessPoolExecutor(max_workers=args.workers) as executor:
+        futures = {
+            executor.submit(backtest_symbol, symbol, args.days, df_btc_full): symbol
+            for symbol in args.symbols
+        }
+        for future in as_completed(futures):
+            symbol = futures[future]
+            try:
+                for trade in future.result():
+                    stats.add(trade)
+            except Exception as e:
+                print(f"[{symbol}] FAILED: {e}", flush=True)
 
     print("\n" + "=" * 60)
     stats.print_report()
