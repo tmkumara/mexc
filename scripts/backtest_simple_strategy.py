@@ -64,7 +64,13 @@ def get_klines_extended(symbol: str, interval: str, days: int) -> pd.DataFrame:
             break  # exchange stopped returning older data -- avoid looping forever
         seen_earliest = earliest
 
-        if earliest <= target_start or len(df) < MAX_REST_COUNT:
+        # Note: do NOT treat `len(df) < MAX_REST_COUNT` as "exchange ran out
+        # of history" -- MEXC does not reliably return the full requested
+        # count even mid-history (observed a first-page request return 1999
+        # instead of 2000), which previously caused premature termination
+        # after a single page. Only stop on reaching the target date or on
+        # the exchange genuinely failing to page further back (checks above).
+        if earliest <= target_start:
             break
 
         cursor_end = earliest - timedelta(minutes=tf_minutes)
