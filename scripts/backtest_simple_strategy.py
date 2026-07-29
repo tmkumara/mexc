@@ -1,5 +1,5 @@
 """
-Backtest utility for Binocular Trend Confluence v1.
+Backtest utility for Ribbon-Flip Trend-Bar Confirmation v1.
 
 Walks 5m candles forward in time, at each completed bar building an
 "as-of" view (all 15m/5m/BTC candles up to and including that bar, plus a
@@ -31,11 +31,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import strategy
 from mexc_client import get_klines
 from config import (
-    ENTRY_TF, TREND_TF, BTC_FILTER_SYMBOL, BTC_FILTER_TF,
-    SIGNAL_EXPIRE_HOURS, CANDLE_MINUTES, _TF_MINUTES,
+    ENTRY_TF, ENTRY_KLINE_COUNT, SIGNAL_EXPIRE_HOURS, CANDLE_MINUTES, _TF_MINUTES,
     ESTIMATED_ENTRY_FEE_PCT, ESTIMATED_EXIT_FEE_PCT, ESTIMATED_SLIPPAGE_PCT,
-    ZONE_ATR_PERIOD, ZONE_SWING_LENGTH, RSI_SLOW_PERIOD,
-    TREND_KLINE_COUNT, ENTRY_KLINE_COUNT,
+    RIBBON_BASELINE_LEN, RIBBON_LOOKBACK_BARS,
 )
 
 MAX_REST_COUNT = 2000   # single-request ceiling this script asks MEXC for
@@ -176,7 +174,7 @@ def _with_forming_row(df: pd.DataFrame, upto_idx: int, window_count: int) -> pd.
     row standing in for the still-forming candle, so evaluate_symbol's
     iloc[:-1] leaves exactly that trailing window as 'completed'.
 
-    Bounded to `window_count` (TREND_KLINE_COUNT / ENTRY_KLINE_COUNT) to
+    Bounded to `window_count` (ENTRY_KLINE_COUNT) to
     match what the live bot's get_market_klines(count=...) actually
     fetches -- an unbounded from-the-start slice would both diverge from
     live behavior and make indicator recomputation cost grow O(n^2) with
@@ -184,21 +182,6 @@ def _with_forming_row(df: pd.DataFrame, upto_idx: int, window_count: int) -> pd.
     start = max(0, upto_idx + 1 - window_count)
     window = df.iloc[start : upto_idx + 1]
     return pd.concat([window, window.iloc[[-1]]])
-
-
-def _find_as_of_index(df: pd.DataFrame, timestamp) -> int | None:
-    """Index of the last row of df with index <= timestamp, or None.
-
-    `timestamp` must already be an adjusted cutoff (the simulated "now"
-    minus this dataframe's own candle width), not a raw current-time
-    value -- passing a raw timestamp here lets a still-forming candle
-    (whose open time is <= the raw timestamp but whose close time is in
-    the future) leak into the "as-of" view. See callers in
-    backtest_symbol for the correct adjustment."""
-    eligible = df.index[df.index <= timestamp]
-    if len(eligible) == 0:
-        return None
-    return int(df.index.get_loc(eligible[-1]))
 
 
 def _simulate_outcome(
@@ -240,58 +223,35 @@ def _roi_with_costs(direction: str, entry: float, exit_price: float, outcome: st
     return round(gross_roi, 3), round(net_roi, 3)
 
 
-def backtest_symbol(symbol: str, days: int, df_btc_full: pd.DataFrame) -> list[Trade]:
+def backtest_symbol(symbol: str, days: int) -> list[Trade]:
     """Runs in its own worker process (see main()) -- returns this symbol's
     trades rather than mutating shared state, since process pool workers
     don't share memory."""
     trades: list[Trade] = []
 
-    df_15m_full = get_klines_extended(symbol, TREND_TF, days)
-    df_5m_full = get_klines_extended(symbol, ENTRY_TF, days)
+    df_full = get_klines_extended(symbol, ENTRY_TF, days)
 
-    if df_15m_full.empty or df_5m_full.empty:
+    if df_full.empty:
         print(f"[{symbol}] no candle history returned -- skipping", flush=True)
         return trades
 
-    print(
-        f"[{symbol}] achieved history: {len(df_15m_full)} x {TREND_TF} bars, "
-        f"{len(df_5m_full)} x {ENTRY_TF} bars",
-        flush=True,
-    )
+    print(f"[{symbol}] achieved history: {len(df_full)} x {ENTRY_TF} bars", flush=True)
 
-    min_start = max(ZONE_ATR_PERIOD + ZONE_SWING_LENGTH * 2 + 10, RSI_SLOW_PERIOD + 20)
+    min_start = RIBBON_BASELINE_LEN + RIBBON_LOOKBACK_BARS + 10
     in_trade_until_idx = -1
 
     original_get_market_klines = strategy.get_market_klines
 
     try:
-        for i in range(min_start, len(df_5m_full) - 1):
+        for i in range(min_start, len(df_full) - 1):
             if i <= in_trade_until_idx:
                 continue
 
-            ts = df_5m_full.index[i]
-            eval_time = ts + pd.Timedelta(minutes=CANDLE_MINUTES)
-            trend_tf_minutes = _TF_MINUTES.get(TREND_TF, 15)
-            btc_tf_minutes = _TF_MINUTES.get(BTC_FILTER_TF, 15)
-            trend_idx = _find_as_of_index(df_15m_full, eval_time - pd.Timedelta(minutes=trend_tf_minutes))
-            btc_idx = (
-                _find_as_of_index(df_btc_full, eval_time - pd.Timedelta(minutes=btc_tf_minutes))
-                if not df_btc_full.empty else None
-            )
-            if trend_idx is None or trend_idx < min_start:
-                continue
+            as_of = _with_forming_row(df_full, i, ENTRY_KLINE_COUNT)
 
-            as_of_5m = _with_forming_row(df_5m_full, i, ENTRY_KLINE_COUNT)
-            as_of_15m = _with_forming_row(df_15m_full, trend_idx, TREND_KLINE_COUNT)
-            as_of_btc = _with_forming_row(df_btc_full, btc_idx, TREND_KLINE_COUNT) if btc_idx is not None else None
-
-            def _fake(sym: str, interval: str, count: int = 100, _5m=as_of_5m, _15m=as_of_15m, _btc=as_of_btc):
-                if sym == BTC_FILTER_SYMBOL and interval == BTC_FILTER_TF:
-                    return _btc if _btc is not None else pd.DataFrame()
+            def _fake(sym: str, interval: str, count: int = 100, _df=as_of):
                 if interval == ENTRY_TF:
-                    return _5m
-                if interval == TREND_TF:
-                    return _15m
+                    return _df
                 return pd.DataFrame()
 
             strategy.get_market_klines = _fake
@@ -302,10 +262,10 @@ def backtest_symbol(symbol: str, days: int, df_btc_full: pd.DataFrame) -> list[T
                 continue
 
             outcome, bars_held = _simulate_outcome(
-                sig.direction, sig.entry_price, sig.tp_price, sig.sl_price, df_5m_full, i,
+                sig.direction, sig.entry_price, sig.tp_price, sig.sl_price, df_full, i,
             )
             exit_price = sig.tp_price if outcome == "win" else (
-                sig.sl_price if outcome == "loss" else float(df_5m_full["close"].iloc[min(i + bars_held, len(df_5m_full) - 1)])
+                sig.sl_price if outcome == "loss" else float(df_full["close"].iloc[min(i + bars_held, len(df_full) - 1)])
             )
             gross_roi, net_roi = _roi_with_costs(sig.direction, sig.entry_price, exit_price, outcome)
 
@@ -323,7 +283,7 @@ def backtest_symbol(symbol: str, days: int, df_btc_full: pd.DataFrame) -> list[T
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Backtest Binocular Trend Confluence v1")
+    parser = argparse.ArgumentParser(description="Backtest Ribbon-Flip Trend-Bar Confirmation v1")
     parser.add_argument("--symbols", nargs="+", required=True, help="e.g. XRP_USDT DOGE_USDT")
     parser.add_argument("--days", type=int, default=30, help="requested lookback in days (best-effort, paginated via start/end)")
     parser.add_argument("--workers", type=int, default=6, help="parallel worker processes, one symbol each")
@@ -331,14 +291,10 @@ def main() -> None:
 
     print(f"Requested lookback: {args.days} days (best-effort -- paginated via MEXC start/end)")
 
-    print(f"[{BTC_FILTER_SYMBOL}] fetching shared BTC context ({BTC_FILTER_TF})...")
-    df_btc_full = get_klines_extended(BTC_FILTER_SYMBOL, BTC_FILTER_TF, args.days)
-    print(f"[{BTC_FILTER_SYMBOL}] achieved history: {len(df_btc_full)} x {BTC_FILTER_TF} bars")
-
     stats = BacktestStats()
     with ProcessPoolExecutor(max_workers=args.workers) as executor:
         futures = {
-            executor.submit(backtest_symbol, symbol, args.days, df_btc_full): symbol
+            executor.submit(backtest_symbol, symbol, args.days): symbol
             for symbol in args.symbols
         }
         for future in as_completed(futures):
