@@ -85,9 +85,11 @@ Runs every `OUTCOME_CHECK_MINUTES` (default 1). For each `pending` DB signal, fe
 | `ENTRY_TF` | 15m | Single timeframe -- both the EMA ribbon and Trend Bar are computed on it |
 | `RIBBON_MA1_LEN` … `RIBBON_MA5_LEN` | 30/35/40/45/50 | The 6-EMA ribbon's five short EMA lengths |
 | `RIBBON_BASELINE_LEN` | 60 | The ribbon's baseline EMA length ("MA6" in the Pine source) |
-| `RIBBON_LOOKBACK_BARS` | 12 | How many bars back a ribbon flip may have happened and still count as "recent enough" |
+| `RIBBON_LOOKBACK_BARS` | 1 | How many bars back a ribbon flip may have happened and still count as "recent enough" (backtesting found no edge widening this — an exact-bar flip performs as well as a several-bar window) |
 | `TREND_BAR_PAC_LENGTH` | 50 | Price-Action-Channel EMA length behind the Trend Bar confirmation |
 | `ATR_PERIOD` | 14 | ATR period for the structural-SL buffer and candidate scoring |
+| `SL_FLOOR_ATR_MULT` | 2.0 | Floors the structural SL at this many ATRs from entry, so it's never tighter than normal candle noise |
+| `ENABLE_LONG_SIGNALS` | true | Both directions live by default; backtesting recommends `false` (SHORT-only) — LONG underperformed SHORT in every configuration tested |
 | `LEVERAGE` | 20 | Bot's own position leverage; scales ROI% ↔ price% |
 | `TARGET_ROI_PCT` / `MAX_SL_ROI_PCT` | 15.0 / 10.0 | TP/SL sizing at leverage (→ `TP_PRICE_PCT`, `MAX_SL_PRICE_PCT`) |
 | `MIN_RR` | 1.5 | Minimum reward:risk to fire |
@@ -116,9 +118,12 @@ strategy.evaluate_symbol(symbol, btc_context=None):
      RIBBON_BASELINE_LEN) on closed candles. If the ribbon is NOT
      currently fully aligned (all 5 short EMAs above/below the
      baseline) -> no trade. If it is aligned, walks backward up to
-     RIBBON_LOOKBACK_BARS bars to find the most recent bar where that
-     alignment began (a genuine flip-in, not just "still aligned from
-     ages ago"). No flip found within the window -> no trade.
+     RIBBON_LOOKBACK_BARS bars (default 1 -- essentially requiring the
+     flip on the current or immediately preceding bar) to find the most
+     recent bar where that alignment began (a genuine flip-in, not just
+     "still aligned from ages ago"). No flip found within the window ->
+     no trade. If the flip direction is LONG and ENABLE_LONG_SIGNALS is
+     false -> no trade (true by default -- both directions live).
 
   2. calculate_trend_bar(df, TREND_BAR_PAC_LENGTH):
      on the latest CLOSED candle, checks whether the candle's entire
@@ -133,8 +138,10 @@ strategy.evaluate_symbol(symbol, btc_context=None):
   3. _calculate_tp_sl(): fixed-distance TP at TP_PRICE_PCT
      (= TARGET_ROI_PCT / 100 / LEVERAGE); SL placed at the swing
      low/high spanning from the ribbon-flip bar through the current
-     bar, plus an ATR buffer (SL_ATR_BUFFER_MULTIPLIER), capped at
-     MAX_SL_PRICE_PCT (= MAX_SL_ROI_PCT / 100 / LEVERAGE).
+     bar, plus an ATR buffer (SL_ATR_BUFFER_MULTIPLIER), floored at
+     SL_FLOOR_ATR_MULT x ATR from entry (so the stop is never tighter
+     than normal candle noise), capped at MAX_SL_PRICE_PCT
+     (= MAX_SL_ROI_PCT / 100 / LEVERAGE).
 
   4. RR = reward / risk must be >= MIN_RR.
 

@@ -8,6 +8,13 @@ confirming the same direction within RIBBON_LOOKBACK_BARS of that flip is
 is invalidated -- recomputed fresh every scan, no persisted arm state.
 Only completed candles are ever used. See
 docs/superpowers/specs/2026-07-29-ribbon-trendbar-confirmation-design.md.
+
+The structural SL (swing since the ribbon flip + a small ATR buffer) is
+floored at SL_FLOOR_ATR_MULT x ATR so it's never tighter than normal
+15m candle noise. LONG signals can be disabled via ENABLE_LONG_SIGNALS
+(true by default) -- LONG underperformed SHORT in every backtest
+configuration tested; set to false to run SHORT-only, as backtesting
+recommends.
 """
 
 from __future__ import annotations
@@ -183,7 +190,8 @@ from config import (
     RIBBON_MA1_LEN, RIBBON_MA2_LEN, RIBBON_MA3_LEN, RIBBON_MA4_LEN, RIBBON_MA5_LEN,
     RIBBON_BASELINE_LEN, RIBBON_LOOKBACK_BARS,
     TREND_BAR_PAC_LENGTH, ATR_PERIOD,
-    SL_ATR_BUFFER_MULTIPLIER, LEVERAGE, TP_PRICE_PCT, MAX_SL_PRICE_PCT, MIN_RR,
+    SL_ATR_BUFFER_MULTIPLIER, SL_FLOOR_ATR_MULT, LEVERAGE, TP_PRICE_PCT, MAX_SL_PRICE_PCT, MIN_RR,
+    ENABLE_LONG_SIGNALS,
 )
 
 
@@ -226,10 +234,16 @@ def _calculate_tp_sl(
 ) -> tuple[float, float] | None:
     window_low = float(df["low"].iloc[flip_index:].min())
     window_high = float(df["high"].iloc[flip_index:].max())
+    floor_dist = atr_last * SL_FLOOR_ATR_MULT
 
     if direction == "LONG":
         tp = entry * (1 + TP_PRICE_PCT)
         structural_sl = window_low - atr_last * SL_ATR_BUFFER_MULTIPLIER
+        # Floor: never let the stop sit closer than SL_FLOOR_ATR_MULT x ATR
+        # from entry, even if the swing-since-flip window is tiny -- a
+        # tighter stop gets clipped by normal candle noise regardless of
+        # whether the directional call is right.
+        structural_sl = min(structural_sl, entry - floor_dist)
         if structural_sl >= entry:
             return None
         if (entry - structural_sl) / entry > MAX_SL_PRICE_PCT:
@@ -238,6 +252,7 @@ def _calculate_tp_sl(
     else:
         tp = entry * (1 - TP_PRICE_PCT)
         structural_sl = window_high + atr_last * SL_ATR_BUFFER_MULTIPLIER
+        structural_sl = max(structural_sl, entry + floor_dist)
         if structural_sl <= entry:
             return None
         if (structural_sl - entry) / entry > MAX_SL_PRICE_PCT:
@@ -298,6 +313,11 @@ def evaluate_symbol(
         if direction is None:
             logger.debug("[REJECT] %s no ribbon flip", symbol)
             _bump(reject_sink, "no_ribbon_flip")
+            return None
+
+        if direction == "LONG" and not ENABLE_LONG_SIGNALS:
+            logger.debug("[REJECT] %s LONG signals disabled", symbol)
+            _bump(reject_sink, "long_disabled")
             return None
 
         trend_bar = calculate_trend_bar(closed, TREND_BAR_PAC_LENGTH)

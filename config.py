@@ -73,8 +73,11 @@ RIBBON_BASELINE_LEN: int = int(os.getenv("RIBBON_BASELINE_LEN", "60"))
 
 # How many bars back a ribbon flip may have happened and still count as
 # "recent enough" to arm a setup -- bounds the "wait for arrow 2" step
-# without persisted arm state (recomputed fresh every scan).
-RIBBON_LOOKBACK_BARS: int = int(os.getenv("RIBBON_LOOKBACK_BARS", "12"))
+# without persisted arm state (recomputed fresh every scan). Backtesting
+# (60d, XRP/DOGE/WLD) found no edge from widening this beyond 1 -- an
+# exact-bar flip performs as well as a several-bar window, so there's no
+# benefit to persisting arm/monitor state for a longer wait.
+RIBBON_LOOKBACK_BARS: int = int(os.getenv("RIBBON_LOOKBACK_BARS", "1"))
 
 # Price-Action-Channel "Trend Bar" confirmation -- "arrow 2"
 TREND_BAR_PAC_LENGTH: int = int(os.getenv("TREND_BAR_PAC_LENGTH", "50"))
@@ -83,6 +86,21 @@ TREND_BAR_PAC_LENGTH: int = int(os.getenv("TREND_BAR_PAC_LENGTH", "50"))
 ATR_PERIOD: int = int(os.getenv("ATR_PERIOD", "14"))
 
 SL_ATR_BUFFER_MULTIPLIER: float = float(os.getenv("SL_ATR_BUFFER_MULTIPLIER", "0.10"))
+
+# Floor on the structural SL distance, as a multiple of ATR -- real data
+# showed the plain swing-since-flip SL is often tighter than a single 15m
+# candle's normal noise range, causing premature stop-outs on otherwise
+# correct directional calls. Backtesting confirmed flooring the stop fixes
+# this (net ROI improved substantially at both 1.5x and 2.0x; 2.0x tested
+# best).
+SL_FLOOR_ATR_MULT: float = float(os.getenv("SL_FLOOR_ATR_MULT", "2.0"))
+
+# LONG signals underperformed SHORT in every backtest configuration tested
+# (stateless lookback sweep, arm/monitor, with and without the SL floor) --
+# never once net positive. Left enabled for live trading (both directions)
+# so the asymmetry can keep being observed on live data; set to "false" to
+# run SHORT-only, which is what backtesting recommends.
+ENABLE_LONG_SIGNALS: bool = os.getenv("ENABLE_LONG_SIGNALS", "true").lower() == "true"
 
 TARGET_ROI_PCT: float = float(os.getenv("TARGET_ROI_PCT", "15.0"))
 MAX_SL_ROI_PCT: float = float(os.getenv("MAX_SL_ROI_PCT", "10.0"))

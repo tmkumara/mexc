@@ -6,6 +6,11 @@ from tests.strategy_fixtures import make_ribbon_trendbar_df, patch_klines
 def test_long_signal_valid(monkeypatch):
     df = make_ribbon_trendbar_df("LONG")
     patch_klines(monkeypatch, strategy, df)
+    # Fixture's flip and Trend Bar confirmation land ~7 bars apart (by
+    # design -- see strategy_fixtures docstring); production default
+    # RIBBON_LOOKBACK_BARS is now 1 (exact-bar flip), so widen it here to
+    # exercise the general lookback-window mechanism this test targets.
+    monkeypatch.setattr(strategy, "RIBBON_LOOKBACK_BARS", 12)
 
     sig = evaluate_symbol("TEST_USDT")
 
@@ -19,6 +24,7 @@ def test_long_signal_valid(monkeypatch):
 def test_long_trade_geometry(monkeypatch):
     df = make_ribbon_trendbar_df("LONG")
     patch_klines(monkeypatch, strategy, df)
+    monkeypatch.setattr(strategy, "RIBBON_LOOKBACK_BARS", 12)
 
     sig = evaluate_symbol("TEST_USDT")
 
@@ -97,6 +103,7 @@ def test_active_last_candle_is_ignored(monkeypatch):
     df.iloc[-1, df.columns.get_loc("high")] = 1.0
     df.iloc[-1, df.columns.get_loc("low")] = 0.5
     patch_klines(monkeypatch, strategy, df)
+    monkeypatch.setattr(strategy, "RIBBON_LOOKBACK_BARS", 12)
 
     sig = evaluate_symbol("TEST_USDT")
     assert sig is not None
@@ -106,6 +113,7 @@ def test_active_last_candle_is_ignored(monkeypatch):
 def test_short_signal_valid(monkeypatch):
     df = make_ribbon_trendbar_df("SHORT")
     patch_klines(monkeypatch, strategy, df)
+    monkeypatch.setattr(strategy, "RIBBON_LOOKBACK_BARS", 12)
 
     sig = evaluate_symbol("TEST_USDT")
 
@@ -118,6 +126,7 @@ def test_short_signal_valid(monkeypatch):
 def test_short_trade_geometry(monkeypatch):
     df = make_ribbon_trendbar_df("SHORT")
     patch_klines(monkeypatch, strategy, df)
+    monkeypatch.setattr(strategy, "RIBBON_LOOKBACK_BARS", 12)
 
     sig = evaluate_symbol("TEST_USDT")
 
