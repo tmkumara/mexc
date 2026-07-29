@@ -90,6 +90,7 @@ Runs every `OUTCOME_CHECK_MINUTES` (default 1). For each `pending` DB signal, fe
 | `ATR_PERIOD` | 14 | ATR period for the structural-SL buffer and candidate scoring |
 | `SL_FLOOR_ATR_MULT` | 2.0 | Floors the structural SL at this many ATRs from entry, so it's never tighter than normal candle noise |
 | `ENABLE_LONG_SIGNALS` | true | Both directions live by default; backtesting recommends `false` (SHORT-only) — LONG underperformed SHORT in every configuration tested |
+| `MIN_CANDLE_SETTLE_SECONDS` | 90 | Last closed candle must be at least this old before a signal can fire on it — MEXC's kline data for a just-closed candle can still get revised shortly after close; a candle rejected here gets retried on a later scan (works because `SCAN_INTERVAL_MINUTES` < `ENTRY_TF`, giving multiple scan attempts per candle) |
 | `LEVERAGE` | 20 | Bot's own position leverage; scales ROI% ↔ price% |
 | `TARGET_ROI_PCT` / `MAX_SL_ROI_PCT` | 15.0 / 10.0 | TP/SL sizing at leverage (→ `TP_PRICE_PCT`, `MAX_SL_PRICE_PCT`) |
 | `MIN_RR` | 1.5 | Minimum reward:risk to fire |
@@ -113,6 +114,10 @@ backward search over `RIBBON_LOOKBACK_BARS`, recomputed fresh every scan:
 
 ```
 strategy.evaluate_symbol(symbol, btc_context=None):
+  0. Reject if the last closed candle is younger than
+     MIN_CANDLE_SETTLE_SECONDS -- MEXC's kline data for a just-closed
+     candle can still get revised for a short window after close.
+
   1. _detect_ribbon_flip(df):
      computes the 6-EMA ribbon (RIBBON_MA1_LEN..MA5_LEN vs
      RIBBON_BASELINE_LEN) on closed candles. If the ribbon is NOT

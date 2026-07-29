@@ -14,14 +14,16 @@ floored at SL_FLOOR_ATR_MULT x ATR so it's never tighter than normal
 15m candle noise. LONG signals can be disabled via ENABLE_LONG_SIGNALS
 (true by default) -- LONG underperformed SHORT in every backtest
 configuration tested; set to false to run SHORT-only, as backtesting
-recommends.
+recommends. The last closed candle must be at least
+MIN_CANDLE_SETTLE_SECONDS old before it's used -- MEXC's kline REST data
+for a just-closed candle can still get revised shortly after close.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -186,10 +188,10 @@ def _detect_ribbon_flip(
 
 from market_data import get_market_klines
 from config import (
-    ENTRY_TF, ENTRY_KLINE_COUNT,
+    ENTRY_TF, ENTRY_KLINE_COUNT, CANDLE_MINUTES,
     RIBBON_MA1_LEN, RIBBON_MA2_LEN, RIBBON_MA3_LEN, RIBBON_MA4_LEN, RIBBON_MA5_LEN,
     RIBBON_BASELINE_LEN, RIBBON_LOOKBACK_BARS,
-    TREND_BAR_PAC_LENGTH, ATR_PERIOD,
+    TREND_BAR_PAC_LENGTH, ATR_PERIOD, MIN_CANDLE_SETTLE_SECONDS,
     SL_ATR_BUFFER_MULTIPLIER, SL_FLOOR_ATR_MULT, LEVERAGE, TP_PRICE_PCT, MAX_SL_PRICE_PCT, MIN_RR,
     ENABLE_LONG_SIGNALS,
 )
@@ -306,6 +308,16 @@ def evaluate_symbol(
         if len(closed) < RIBBON_BASELINE_LEN + RIBBON_LOOKBACK_BARS + 10:
             logger.debug("[REJECT] %s insufficient candle history", symbol)
             _bump(reject_sink, "insufficient_history")
+            return None
+
+        candle_close_time = closed.index[-1].to_pydatetime() + timedelta(minutes=CANDLE_MINUTES)
+        candle_age = (datetime.utcnow() - candle_close_time).total_seconds()
+        if candle_age < MIN_CANDLE_SETTLE_SECONDS:
+            logger.debug(
+                "[REJECT] %s last closed candle only %.0fs old (need %ds) -- MEXC data may still settle",
+                symbol, candle_age, MIN_CANDLE_SETTLE_SECONDS,
+            )
+            _bump(reject_sink, "candle_not_settled")
             return None
 
         lengths = (RIBBON_MA1_LEN, RIBBON_MA2_LEN, RIBBON_MA3_LEN, RIBBON_MA4_LEN, RIBBON_MA5_LEN)

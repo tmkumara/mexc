@@ -79,6 +79,15 @@ RIBBON_BASELINE_LEN: int = int(os.getenv("RIBBON_BASELINE_LEN", "60"))
 # benefit to persisting arm/monitor state for a longer wait.
 RIBBON_LOOKBACK_BARS: int = int(os.getenv("RIBBON_LOOKBACK_BARS", "1"))
 
+# Minimum age (seconds) the last CLOSED candle must have before a signal
+# can fire on it. MEXC's kline REST data for a just-closed candle can still
+# get revised for a short window after the close (observed live: a candle
+# read as Trend-Bar-confirming moments after close no longer read that way
+# a few minutes later). Scans run every SCAN_INTERVAL_MINUTES, so a candle
+# rejected here for being too fresh gets picked up on a later scan attempt
+# within the same RIBBON_LOOKBACK_BARS window instead of being missed.
+MIN_CANDLE_SETTLE_SECONDS: int = int(os.getenv("MIN_CANDLE_SETTLE_SECONDS", "90"))
+
 # Price-Action-Channel "Trend Bar" confirmation -- "arrow 2"
 TREND_BAR_PAC_LENGTH: int = int(os.getenv("TREND_BAR_PAC_LENGTH", "50"))
 
