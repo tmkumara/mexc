@@ -62,10 +62,14 @@ def test_trend_bar_does_not_use_future_data():
 
 
 def test_detect_ribbon_flip_finds_recent_bullish_flip():
-    # 60 flat bars, then a strong 20-bar push -- flips the ribbon bullish.
-    n = 80
+    # 71 flat bars (long enough for every EMA to fully converge), then a
+    # short 8-bar push -- from a fully-converged flat state, all 6 EMAs
+    # separate in alpha order (fastest reacts most) on the very first
+    # pushed bar, so the flip lands right at the push's start and a short
+    # push keeps it comfortably inside the 12-bar lookback by series end.
+    n = 79
     closes = np.full(n, 100.0)
-    closes[60:] = 100.0 + np.arange(1, 21) * 3.0
+    closes[71:] = 100.0 + np.arange(1, 9) * 3.0
     df = pd.DataFrame({
         "open": closes, "high": closes + 0.5, "low": closes - 0.5,
         "close": closes, "volume": np.full(n, 1000.0),
@@ -77,9 +81,9 @@ def test_detect_ribbon_flip_finds_recent_bullish_flip():
 
 
 def test_detect_ribbon_flip_finds_recent_bearish_flip():
-    n = 80
+    n = 79
     closes = np.full(n, 100.0)
-    closes[60:] = 100.0 - np.arange(1, 21) * 3.0
+    closes[71:] = 100.0 - np.arange(1, 9) * 3.0
     df = pd.DataFrame({
         "open": closes, "high": closes + 0.5, "low": closes - 0.5,
         "close": closes, "volume": np.full(n, 1000.0),
@@ -113,13 +117,17 @@ def test_detect_ribbon_flip_rejects_when_ribbon_not_currently_aligned():
 
 def test_detect_ribbon_flip_finds_latest_flip_after_a_revert():
     # Flip bullish, revert to bearish, flip bullish again -- must return
-    # the SECOND flip's index, not the first.
-    n = 140
+    # the SECOND flip's index, not the first. No flat tail after the
+    # second push: reversing an already-established opposite alignment
+    # (unlike the very first flip from full convergence) takes many bars
+    # to first close the gap and then re-separate, so the series ends
+    # right at the push -- a flat tail would let the ribbon re-converge
+    # and erase the very flip this test is checking for.
+    n = 130
     closes = np.full(n, 100.0)
-    closes[40:70] = 100.0 + np.arange(1, 31) * 3.0     # first bullish push
+    closes[40:70] = 100.0 + np.arange(1, 31) * 3.0        # first bullish push
     closes[70:100] = closes[69] - np.arange(1, 31) * 3.0  # revert bearish
-    closes[100:130] = closes[99] + np.arange(1, 31) * 3.0  # second bullish push
-    closes[130:] = closes[129]
+    closes[100:n] = closes[99] + np.arange(1, 31) * 3.0   # second bullish push, series ends here
     df = pd.DataFrame({
         "open": closes, "high": closes + 0.5, "low": closes - 0.5,
         "close": closes, "volume": np.full(n, 1000.0),
