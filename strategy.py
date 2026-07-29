@@ -123,6 +123,65 @@ def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -
     )
 
 
+def calculate_ema_ribbon(
+    df: pd.DataFrame, lengths: tuple[int, int, int, int, int], baseline_length: int
+) -> pd.DataFrame:
+    close = df["close"]
+    ma1, ma2, ma3, ma4, ma5 = (calculate_ema(close, length) for length in lengths)
+    baseline = calculate_ema(close, baseline_length)
+    return pd.DataFrame(
+        {"ma1": ma1, "ma2": ma2, "ma3": ma3, "ma4": ma4, "ma5": ma5, "baseline": baseline},
+        index=df.index,
+    )
+
+
+def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
+    pac_hi = calculate_ema(df["high"], pac_length)
+    pac_lo = calculate_ema(df["low"], pac_length)
+    high, low = df["high"], df["low"]
+
+    color = pd.Series("gray", index=df.index, dtype=object)
+    color[(low > pac_hi) & (high > pac_hi)] = "green"
+    color[(high < pac_lo) & (low < pac_lo)] = "red"
+    return color
+
+
+def _detect_ribbon_flip(
+    df: pd.DataFrame,
+    lengths: tuple[int, int, int, int, int],
+    baseline_length: int,
+    lookback_bars: int,
+) -> tuple[str | None, int | None]:
+    ribbon = calculate_ema_ribbon(df, lengths, baseline_length)
+    ma1, ma2, ma3, ma4, ma5, baseline = (
+        ribbon["ma1"], ribbon["ma2"], ribbon["ma3"], ribbon["ma4"], ribbon["ma5"], ribbon["baseline"]
+    )
+    bullish = (ma1 > baseline) & (ma2 > baseline) & (ma3 > baseline) & (ma4 > baseline) & (ma5 > baseline)
+    bearish = (ma1 < baseline) & (ma2 < baseline) & (ma3 < baseline) & (ma4 < baseline) & (ma5 < baseline)
+
+    n = len(df)
+    last = n - 1
+    stop = max(last - lookback_bars, 0)
+
+    if bool(bullish.iloc[last]):
+        for j in range(last, stop - 1, -1):
+            if not bool(bullish.iloc[j]):
+                break
+            if j == 0 or not bool(bullish.iloc[j - 1]):
+                return "LONG", j
+        return None, None
+
+    if bool(bearish.iloc[last]):
+        for j in range(last, stop - 1, -1):
+            if not bool(bearish.iloc[j]):
+                break
+            if j == 0 or not bool(bearish.iloc[j - 1]):
+                return "SHORT", j
+        return None, None
+
+    return None, None
+
+
 def calculate_chandelier_exit(df: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
     close = df["close"].to_numpy()
     atr = (multiplier * calculate_atr(df, atr_period)).to_numpy()
