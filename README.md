@@ -1,21 +1,24 @@
-> **Current strategy (`feature/binocular-trend-confluence`): Binocular Trend Confluence v1.**
-> 15m Supply/Demand zone detection (pivot highs/lows, BOS invalidation)
-> provides structural confluence; a 5m trigger combining Chandelier Exit
-> direction, Price-Volume-Trend-vs-signal momentum, and a dual-RSI
-> (fast/slow) regime filter, confirmed by a breakout-buffer close, drives
-> entries — gated by the same BTC market safety filter and
-> one-active-signal-per-direction correlation limit as before. Target
-> ~0.75% price move (15% ROI at 20x), max ~0.50% stop (10% ROI), min 1.5
-> RR, max 3 signals/day. See `CLAUDE.md` for the full architecture and
-> `docs/superpowers/specs/2026-07-27-binocular-trend-confluence-design.md` /
-> `docs/superpowers/plans/2026-07-27-binocular-trend-confluence.md` for the
+> **Current strategy (`feature/ribbon-trendbar-confirmation`): Ribbon-Flip Trend-Bar Confirmation v1.**
+> A single-timeframe (15m) strategy ported directly from a manual trading
+> rule: a 6-EMA ribbon (30/35/40/45/50 vs a 60-period baseline) flipping
+> fully bullish or bearish is "arrow 1"; a Price-Action-Channel Trend Bar
+> confirming the same direction within `RIBBON_LOOKBACK_BARS` (default 12)
+> of that flip is "arrow 2" — if the ribbon reverts before the Trend Bar
+> confirms, the setup is invalid. No BTC market safety filter and no zone
+> confluence in this version. Target ~0.75% price move (15% ROI at 20x),
+> max ~0.50% stop (10% ROI), min 1.5 RR, max 3 signals/day,
+> one-active-signal-per-direction correlation limit unchanged. See
+> `CLAUDE.md` for the full architecture and
+> `docs/superpowers/specs/2026-07-29-ribbon-trendbar-confirmation-design.md` /
+> `docs/superpowers/plans/2026-07-29-ribbon-trendbar-confirmation.md` for the
 > design and implementation plan.
 >
-> **Limitations (v1):** no automatic breakeven/stop-trailing; the backtest
-> utility (`scripts/backtest_simple_strategy.py`) is limited to whatever
-> history a single MEXC REST kline request returns (no pagination yet);
-> parameters have not been auto-optimized — treat backtest output as a
-> baseline check, not a profitability claim.
+> **Limitations (v1):** no automatic breakeven/stop-trailing; parameters
+> have not been auto-optimized — treat backtest output as a baseline
+> check, not a profitability claim. The previous (Binocular Trend
+> Confluence) strategy's live/backtest results showed near-zero signal
+> frequency and a fragile LONG/SHORT asymmetry once loosened — this
+> version has not yet been validated against a comparable sample.
 >
 > The write-up below is retained for historical reference only and does
 > not describe the currently running strategy.

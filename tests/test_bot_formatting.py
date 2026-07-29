@@ -15,7 +15,7 @@ def _sample_signal() -> Signal:
         leverage=20,
         tp_roi_pct=15.0,
         sl_roi_pct=8.7,
-        timeframe_summary="15m bullish trend + 5m EMA20 pullback reclaim",
+        timeframe_summary="EMA ribbon flip + Trend Bar confirmation",
         generated_at=datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc),
         rr=1.72,
         score=82.5,
@@ -28,7 +28,7 @@ def test_format_signal_contains_key_fields(monkeypatch):
     # STRATEGY_NAME is env-overridable (config.py falls back to the
     # current default only when unset), so pin it here rather than
     # asserting on whatever the ambient environment happens to provide.
-    monkeypatch.setattr(bot, "STRATEGY_NAME", "Binocular Trend Confluence v1")
+    monkeypatch.setattr(bot, "STRATEGY_NAME", "Ribbon-Flip Trend-Bar Confirmation v1")
     msg = format_signal(_sample_signal(), signal_id=12)
 
     assert "XRP/USDT" in msg
@@ -37,8 +37,8 @@ def test_format_signal_contains_key_fields(monkeypatch):
     assert "gross ROI" in msg
     assert "1:1.72" in msg
     assert "20x" in msg
-    assert "15m bullish trend + 5m EMA20 pullback reclaim" in msg
-    assert "Binocular Trend Confluence v1" in msg
+    assert "EMA ribbon flip + Trend Bar confirmation" in msg
+    assert "Ribbon-Flip Trend-Bar Confirmation v1" in msg
     assert "12" in msg
 
 

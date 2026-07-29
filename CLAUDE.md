@@ -66,7 +66,7 @@ systemctl status mexc-dashboard
 The bot is a single-process async application (`main.py`) with three concerns:
 
 **1. Signal generation** (`strategy.py`)
-Runs on APScheduler every `SCAN_INTERVAL_MINUTES` (default 5), a few seconds after candle close. Single public entry point `evaluate_symbol(symbol, btc_context=None)` — a straight per-cycle evaluation, no arm/monitor state machine. Fetches `TREND_TF` (15m) and `ENTRY_TF` (5m) klines and always drops the last (still-forming) bar via `iloc[:-1]`, never evaluating an in-progress candle.
+Runs on APScheduler every `SCAN_INTERVAL_MINUTES` (default 5), a few seconds after candle close. Single public entry point `evaluate_symbol(symbol, btc_context=None)` — a straight per-cycle evaluation, no arm/monitor state machine (`btc_context` is accepted for call-site compatibility but unused — there is no BTC filter in this strategy version). Fetches `ENTRY_TF` (15m) klines and always drops the last (still-forming) bar via `iloc[:-1]`, never evaluating an in-progress candle.
 
 **2. Coin selection** (`coin_scanner.py`)
 Fetches zero-fee USDT perpetual contracts from MEXC, optionally smart-ranks them by liquidity/volatility/trend/liquidity score (`ENABLE_SMART_COIN_RANKING`), and caches the top `TOP_N_COINS` (80, backfilled to at least `COIN_POOL_MIN_SELECTED`). Refreshed every `COIN_REFRESH_HOURS` (6h) via scheduler. Excludes `EXCLUDE_COINS` (BTC/ETH/SOL/XAUT by default).
@@ -82,13 +82,12 @@ Runs every `OUTCOME_CHECK_MINUTES` (default 1). For each `pending` DB signal, fe
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TREND_TF` / `ENTRY_TF` | 15m / 5m | Zone (structural) timeframe and trigger (entry) timeframe |
-| `CHANDELIER_ATR_PERIOD` / `CHANDELIER_MULTIPLIER` | 10 / 2.2 | 5m Chandelier Exit params (trigger direction) |
-| `PVT_SIGNAL_LENGTH` / `PVT_SIGNAL_TYPE` | 21 / SMA | PVT signal-average length and MA type (SMA or EMA) |
-| `RSI_FAST_PERIOD` / `RSI_SLOW_PERIOD` | 25 / 55 | Dual-RSI regime filter periods (fast vs slow agreement) |
-| `ZONE_SWING_LENGTH` / `ZONE_ATR_PERIOD` / `ZONE_BOX_WIDTH` | 10 / 50 / 2.5 | 15m pivot lookback, ATR period, and zone box width (ATR-buffer/10) |
-| `ZONE_PROXIMITY_ATR_MULT` / `ZONE_MAX_AGE_BARS` | 0.5 / 100 | Confluence-zone proximity tolerance (x ATR) and max zone age in bars |
-| `ENTRY_BUFFER_PCT` | 0.0002 | Breakout-buffer fraction the trigger close must clear beyond the prior high/low |
+| `ENTRY_TF` | 15m | Single timeframe -- both the EMA ribbon and Trend Bar are computed on it |
+| `RIBBON_MA1_LEN` … `RIBBON_MA5_LEN` | 30/35/40/45/50 | The 6-EMA ribbon's five short EMA lengths |
+| `RIBBON_BASELINE_LEN` | 60 | The ribbon's baseline EMA length ("MA6" in the Pine source) |
+| `RIBBON_LOOKBACK_BARS` | 12 | How many bars back a ribbon flip may have happened and still count as "recent enough" |
+| `TREND_BAR_PAC_LENGTH` | 50 | Price-Action-Channel EMA length behind the Trend Bar confirmation |
+| `ATR_PERIOD` | 14 | ATR period for the structural-SL buffer and candidate scoring |
 | `LEVERAGE` | 20 | Bot's own position leverage; scales ROI% ↔ price% |
 | `TARGET_ROI_PCT` / `MAX_SL_ROI_PCT` | 15.0 / 10.0 | TP/SL sizing at leverage (→ `TP_PRICE_PCT`, `MAX_SL_PRICE_PCT`) |
 | `MIN_RR` | 1.5 | Minimum reward:risk to fire |
@@ -99,62 +98,58 @@ Runs every `OUTCOME_CHECK_MINUTES` (default 1). For each `pending` DB signal, fe
 | `SIGNAL_EXPIRE_HOURS` | 6 | Pending signals auto-expire |
 | `TOP_N_COINS` | 80 | Pairs tracked |
 | `EXCLUDE_COINS` | BTC/ETH/SOL/XAUT | Always excluded |
-| `ENABLE_BTC_FILTER` | true | Gate all signals on BTC's own 15m trend/volatility |
 
-## Signal Logic (strategy.py) — Binocular Trend Confluence v1
+## Signal Logic (strategy.py) — Ribbon-Flip Trend-Bar Confirmation v1
 
-Single-pass evaluation per scan cycle, no persisted setup state:
+Single-pass evaluation per scan cycle, no persisted setup state. Ported
+from a TradingView Pine Script's 6-EMA ribbon and Price-Action-Channel
+"Trend Bar" indicators, per the exact manual rule: ribbon flips direction
+("arrow 1"), then wait for the Trend Bar to confirm the same direction
+("arrow 2") — if the ribbon reverts first, the setup is invalid. No
+persisted arm/monitor state is used; the "wait" is instead a bounded
+backward search over `RIBBON_LOOKBACK_BARS`, recomputed fresh every scan:
 
 ```
 strategy.evaluate_symbol(symbol, btc_context=None):
-  1. build_zones(df_15m, ...):
-     finds pivot highs/lows (ZONE_SWING_LENGTH) on closed 15m candles,
-     turns each into a supply (pivot high) or demand (pivot low) box
-     sized by ATR(ZONE_ATR_PERIOD) x (ZONE_BOX_WIDTH / 10), and marks a
-     zone invalidated (BOS) once a later close trades through it. Zones
-     older than ZONE_MAX_AGE_BARS are dropped; only active
-     (non-BOS, in-range) zones are kept.
+  1. _detect_ribbon_flip(df):
+     computes the 6-EMA ribbon (RIBBON_MA1_LEN..MA5_LEN vs
+     RIBBON_BASELINE_LEN) on closed candles. If the ribbon is NOT
+     currently fully aligned (all 5 short EMAs above/below the
+     baseline) -> no trade. If it is aligned, walks backward up to
+     RIBBON_LOOKBACK_BARS bars to find the most recent bar where that
+     alignment began (a genuine flip-in, not just "still aligned from
+     ages ago"). No flip found within the window -> no trade.
 
-  2. _detect_trigger(df_5m):
-     on the latest CLOSED 5m candle:
-       - Chandelier Exit (CHANDELIER_ATR_PERIOD, CHANDELIER_MULTIPLIER)
-         direction must be bullish (LONG) or bearish (SHORT)
-       - PVT vs its signal average (PVT_SIGNAL_LENGTH, PVT_SIGNAL_TYPE)
-         must agree with that direction (PVT above/below signal)
-       - RSI_FAST vs RSI_SLOW must agree with that direction
-         (fast > slow for LONG, fast < slow for SHORT)
-       - close must clear the prior candle's high/low by
-         ENTRY_BUFFER_PCT (breakout confirmation)
-     any failed check -> no trade, otherwise -> LONG or SHORT
+  2. calculate_trend_bar(df, TREND_BAR_PAC_LENGTH):
+     on the latest CLOSED candle, checks whether the candle's entire
+     range sits above (green) or below (red) a Price-Action-Channel
+     built from EMA(high, TREND_BAR_PAC_LENGTH) / EMA(low,
+     TREND_BAR_PAC_LENGTH). Must match the ribbon's direction (green
+     for LONG, red for SHORT) -> otherwise no trade. Because the ribbon
+     search above already re-derives the flip fresh each scan, a
+     reverted-then-reflipped ribbon is naturally excluded without any
+     extra "did it revert" bookkeeping.
 
-  3. _find_confluence_zone(): requires an active opposing-type zone
-     (demand zone for LONG, supply zone for SHORT) within
-     ZONE_PROXIMITY_ATR_MULT x ATR(ZONE_ATR_PERIOD) of the trigger
-     price; no such zone -> no trade.
+  3. _calculate_tp_sl(): fixed-distance TP at TP_PRICE_PCT
+     (= TARGET_ROI_PCT / 100 / LEVERAGE); SL placed at the swing
+     low/high spanning from the ribbon-flip bar through the current
+     bar, plus an ATR buffer (SL_ATR_BUFFER_MULTIPLIER), capped at
+     MAX_SL_PRICE_PCT (= MAX_SL_ROI_PCT / 100 / LEVERAGE).
 
-  4. If ENABLE_BTC_FILTER, build_btc_context()/_btc_filter_ok() must pass
-     (see below).
+  4. RR = reward / risk must be >= MIN_RR.
 
-  5. _calculate_tp_sl(): fixed-distance TP at TP_PRICE_PCT
-     (= TARGET_ROI_PCT / 100 / LEVERAGE); SL placed at the confluence
-     zone's far boundary plus an ATR buffer (SL_ATR_BUFFER_MULTIPLIER),
-     capped at MAX_SL_PRICE_PCT (= MAX_SL_ROI_PCT / 100 / LEVERAGE).
-
-  6. RR = reward / risk must be >= MIN_RR.
-
-  7. _score_candidate(): 0-100 composite — zone proximity (25),
-     PVT-vs-signal momentum magnitude (25), breakout clearance (20),
-     RSI_FAST ideal-band quality (10), RR quality (10), zone freshness
-     (10) — used to rank multiple candidates within a scan.
+  5. _score_candidate(): 0-100 composite — ribbon alignment strength vs
+     ATR (40), flip freshness within the lookback window (20), Trend Bar
+     clearance beyond the PAC channel vs ATR (20), RR quality (20) —
+     used to rank multiple candidates within a scan.
 ```
 
+There is no BTC market-safety filter in this strategy version (dropped
+along with the zone/Chandelier/PVT/dual-RSI pipeline it replaced) — the
+`btc_context` parameter on `evaluate_symbol` is accepted for call-site
+compatibility only and has no effect.
+
 `main.scan_and_fire_signals` evaluates the whole coin pool in a thread pool, sorts candidates by score, and fires the top ones subject to `MAX_DAILY_SIGNALS`, `MIN_DAILY_SIGNAL_GAP_MINUTES`, `MAX_CONCURRENT_SIGNALS`, `SIGNALS_PER_SCAN`, per-coin `SIGNAL_COOLDOWN_MINUTES`, and `direction_slot_available()` (the `MAX_ACTIVE_LONG_SIGNALS`/`MAX_ACTIVE_SHORT_SIGNALS` correlation limit).
-
-### BTC market-safety filter (`build_btc_context` / `_btc_filter_ok` in strategy.py)
-
-Computes BTC's own 15m EMA(200)/Supertrend plus its 1-candle and 3-candle % moves once per scan cycle (shared across all symbols). A candidate is blocked when:
-- BTC's 1-candle or 3-candle move exceeds `BTC_MAX_SINGLE_CANDLE_MOVE_PCT` / `BTC_MAX_THREE_CANDLE_MOVE_PCT` (extreme volatility, either direction)
-- BTC's own trend (close vs EMA200 + Supertrend direction) doesn't agree with the signal's direction, or is moving against it by more than `BTC_MAX_OPPOSING_MOVE_PCT`
 
 ### Outcome checking (`outcome_check.check_tp_sl`)
 

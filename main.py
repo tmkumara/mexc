@@ -1,5 +1,5 @@
 """
-Main entry point — Binocular Trend Confluence v1.
+Main entry point — Ribbon-Flip Trend-Bar Confirmation v1.
 
 Scheduler jobs / background tasks:
   Every SCAN_INTERVAL_MINUTES (default 5m), a few seconds after candle
@@ -554,7 +554,7 @@ async def main():
     # Signal scanner -- every SCAN_INTERVAL_MINUTES, a few seconds after
     # candle close so MEXC has finalized the candle.
     if STRATEGY_V1_ENABLED:
-        logger.info("[V1] Binocular Trend Confluence scanner ENABLED")
+        logger.info("[V1] Ribbon-Flip Trend-Bar Confirmation scanner ENABLED")
         scheduler.add_job(
             scan_and_fire_signals,
             CronTrigger(minute=f"*/{SCAN_INTERVAL_MINUTES}", second=5),
@@ -562,7 +562,7 @@ async def main():
             id="signal_scanner",
         )
     else:
-        logger.info("[V1] Binocular Trend Confluence scanner DISABLED (STRATEGY_V1_ENABLED=false)")
+        logger.info("[V1] Ribbon-Flip Trend-Bar Confirmation scanner DISABLED (STRATEGY_V1_ENABLED=false)")
 
     scheduler.add_job(
         check_outcomes,

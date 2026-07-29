@@ -24,15 +24,15 @@ def test_save_signal_persists_new_metadata_columns(tmp_path, monkeypatch):
     now = datetime.now(timezone.utc)
     db.save_signal(
         "XRP_USDT", "LONG", 1.0, 1.0075, 0.995, 20, now,
-        strategy_name="Binocular Trend Confluence v1",
+        strategy_name="Ribbon-Flip Trend-Bar Confirmation v1",
         score=82.5, rr=1.72, entry_timeframe="5m", trend_timeframe="15m",
-        setup_reason="15m bullish trend + 5m EMA20 pullback reclaim",
+        setup_reason="EMA ribbon flip + Trend Bar confirmation",
     )
 
     row = db.get_pending_signals()[0]
-    assert row["strategy_name"] == "Binocular Trend Confluence v1"
+    assert row["strategy_name"] == "Ribbon-Flip Trend-Bar Confirmation v1"
     assert row["score"] == 82.5
     assert row["rr"] == 1.72
     assert row["entry_timeframe"] == "5m"
     assert row["trend_timeframe"] == "15m"
-    assert row["setup_reason"] == "15m bullish trend + 5m EMA20 pullback reclaim"
+    assert row["setup_reason"] == "EMA ribbon flip + Trend Bar confirmation"

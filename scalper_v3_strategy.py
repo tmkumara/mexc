@@ -19,8 +19,7 @@ Wraps SuperScalper (super_scalper_v3.py) with:
 
 v3 is entirely additive and OFF by default (SCALPER_V3_ENABLED=false) --
 see main.py's scan_and_fire_signals_v3, which is only scheduled when the
-flag is set. Nothing here touches the live v1 Binocular Trend Confluence
-scan path.
+flag is set. Nothing here touches the live v1 (strategy.py) scan path.
 """
 
 from __future__ import annotations
