@@ -393,7 +393,7 @@ async def run_ws_test() -> None:
     Usage:
         python mexc_ws_client.py
     """
-    from config import WS_TEST_SYMBOLS, ENTRY_TF, TREND_TF, CANDLE_CACHE_LIMIT
+    from config import WS_TEST_SYMBOLS, ENTRY_TF, CANDLE_CACHE_LIMIT
 
     logging.basicConfig(
         level=logging.INFO,
@@ -416,7 +416,7 @@ async def run_ws_test() -> None:
     client = MexcWebSocketClient(
         candle_cache=cache,
         symbols=symbols,
-        app_intervals=[ENTRY_TF, TREND_TF],
+        app_intervals=[ENTRY_TF],
         on_candle_update=on_update,
     )
 

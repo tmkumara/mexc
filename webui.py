@@ -230,20 +230,13 @@ def get_runtime_status() -> dict:
 
 
 def get_strategy_config() -> dict:
-    """Return dashboard-safe strategy/runtime configuration for Binocular Trend Confluence v1."""
+    """Return dashboard-safe strategy/runtime configuration for Ribbon-Flip Trend-Bar Confirmation v1."""
     return {
-        "strategy": _safe_config_value("STRATEGY_NAME", "Binocular Trend Confluence v1"),
-        "trend_tf": _safe_config_value("TREND_TF", "—"),
+        "strategy": _safe_config_value("STRATEGY_NAME", "Ribbon-Flip Trend-Bar Confirmation v1"),
         "entry_tf": _safe_config_value("ENTRY_TF", "—"),
-        "chandelier_atr_period": _safe_config_value("CHANDELIER_ATR_PERIOD", "—"),
-        "chandelier_multiplier": _safe_config_value("CHANDELIER_MULTIPLIER", "—"),
-        "pvt_signal_length": _safe_config_value("PVT_SIGNAL_LENGTH", "—"),
-        "rsi_fast_period": _safe_config_value("RSI_FAST_PERIOD", "—"),
-        "rsi_slow_period": _safe_config_value("RSI_SLOW_PERIOD", "—"),
-        "zone_swing_length": _safe_config_value("ZONE_SWING_LENGTH", "—"),
-        "zone_box_width": _safe_config_value("ZONE_BOX_WIDTH", "—"),
-        "zone_proximity_atr_mult": _safe_config_value("ZONE_PROXIMITY_ATR_MULT", "—"),
-        "entry_buffer_pct": _safe_config_value("ENTRY_BUFFER_PCT", "—"),
+        "ribbon_baseline_len": _safe_config_value("RIBBON_BASELINE_LEN", "—"),
+        "ribbon_lookback_bars": _safe_config_value("RIBBON_LOOKBACK_BARS", "—"),
+        "trend_bar_pac_length": _safe_config_value("TREND_BAR_PAC_LENGTH", "—"),
 
         "top_n_coins": _safe_config_value("TOP_N_COINS", "—"),
         "min_volume_usd": _safe_config_value("COIN_POOL_MIN_VOLUME_USD", "—"),
@@ -261,7 +254,6 @@ def get_strategy_config() -> dict:
         "cooldown_minutes": _safe_config_value("SIGNAL_COOLDOWN_MINUTES", "—"),
         "scan_workers": _safe_config_value("SCAN_WORKERS", "—"),
 
-        "enable_btc_filter": _safe_config_value("ENABLE_BTC_FILTER", False),
         "crypto_futures_only": _safe_config_value("CRYPTO_FUTURES_ONLY", True),
         "dry_run": _safe_config_value("DRY_RUN", True),
     }
@@ -783,9 +775,9 @@ tr:hover td {
 
   <div class="section-title">Current Strategy Setup</div>
   <div class="grid config-grid">
-    <div class="card"><div class="card-label">Timeframes</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">Trend / Entry</div></div>
-    <div class="card"><div class="card-label">RSI Regime</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">Fast / Slow RSI period</div></div>
-    <div class="card"><div class="card-label">BTC Filter</div><div class="card-value green" id="cfg-confirm">—</div><div class="card-small" id="cfg-confirm-sub">—</div></div>
+    <div class="card"><div class="card-label">Timeframe</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">Ribbon + Trend Bar</div></div>
+    <div class="card"><div class="card-label">Ribbon Baseline</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">EMA length (arrow 1)</div></div>
+    <div class="card"><div class="card-label">Trend Bar</div><div class="card-value green" id="cfg-confirm">—</div><div class="card-small" id="cfg-confirm-sub">—</div></div>
     <div class="card"><div class="card-label">Risk Model</div><div class="card-value orange" id="cfg-rr">—</div><div class="card-small" id="cfg-rr-sub">—</div></div>
   </div>
 
@@ -963,17 +955,13 @@ function renderRuntime() {
   set("r-active", r.active_signals);
 }
 
-function boolLabel(v) {
-  return v ? "ON" : "OFF";
-}
-
 function renderConfig() {
   const c = data.config;
 
-  set("cfg-tf", `${c.trend_tf} / ${c.entry_tf}`);
-  set("cfg-quality", `RSI(${c.rsi_fast_period}) / RSI(${c.rsi_slow_period})`);
-  set("cfg-confirm", boolLabel(c.enable_btc_filter));
-  set("cfg-confirm-sub", `Zone ${c.trend_tf} (swing ${c.zone_swing_length}, box ${c.zone_box_width}) | Trigger ${c.entry_tf} Chandelier(${c.chandelier_atr_period},${c.chandelier_multiplier})+PVT(${c.pvt_signal_length}) | BTC filter ${boolLabel(c.enable_btc_filter)}`);
+  set("cfg-tf", `${c.entry_tf}`);
+  set("cfg-quality", `EMA(${c.ribbon_baseline_len})`);
+  set("cfg-confirm", `PAC(${c.trend_bar_pac_length})`);
+  set("cfg-confirm-sub", `Ribbon flip within ${c.ribbon_lookback_bars} bars, confirmed by Trend Bar`);
   set("cfg-rr", `${c.min_rr}R min`);
   set("cfg-rr-sub", `TP ${c.target_roi_pct}% | SL ≤ ${c.max_sl_roi_pct}% | ${c.leverage}x`);
 }

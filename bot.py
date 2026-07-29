@@ -207,9 +207,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     from config import (
         STRATEGY_NAME,
-        TREND_TF, ENTRY_TF,
-        RSI_FAST_PERIOD, RSI_SLOW_PERIOD,
-        CHANDELIER_ATR_PERIOD, CHANDELIER_MULTIPLIER,
+        ENTRY_TF,
+        RIBBON_BASELINE_LEN, RIBBON_LOOKBACK_BARS, TREND_BAR_PAC_LENGTH,
         MAX_SL_ROI_PCT, TARGET_ROI_PCT,
         MIN_RR,
         SCAN_INTERVAL_MINUTES,
@@ -241,9 +240,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"State:       {_code(state)}",
         f"Strategy:    {_code(STRATEGY_NAME)}",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"Zone TF:     {_code(TREND_TF)}  (Supply/Demand zones)",
-        f"Trigger TF:  {_code(ENTRY_TF)}  (Chandelier {CHANDELIER_ATR_PERIOD}/{CHANDELIER_MULTIPLIER} + PVT + dual-RSI)",
-        f"RSI regime:  {_code(f'fast({RSI_FAST_PERIOD}) vs slow({RSI_SLOW_PERIOD})')}",
+        f"TF:          {_code(ENTRY_TF)}  (Ribbon 30/35/40/45/50 vs {RIBBON_BASELINE_LEN})",
+        f"Confirm:     {_code(f'Trend Bar (PAC {TREND_BAR_PAC_LENGTH}) within {RIBBON_LOOKBACK_BARS} bars')}",
         f"SL cap:      {_code(f'{MAX_SL_ROI_PCT:.0f}% ROI')}",
         f"RR min:      {_code(f'1:{MIN_RR:.2g}')}",
         f"TP target:   {_code(f'{TARGET_ROI_PCT:.0f}% ROI @ {LEVERAGE}x')}",

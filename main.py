@@ -38,7 +38,6 @@ from market_data import get_market_klines
 from config import (
     LKT,
     LEVERAGE,
-    TREND_TF,
     ENTRY_TF,
     CANDLE_MINUTES,
     SIGNAL_EXPIRE_HOURS,
@@ -146,8 +145,6 @@ async def scan_and_fire_signals(app: Application) -> None:
         logger.info("[SCAN] %d/%d active signals — no slots", active_signals, MAX_CONCURRENT_SIGNALS)
         return
 
-    btc_context = strategy.build_btc_context()
-
     to_scan = [s for s in coins if not db.signal_exists_for_coin(s, cooldown_since)]
 
     # One private reject-reason dict per symbol -- each is written by exactly
@@ -159,7 +156,7 @@ async def scan_and_fire_signals(app: Application) -> None:
         results = await loop.run_in_executor(
             None,
             lambda: list(executor.map(
-                lambda i: strategy.evaluate_symbol(to_scan[i], btc_context, reject_sink=reject_maps[i]),
+                lambda i: strategy.evaluate_symbol(to_scan[i], reject_sink=reject_maps[i]),
                 range(len(to_scan)),
             )),
         )
@@ -235,7 +232,7 @@ async def scan_and_fire_signals(app: Application) -> None:
                 score=sig.score,
                 rr=sig.rr,
                 entry_timeframe=ENTRY_TF,
-                trend_timeframe=TREND_TF,
+                trend_timeframe=ENTRY_TF,
                 setup_reason=sig.timeframe_summary,
             )
 
@@ -526,7 +523,6 @@ async def check_outcomes_v3(app: Application) -> None:
 async def main():
     logger.info("Starting MEXC Signal Bot")
     logger.info("Strategy: %s", STRATEGY_NAME)
-    logger.info("Trend TF: %s", TREND_TF)
     logger.info("Entry TF: %s", ENTRY_TF)
     logger.info("Target ROI: %.0f%%", TARGET_ROI_PCT)
     logger.info("Max SL ROI: %.0f%%", MAX_SL_ROI_PCT)
