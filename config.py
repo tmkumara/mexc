@@ -111,15 +111,7 @@ SIGNAL_EXPIRE_HOURS: int = int(os.getenv("SIGNAL_EXPIRE_HOURS", "6"))
 
 SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "4"))
 
-# ── BTC market safety filter ─────────────────────────────────────────
-ENABLE_BTC_FILTER: bool = os.getenv("ENABLE_BTC_FILTER", "true").lower() == "true"
-BTC_FILTER_SYMBOL: str = os.getenv("BTC_FILTER_SYMBOL", "BTC_USDT")
-BTC_FILTER_TF: str = os.getenv("BTC_FILTER_TF", "15m")
-BTC_MAX_OPPOSING_MOVE_PCT: float = float(os.getenv("BTC_MAX_OPPOSING_MOVE_PCT", "0.20"))
-BTC_MAX_SINGLE_CANDLE_MOVE_PCT: float = float(os.getenv("BTC_MAX_SINGLE_CANDLE_MOVE_PCT", "0.60"))
-BTC_MAX_THREE_CANDLE_MOVE_PCT: float = float(os.getenv("BTC_MAX_THREE_CANDLE_MOVE_PCT", "1.20"))
-
-# ── Strategy: Binocular Trend Confluence v1 ──
+# ── Strategy: Ribbon-Flip Trend-Bar Confirmation v1 ──
 # On by default for backward compatibility; set false in .env to stop
 # firing new v1 signals (e.g. once v3 is validated and preferred).
 # Outcome checking for any already-pending v1 signals keeps running
