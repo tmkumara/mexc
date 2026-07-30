@@ -238,6 +238,28 @@ def detect_transition(trigger: pd.DataFrame) -> str | None:
     return None
 
 
+def confirmed_mode_ok(direction: str, df: pd.DataFrame) -> bool:
+    lengths = (RIBBON_MA1_LEN, RIBBON_MA2_LEN, RIBBON_MA3_LEN, RIBBON_MA4_LEN, RIBBON_MA5_LEN)
+    ribbon = calculate_ema_ribbon(df, lengths, RIBBON_BASELINE_LEN)
+    ema200 = calculate_ema200(df, BINOCULAR_EMA200_LEN)
+
+    ma1 = float(ribbon["ma1"].iloc[-1]); ma2 = float(ribbon["ma2"].iloc[-1])
+    ma3 = float(ribbon["ma3"].iloc[-1]); ma4 = float(ribbon["ma4"].iloc[-1])
+    ma5 = float(ribbon["ma5"].iloc[-1]); baseline = float(ribbon["baseline"].iloc[-1])
+    close = float(df["close"].iloc[-1])
+    ema200_last = float(ema200.iloc[-1])
+
+    if direction == "LONG":
+        return (
+            ma1 > baseline and ma2 > baseline and ma3 > baseline
+            and ma4 > baseline and ma5 > baseline and close > ema200_last
+        )
+    return (
+        ma1 < baseline and ma2 < baseline and ma3 < baseline
+        and ma4 < baseline and ma5 < baseline and close < ema200_last
+    )
+
+
 def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
     pac_hi = calculate_ema(df["high"], pac_length)
     pac_lo = calculate_ema(df["low"], pac_length)

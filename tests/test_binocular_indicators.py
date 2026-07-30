@@ -166,3 +166,18 @@ def test_calculate_binocular_trigger_strong_uptrend_eventually_buys(monkeypatch)
     trigger = calculate_binocular_trigger(df)
     assert bool(trigger["buy"].iloc[-1]) is True
     assert bool(trigger["sell"].iloc[-1]) is False
+
+
+from strategy import confirmed_mode_ok
+
+
+def test_confirmed_mode_ok_for_long_uptrend():
+    df = _trend_df(260, step=0.5)
+    assert confirmed_mode_ok("LONG", df) is True
+    assert confirmed_mode_ok("SHORT", df) is False
+
+
+def test_confirmed_mode_ok_for_short_downtrend():
+    df = _trend_df(260, step=-0.5)
+    assert confirmed_mode_ok("SHORT", df) is True
+    assert confirmed_mode_ok("LONG", df) is False
