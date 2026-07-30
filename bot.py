@@ -63,26 +63,55 @@ def format_signal(signal, signal_id: int) -> str:
     arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
     coin  = signal.symbol.replace("_", "/")
 
-    return "\n".join([
+    lines = [
         f"{escape(arrow)} — {_bold(coin)} Futures",
         "━━━━━━━━━━━━━━━━━━━━",
         f"📍 Entry:    {_code(f'{signal.entry_price:,.6g}')}",
-        f"🎯 TP:       {_code(f'{signal.tp_price:,.6g}')}  {_italic(f'+{signal.tp_roi_pct:.1f}% gross ROI')}",
-        f"🛑 SL:       {_code(f'{signal.sl_price:,.6g}')}  {_italic(f'-{signal.sl_roi_pct:.1f}% gross ROI')}",
-        f"📊 RR:       {_code(f'1:{signal.rr:.3g}')}",
-        f"⚡ Leverage: {_code(f'{signal.leverage}x')}  {_italic('Isolated')}",
-        f"🧭 Setup:    {_italic(escape(signal.timeframe_summary))}",
-        f"📈 Strategy: {STRATEGY_NAME}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"⏰ {_code(signal.generated_at.astimezone(LKT).strftime('%Y-%m-%d %H:%M LKT'))}",
-        f"🆔 Signal ID: {_code(signal_id)}",
-        _italic("⚠️ Not financial advice. Use risk management."),
-    ])
+        f"🎯 T1 (50%): {_code(f'{signal.tp_price:,.6g}')}  {_italic(f'+{signal.tp_roi_pct:.1f}% gross ROI')}",
+    ]
+    if signal.tp2_price is not None:
+        lines.append(f"🎯 T2 (30%): {_code(f'{signal.tp2_price:,.6g}')}")
+    if signal.tp3_price is not None:
+        lines.append(f"🎯 T3 (20%): {_code(f'{signal.tp3_price:,.6g}')}")
+    lines.append(f"🛑 SL:       {_code(f'{signal.sl_price:,.6g}')}  {_italic(f'-{signal.sl_roi_pct:.1f}% gross ROI')}")
+    lines.append(f"📊 RR:       {_code(f'1:{signal.rr:.3g}')} (to T1)")
+    lines.append(f"⚡ Leverage: {_code(f'{signal.leverage}x')}  {_italic('Isolated')}")
+    if signal.position_size is not None:
+        lines.append(f"📦 Position size: {_code(f'{signal.position_size:,.4g}')}")
+    lines.append(f"🧭 Setup:    {_italic(escape(signal.timeframe_summary))}")
+    lines.append(f"📈 Strategy: {STRATEGY_NAME}")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append(f"⏰ {_code(signal.generated_at.astimezone(LKT).strftime('%Y-%m-%d %H:%M LKT'))}")
+    lines.append(f"🆔 Signal ID: {_code(signal_id)}")
+    lines.append(_italic("⚠️ Not financial advice. Use risk management."))
+    return "\n".join(lines)
 
 
 async def broadcast_signal(app: Application, signal, signal_id: int) -> None:
     msg = format_signal(signal, signal_id)
     await _send_html(app, msg)
+
+
+async def notify_target_progress(app: Application, signal_db: dict, stage: int) -> None:
+    """Sent when T1 (50% closed, SL moved to breakeven) or T2 (30% more
+    closed) fills. Replies to the original signal message when available."""
+    direction = signal_db["direction"]
+    symbol = signal_db["symbol"].replace("_", "/")
+    arrow = "🟢" if direction == "LONG" else "🔴"
+
+    if stage == 1:
+        label = "T1 hit — 50% closed, SL moved to breakeven"
+    else:
+        label = "T2 hit — 30% more closed"
+
+    msg = "\n".join([
+        f"📶 {_bold('Target Progress')}",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"{arrow} {escape(direction)} — {_bold(symbol)}",
+        _code(label),
+        f"🆔 Signal ID: {_code(signal_db['id'])}",
+    ])
+    await _send_html(app, msg, reply_to_message_id=signal_db.get("signal_message_id"))
 
 
 def format_v3_signal(signal, signal_id: int) -> str:
@@ -144,11 +173,18 @@ async def notify_outcome(app: Application, signal_db: dict) -> None:
     symbol    = signal_db["symbol"].replace("_", "/")
     status    = signal_db["status"]
     roi       = signal_db.get("pnl_roi") or 0.0
+    final_stage = signal_db.get("final_stage")
 
-    if status == "win":
+    if status == "win" and final_stage == 3:
+        emoji, label = "✅", f"FULL TARGET (T1+T2+T3) {roi:+.1f}%"
+    elif status == "win" and final_stage == 2:
+        emoji, label = "✅", f"T1+T2 HIT, THEN STOPPED {roi:+.1f}%"
+    elif status == "win" and final_stage == 1:
+        emoji, label = "✅", f"T1 HIT, BE STOP {roi:+.1f}%"
+    elif status == "win":
         emoji, label = "✅", f"TARGET HIT {roi:+.1f}%"
     elif status == "loss":
-        emoji, label = "❌", f"STOP HIT {roi:+.1f}%"
+        emoji, label = "❌", f"STOPPED OUT {roi:+.1f}%"
     else:
         emoji, label = "💤", "EXPIRED"
 
