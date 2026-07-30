@@ -144,3 +144,77 @@ def test_detect_pending_setup_returns_none_on_flat_series(monkeypatch):
     patch_klines(monkeypatch, strategy, flat)
     sink = {}
     assert detect_pending_setup("XRP_USDT", reject_sink=sink) is None
+
+
+from datetime import datetime, timezone, timedelta
+from strategy import check_setup_confirmation
+
+
+def _setup_dict(symbol="XRP_USDT", direction="LONG", entry=101.0, sl=100.0, created_at=None):
+    if created_at is None:
+        created_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    return {
+        "symbol": symbol, "direction": direction,
+        "trigger_price": entry, "sl_price": sl,
+        "created_at": created_at.isoformat(),
+    }
+
+
+def test_setup_confirms_on_entry_breakout(monkeypatch):
+    idx = pd.date_range("2026-01-01", periods=3, freq="15min")
+    df = pd.DataFrame({
+        "open": [100.5, 100.6, 101.2], "high": [100.7, 100.8, 101.5],
+        "low": [100.3, 100.4, 101.0], "close": [100.6, 100.7, 101.3],
+        "volume": [1000.0] * 3,
+    }, index=idx)
+    df = pd.concat([df, df.iloc[[-1]]])
+    monkeypatch.setattr(strategy, "get_market_klines", lambda *a, **k: df)
+
+    setup = _setup_dict(entry=101.0, sl=100.0)
+    status, fill = check_setup_confirmation(setup)
+    assert status == "confirmed"
+    assert fill == pytest.approx(101.0)
+
+
+def test_same_candle_sl_blocks_confirmation(monkeypatch):
+    idx = pd.date_range("2026-01-01", periods=3, freq="15min")
+    df = pd.DataFrame({
+        "open": [100.5, 100.6, 100.8], "high": [100.7, 100.8, 101.5],
+        "low": [100.3, 100.4, 99.5],
+        "close": [100.6, 100.7, 100.9],
+        "volume": [1000.0] * 3,
+    }, index=idx)
+    df = pd.concat([df, df.iloc[[-1]]])
+    monkeypatch.setattr(strategy, "get_market_klines", lambda *a, **k: df)
+
+    setup = _setup_dict(entry=101.0, sl=100.0)
+    status, fill = check_setup_confirmation(setup)
+    assert status == "invalidated"
+    assert fill is None
+
+
+def test_setup_expires_after_n_candles(monkeypatch):
+    monkeypatch.setattr(strategy, "PENDING_SIGNAL_EXPIRY_CANDLES", 2)
+    idx = pd.date_range("2026-01-01", periods=3, freq="15min")
+    df = pd.DataFrame({
+        "open": [100.5, 100.6, 100.7], "high": [100.7, 100.8, 100.85],
+        "low": [100.3, 100.4, 100.5], "close": [100.6, 100.7, 100.75],
+        "volume": [1000.0] * 3,
+    }, index=idx)
+    df = pd.concat([df, df.iloc[[-1]]])
+    monkeypatch.setattr(strategy, "get_market_klines", lambda *a, **k: df)
+
+    old_created = datetime.now(timezone.utc) - timedelta(minutes=60)
+    setup = _setup_dict(entry=101.0, sl=100.0, created_at=old_created)
+    status, fill = check_setup_confirmation(setup)
+    assert status == "expired"
+
+
+def test_setup_invalidated_by_opposite_transition(monkeypatch):
+    from tests.strategy_fixtures import make_15m_trend_df
+    df = make_15m_trend_df("SHORT", bars=260)
+    monkeypatch.setattr(strategy, "get_market_klines", lambda *a, **k: df)
+
+    setup = _setup_dict(direction="LONG", entry=10_000.0, sl=9_000.0)
+    status, fill = check_setup_confirmation(setup)
+    assert status in ("invalidated", "waiting")

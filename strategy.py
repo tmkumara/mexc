@@ -469,6 +469,51 @@ def detect_pending_setup(symbol: str, reject_sink: dict | None = None) -> dict |
         return None
 
 
+def check_setup_confirmation(setup: dict) -> tuple[str, float | None]:
+    symbol = setup["symbol"]
+    direction = setup["direction"]
+    entry = setup["trigger_price"]
+    sl = setup["sl_price"]
+
+    raw = get_market_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
+    if raw is None or raw.empty:
+        return "waiting", None
+
+    closed = raw.iloc[:-1].copy()
+    if closed.empty:
+        return "waiting", None
+
+    latest = closed.iloc[-1]
+    high, low = float(latest["high"]), float(latest["low"])
+
+    if direction == "LONG":
+        sl_hit = low <= sl
+        entry_hit = high > entry
+    else:
+        sl_hit = high >= sl
+        entry_hit = low < entry
+
+    if sl_hit:
+        return "invalidated", None
+    if entry_hit:
+        return "confirmed", entry
+
+    created_at = datetime.fromisoformat(setup["created_at"])
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    age_minutes = (datetime.now(timezone.utc) - created_at).total_seconds() / 60.0
+    if age_minutes > PENDING_SIGNAL_EXPIRY_CANDLES * CANDLE_MINUTES:
+        return "expired", None
+
+    if len(closed) >= 2:
+        trigger = calculate_binocular_trigger(closed)
+        opposite = detect_transition(trigger)
+        if opposite is not None and opposite != direction:
+            return "invalidated", None
+
+    return "waiting", None
+
+
 def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
     pac_hi = calculate_ema(df["high"], pac_length)
     pac_lo = calculate_ema(df["low"], pac_length)
