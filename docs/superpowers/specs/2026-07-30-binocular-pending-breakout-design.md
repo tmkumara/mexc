@@ -26,11 +26,21 @@ what was tried before:
   after T1 — closer to how the indicator is actually meant to be traded.
 
 Per explicit user instruction: **fully replace** the live strategy (not a
-side-by-side toggle), but it ships **off** (`STRATEGY_BINOCULAR_ENABLED=false`,
-old `STRATEGY_V1_ENABLED=true` stays on) until backtested — including a
-direct comparison against the 2026-07-27 attempt's 44-trade baseline on the
-same symbols/period — and reviewed before flipping the defaults and
-deploying.
+side-by-side toggle) — `strategy.py`'s body changes in place, the same way
+the 2026-07-27 and 2026-07-29 migrations each fully replaced what came
+before them. There is no second runtime flag here: `STRATEGY_V1_ENABLED`
+(name unchanged, matching both prior migrations' precedent of leaving this
+flag's name alone even though "v1" no longer literally describes the code
+inside) stays the single gate for whether the scanner job runs at all,
+default `true`, same as today. **Safety comes from the workflow, not a
+config toggle** — implement on a branch, run the backtest comparison
+against the 2026-07-27 attempt's 44-trade baseline on the same
+symbols/period, review the result, and only merge to `main` (which
+auto-deploys) once satisfied. Introducing a second flag
+(`STRATEGY_BINOCULAR_ENABLED`) was considered and rejected while drafting
+this spec — once the old ribbon-flip code is deleted from `strategy.py`
+there is nothing left for `STRATEGY_V1_ENABLED=true` to alternatively run,
+so a second flag would be dead weight, not a real safety net.
 
 ## Objective
 
@@ -376,9 +386,9 @@ plus existing `stop_too_wide`, `rr_below_min`, `invalid_geometry`,
 
 ```python
 STRATEGY_NAME default -> "Binocular Pending-Breakout v1"
-STRATEGY_BINOCULAR_ENABLED: bool = os.getenv("STRATEGY_BINOCULAR_ENABLED", "false") == "true"
-# Stays false until backtested and reviewed -- see Rollout below.
-# STRATEGY_V1_ENABLED stays "true" (default unchanged) until this flips.
+# STRATEGY_V1_ENABLED: unchanged name, unchanged default (true) -- still
+# the single flag gating whether the scanner job runs at all. No second
+# flag is introduced (see "Per explicit user instruction" above).
 
 SIGNAL_MODE: str = os.getenv("SIGNAL_MODE", "confirmed")   # "original" | "confirmed" | "strict"
 CONFIRMATION_TIMEFRAMES: str = os.getenv("CONFIRMATION_TIMEFRAMES", "30m,1h,4h")   # strict mode only
@@ -530,9 +540,9 @@ backtests (the default) don't pay for it.
 same symbols and lookback window used in the 2026-07-27 baseline (per that
 spec's numbers: 10 symbols, 6 months, 44 trades total, 30.8%/16.7%
 LONG/SHORT win rate) and present a direct comparison. Only after that
-comparison is reviewed does `STRATEGY_BINOCULAR_ENABLED` flip to `true`
-(and `STRATEGY_V1_ENABLED` to `false`) as a separate, deliberate step —
-not bundled into this implementation.
+comparison is reviewed does the implementation branch merge to `main`
+(which auto-deploys) — not bundled into this implementation, a separate
+deliberate step gated on the comparison being satisfactory.
 
 ## Migration order
 
@@ -544,15 +554,15 @@ not bundled into this implementation.
    tests, green.
 4. **Outcome ladder** — `outcome_check.check_target_ladder`, tests, green.
 5. **Config** — remove old ribbon-flip-only settings, add new Binocular
-   settings, `STRATEGY_NAME`/`STRATEGY_BINOCULAR_ENABLED` defaults.
+   settings, update `STRATEGY_NAME` default.
 6. **Dependents** — `main.py` (two-phase scan + ladder outcome check),
    `bot.py` (Python), `webui.py` (Python **and** JS).
 7. **Backtest script** — rewrite for the two-phase/ladder model, run
    against the 2026-07-27 baseline symbols/period, capture the comparison.
 8. **Cleanup** — delete superseded tests, full suite green, dry-run boot
-   check with `STRATEGY_BINOCULAR_ENABLED=true` locally (server stays on
-   v1 until the backtest comparison is reviewed and defaults are flipped
-   in a follow-up change).
+   check locally. The branch stays unmerged (server keeps running whatever
+   `main` currently has deployed) until the backtest comparison is
+   reviewed and the branch is explicitly merged in a follow-up step.
 
 ## Acceptance criteria
 
@@ -573,10 +583,10 @@ not bundled into this implementation.
   all untouched and still function (v3 track fully independent)
 - All tests pass; rewritten backtest script runs with no future-data
   leakage; its results are compared against the 2026-07-27 baseline before
-  any live-default change
-- `STRATEGY_BINOCULAR_ENABLED=false` and `STRATEGY_V1_ENABLED=true` at the
-  end of this work — flipping them is a deliberate follow-up, not part of
-  this change
+  merging to `main`
+- Implementation stays on its branch, unmerged, at the end of this work —
+  merging to `main` (which auto-deploys) is a deliberate follow-up step,
+  gated on the backtest comparison being reviewed and satisfactory
 - `backup/ribbon-trendbar-confirmation-v1` branch exists on `origin`
 
 ## Final verification commands
@@ -584,8 +594,8 @@ not bundled into this implementation.
 ```bash
 python -m pytest -v
 python -c "import config; import strategy; import main; import bot; import webui; import database; import outcome_check"
-STRATEGY_BINOCULAR_ENABLED=true python scripts/backtest_simple_strategy.py --symbols XRP_USDT DOGE_USDT ADA_USDT WLD_USDT --days 180
-DRY_RUN=true DRY_RUN_SAVE_SIGNALS=false STRATEGY_BINOCULAR_ENABLED=true STRATEGY_V1_ENABLED=false python main.py
+python scripts/backtest_simple_strategy.py --symbols XRP_USDT DOGE_USDT ADA_USDT WLD_USDT --days 180
+DRY_RUN=true DRY_RUN_SAVE_SIGNALS=false python main.py
 ```
 Confirm startup logs show strategy name `Binocular Pending-Breakout v1`,
 `SIGNAL_MODE`, entry buffer, pending expiry candles, target fractions,
