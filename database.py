@@ -82,6 +82,9 @@ def init_db():
             ("adx", "REAL"),
             ("chop", "REAL"),
             ("signal_message_id", "INTEGER"),
+            ("tp3_price", "REAL"),
+            ("tp2_hit_at", "TEXT"),
+            ("position_size", "REAL"),
         ]:
             try:
                 con.execute(f"ALTER TABLE signals ADD COLUMN {col} {definition}")
@@ -158,6 +161,16 @@ def init_db():
             ON armed_setups (symbol, status)
         """)
 
+        for col, definition in [
+            ("tp2_price", "REAL"),
+            ("tp3_price", "REAL"),
+            ("position_size", "REAL"),
+        ]:
+            try:
+                con.execute(f"ALTER TABLE armed_setups ADD COLUMN {col} {definition}")
+            except Exception:
+                pass
+
     logger.info("Database initialised")
 
 
@@ -177,6 +190,9 @@ def save_signal(
     entry_timeframe: str = "",
     trend_timeframe: str = "",
     setup_reason: str = "",
+    tp2_price: float | None = None,
+    tp3_price: float | None = None,
+    position_size: float | None = None,
 ) -> int:
     ts = generated_at.isoformat()
     with _conn() as con:
@@ -184,13 +200,25 @@ def save_signal(
             INSERT INTO signals
               (symbol, direction, entry_price, tp_price, sl_price,
                leverage, status, placed, generated_at, placed_at,
-               strategy_name, score, rr, entry_timeframe, trend_timeframe, setup_reason)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?, ?, ?, ?)
+               strategy_name, score, rr, entry_timeframe, trend_timeframe, setup_reason,
+               tp2_price, tp3_price, position_size)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             symbol, direction, entry_price, tp_price, sl_price, leverage, ts, ts,
             strategy_name, score, rr, entry_timeframe, trend_timeframe, setup_reason,
+            tp2_price, tp3_price, position_size,
         ))
         return cur.lastrowid
+
+
+def mark_signal_tp2_hit(signal_id: int, hit_at: datetime) -> None:
+    ts = hit_at.isoformat()
+    with _conn() as con:
+        con.execute("""
+            UPDATE signals
+            SET tp2_hit_at = ?
+            WHERE id = ? AND tp2_hit_at IS NULL
+        """, (ts, signal_id))
 
 
 def update_signal_outcome(signal_id: int, status: str, pnl_roi: float):
@@ -478,10 +506,10 @@ def save_armed_setup(setup: dict) -> int | None:
             INSERT INTO armed_setups (
                 symbol, direction, status,
                 trigger_price, entry_low, entry_high,
-                sl_price, tp_price, rr, score,
+                sl_price, tp_price, tp2_price, tp3_price, position_size, rr, score,
                 setup_reason, trend_summary,
                 created_at, expires_at, updated_at
-            ) VALUES (?, ?, 'armed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, 'armed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             setup["symbol"],
             setup["direction"],
@@ -490,6 +518,9 @@ def save_armed_setup(setup: dict) -> int | None:
             setup["entry_high"],
             setup["sl_price"],
             setup["tp_price"],
+            setup.get("tp2_price"),
+            setup.get("tp3_price"),
+            setup.get("position_size"),
             setup["rr"],
             setup["score"],
             setup.get("setup_reason", ""),
