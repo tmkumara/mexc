@@ -150,6 +150,57 @@ def calculate_pvt_signal(pvt: pd.Series, length: int, ma_type: str) -> pd.Series
     return pvt.rolling(window=length, min_periods=1).mean()
 
 
+def calculate_chandelier_direction(
+    df: pd.DataFrame, atr_period: int, multiplier: float
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Chandelier Exit direction flip, ported from the Pine script's
+    calculation() function's longStop/shortStop/dir recursion. Returns
+    (direction, long_stop_prev, short_stop_prev) where the *_prev series
+    hold each bar's stop level as it stood going INTO that bar -- what
+    the Pine script calls longStopPrev/shortStopPrev, which is what the
+    BUY/SELL trigger and the direction flip itself both compare against,
+    never the same bar's just-updated stop."""
+    close = df["close"]
+    atr = calculate_atr(df, atr_period) * multiplier
+    highest_close = close.rolling(window=atr_period, min_periods=1).max()
+    lowest_close = close.rolling(window=atr_period, min_periods=1).min()
+
+    raw_long = (highest_close - atr).to_numpy()
+    raw_short = (lowest_close + atr).to_numpy()
+    close_v = close.to_numpy()
+    n = len(df)
+
+    long_stop = np.zeros(n)
+    short_stop = np.zeros(n)
+    direction = np.ones(n, dtype=int)
+
+    long_stop[0] = raw_long[0]
+    short_stop[0] = raw_short[0]
+
+    for i in range(1, n):
+        long_stop_prev = long_stop[i - 1]
+        short_stop_prev = short_stop[i - 1]
+
+        long_stop[i] = (
+            max(raw_long[i], long_stop_prev) if close_v[i - 1] > long_stop_prev else raw_long[i]
+        )
+        short_stop[i] = (
+            min(raw_short[i], short_stop_prev) if close_v[i - 1] < short_stop_prev else raw_short[i]
+        )
+
+        if close_v[i] > short_stop_prev:
+            direction[i] = 1
+        elif close_v[i] < long_stop_prev:
+            direction[i] = -1
+        else:
+            direction[i] = direction[i - 1]
+
+    direction_s = pd.Series(direction, index=df.index)
+    long_stop_prev_s = pd.Series(long_stop, index=df.index).shift(1).bfill()
+    short_stop_prev_s = pd.Series(short_stop, index=df.index).shift(1).bfill()
+    return direction_s, long_stop_prev_s, short_stop_prev_s
+
+
 def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
     pac_hi = calculate_ema(df["high"], pac_length)
     pac_lo = calculate_ema(df["low"], pac_length)

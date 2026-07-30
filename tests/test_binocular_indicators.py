@@ -46,3 +46,42 @@ def test_pvt_signal_ema():
     expected = [10.0, 15.0, 22.5, 31.25, 40.625]
     for got, want in zip(signal.tolist(), expected):
         assert got == pytest.approx(want, abs=1e-9)
+
+
+from strategy import calculate_chandelier_direction
+
+
+def test_chandelier_direction_bullish():
+    df = _trend_df(40, step=1.0)
+    direction, _, _ = calculate_chandelier_direction(df, atr_period=10, multiplier=2.2)
+    assert direction.iloc[-1] == 1
+
+
+def test_chandelier_direction_bearish():
+    df = _trend_df(40, step=-1.0)
+    direction, _, _ = calculate_chandelier_direction(df, atr_period=10, multiplier=2.2)
+    assert direction.iloc[-1] == -1
+
+
+def test_chandelier_uses_previous_bar_stop_for_comparison():
+    df = _trend_df(30, step=1.0)
+    direction, long_stop_prev, short_stop_prev = calculate_chandelier_direction(
+        df, atr_period=10, multiplier=2.2
+    )
+    for i in range(1, len(df)):
+        close_i = df["close"].iloc[i]
+        if close_i > short_stop_prev.iloc[i]:
+            expected = 1
+        elif close_i < long_stop_prev.iloc[i]:
+            expected = -1
+        else:
+            expected = direction.iloc[i - 1]
+        assert direction.iloc[i] == expected
+
+
+def test_chandelier_does_not_use_future_data():
+    df = _trend_df(40, step=1.0)
+    dir_full, _, _ = calculate_chandelier_direction(df, atr_period=10, multiplier=2.2)
+    dir_partial, _, _ = calculate_chandelier_direction(df.iloc[:25].copy(), atr_period=10, multiplier=2.2)
+    for i in range(25):
+        assert dir_full.iloc[i] == dir_partial.iloc[i]
