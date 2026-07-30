@@ -230,18 +230,22 @@ def get_runtime_status() -> dict:
 
 
 def get_strategy_config() -> dict:
-    """Return dashboard-safe strategy/runtime configuration for Ribbon-Flip Trend-Bar Confirmation v1."""
+    """Return dashboard-safe strategy/runtime configuration for Binocular Pending-Breakout v1."""
     return {
-        "strategy": _safe_config_value("STRATEGY_NAME", "Ribbon-Flip Trend-Bar Confirmation v1"),
+        "strategy": _safe_config_value("STRATEGY_NAME", "Binocular Pending-Breakout v1"),
         "entry_tf": _safe_config_value("ENTRY_TF", "—"),
-        "ribbon_baseline_len": _safe_config_value("RIBBON_BASELINE_LEN", "—"),
-        "ribbon_lookback_bars": _safe_config_value("RIBBON_LOOKBACK_BARS", "—"),
-        "trend_bar_pac_length": _safe_config_value("TREND_BAR_PAC_LENGTH", "—"),
+        "signal_mode": _safe_config_value("SIGNAL_MODE", "—"),
+        "confirmation_timeframes": _safe_config_value("CONFIRMATION_TIMEFRAMES", "—"),
+        "mtf_min_confirmations": _safe_config_value("MTF_MIN_CONFIRMATIONS", "—"),
+        "entry_buffer_pct": _safe_config_value("ENTRY_BUFFER_PCT", "—"),
+        "pending_signal_expiry_candles": _safe_config_value("PENDING_SIGNAL_EXPIRY_CANDLES", "—"),
+
+        "account_balance": _safe_config_value("ACCOUNT_BALANCE", "—"),
+        "risk_percent_per_trade": _safe_config_value("RISK_PERCENT_PER_TRADE", "—"),
 
         "top_n_coins": _safe_config_value("TOP_N_COINS", "—"),
         "min_volume_usd": _safe_config_value("COIN_POOL_MIN_VOLUME_USD", "—"),
 
-        "target_roi_pct": _safe_config_value("TARGET_ROI_PCT", "—"),
         "max_sl_roi_pct": _safe_config_value("MAX_SL_ROI_PCT", "—"),
         "min_rr": _safe_config_value("MIN_RR", "—"),
         "leverage": _safe_config_value("LEVERAGE", "—"),
@@ -259,6 +263,11 @@ def get_strategy_config() -> dict:
     }
 
 
+def get_pending_setups() -> list[dict]:
+    import database as db
+    return db.get_armed_setups(limit=50)
+
+
 def build_payload() -> dict:
     now = datetime.now(timezone.utc)
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -269,6 +278,7 @@ def build_payload() -> dict:
         "week": get_stats(week),
         "alltime": get_stats(),
         "recent": get_recent_signals(30),
+        "pending_setups": get_pending_setups(),
         "runtime": get_runtime_status(),
         "config": get_strategy_config(),
         "server_time": now.strftime("%Y-%m-%d %H:%M UTC"),
