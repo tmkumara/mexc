@@ -325,18 +325,46 @@ async def check_outcomes(app: Application) -> None:
     now = datetime.now(timezone.utc)
 
     for sig in pending:
-        symbol      = sig["symbol"]
-        direction   = sig["direction"]
-        tp_price    = sig["tp_price"]
-        sl_price    = sig["sl_price"]
+        symbol = sig["symbol"]
+        direction = sig["direction"]
         entry_price = sig["entry_price"]
+        sl_price = sig["sl_price"]
+        tp1_price = sig["tp_price"]
+        tp2_price = sig.get("tp2_price")
+        tp3_price = sig.get("tp3_price")
 
-        if not strategy.valid_trade_geometry(direction, entry_price, tp_price, sl_price):
-            logger.error(
-                "[OUTCOME-BLOCK] Invalid signal geometry #%s %s %s entry=%.8g tp=%.8g sl=%.8g",
-                sig["id"], symbol, direction, entry_price, tp_price, sl_price,
-            )
-            db.update_signal_outcome(sig["id"], "expired", 0.0)
+        if tp2_price is None or tp3_price is None:
+            # Pre-migration or non-Binocular row (e.g. a leftover v1 row) --
+            # fall back to plain TP/SL so it can still resolve to
+            # win/loss/expired instead of hanging forever.
+            if not strategy.valid_trade_geometry(direction, entry_price, tp1_price, sl_price):
+                db.update_signal_outcome(sig["id"], "expired", 0.0)
+                continue
+            generated = datetime.fromisoformat(sig["generated_at"])
+            if generated.tzinfo is None:
+                generated = generated.replace(tzinfo=timezone.utc)
+            if (now - generated).total_seconds() > SIGNAL_EXPIRE_HOURS * 3600:
+                db.update_signal_outcome(sig["id"], "expired", 0.0)
+                if not DRY_RUN:
+                    await tg.notify_outcome(app, {**sig, "status": "expired", "pnl_roi": 0.0})
+                continue
+            elapsed_min = max((now - generated).total_seconds() / 60, CANDLE_MINUTES)
+            fetch_count = int(elapsed_min / CANDLE_MINUTES) + 3
+            try:
+                df = get_market_klines(symbol, ENTRY_TF, count=fetch_count)
+                if df is None or df.empty or len(df) < 2:
+                    continue
+            except Exception as e:
+                logger.warning("Could not fetch candles for %s: %s", symbol, e)
+                continue
+            entry_candle_cutoff = (generated - timedelta(minutes=CANDLE_MINUTES)).replace(tzinfo=None)
+            outcome = check_tp_sl(direction, entry_price, tp1_price, sl_price, df, entry_candle_cutoff)
+            if outcome is None:
+                continue
+            pnl = _calculate_pnl_roi(direction, outcome, entry_price, tp1_price, sl_price)
+            db.update_signal_outcome(sig["id"], outcome, pnl)
+            if not DRY_RUN:
+                await tg.notify_outcome(app, {**sig, "status": outcome, "pnl_roi": pnl})
             continue
 
         generated = datetime.fromisoformat(sig["generated_at"])
@@ -366,19 +394,36 @@ async def check_outcomes(app: Application) -> None:
 
         entry_candle_cutoff = (generated - timedelta(minutes=CANDLE_MINUTES)).replace(tzinfo=None)
 
-        outcome = check_tp_sl(direction, entry_price, tp_price, sl_price, df, entry_candle_cutoff)
-        if outcome is None:
+        result = check_target_ladder(
+            direction, entry_price, sl_price, tp1_price, tp2_price, tp3_price,
+            df, entry_candle_cutoff,
+        )
+        if result is None:
             continue
 
-        pnl = _calculate_pnl_roi(direction, outcome, entry_price, tp_price, sl_price)
-        db.update_signal_outcome(sig["id"], outcome, pnl)
-        logger.info("Signal %s %s (%s) %+.1f%%", sig["id"], outcome.upper(), symbol, pnl)
+        pnl = result["pnl_roi_pct"] * LEVERAGE
+
+        if result["t1_hit_at"] is not None and sig.get("tp1_hit_at") is None:
+            db.mark_signal_tp1_hit(sig["id"], result["t1_hit_at"])
+            db.mark_signal_breakeven_triggered(sig["id"], result["t1_hit_at"])
+            if not DRY_RUN:
+                await tg.notify_target_progress(app, {**sig}, stage=1)
+        if result["t2_hit_at"] is not None and sig.get("tp2_hit_at") is None:
+            db.mark_signal_tp2_hit(sig["id"], result["t2_hit_at"])
+            if not DRY_RUN:
+                await tg.notify_target_progress(app, {**sig}, stage=2)
+
+        db.update_signal_outcome(sig["id"], result["status"], pnl)
+        logger.info(
+            "Signal %s %s (%s) stage=%d %+.1f%%",
+            sig["id"], result["status"].upper(), symbol, result["final_stage"], pnl,
+        )
 
         if not DRY_RUN:
             try:
-                await tg.notify_outcome(app, {**sig, "status": outcome, "pnl_roi": pnl})
+                await tg.notify_outcome(app, {**sig, "status": result["status"], "pnl_roi": pnl, "final_stage": result["final_stage"]})
             except Exception as e:
-                logger.error("Failed to notify %s for %s: %s", outcome, symbol, e)
+                logger.error("Failed to notify %s for %s: %s", result["status"], symbol, e)
 
 
 # ── Super Scalper v3 scanner (OFF by default — SCALPER_V3_ENABLED) ──
@@ -560,7 +605,9 @@ async def main():
     logger.info("Starting MEXC Signal Bot")
     logger.info("Strategy: %s", STRATEGY_NAME)
     logger.info("Entry TF: %s", ENTRY_TF)
-    logger.info("Target ROI: %.0f%%", TARGET_ROI_PCT)
+    logger.info("Signal mode: %s", SIGNAL_MODE)
+    logger.info("Entry buffer: %.4f%%", ENTRY_BUFFER_PCT * 100)
+    logger.info("Pending expiry: %d candles", PENDING_SIGNAL_EXPIRY_CANDLES)
     logger.info("Max SL ROI: %.0f%%", MAX_SL_ROI_PCT)
     logger.info("Leverage: %dx", LEVERAGE)
     logger.info("Dry run: %s", "enabled" if DRY_RUN else "disabled")
