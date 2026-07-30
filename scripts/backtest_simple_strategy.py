@@ -237,6 +237,12 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
     pending_setup: dict | None = None
     in_trade_until_idx = -1
 
+    from config import SIGNAL_MODE, CONFIRMATION_TIMEFRAMES
+    confirmation_dfs: dict[str, pd.DataFrame] = {}
+    if SIGNAL_MODE == "strict":
+        for tf in [t.strip() for t in CONFIRMATION_TIMEFRAMES.split(",") if t.strip()]:
+            confirmation_dfs[tf] = get_klines_extended(symbol, tf, days)
+
     try:
         for i in range(min_start, len(df_full) - 1):
             if i <= in_trade_until_idx:
@@ -244,9 +250,15 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
 
             as_of = _with_forming_row(df_full, i, ENTRY_KLINE_COUNT)
 
-            def _fake(sym: str, interval: str, count: int = 100, _df=as_of):
+            def _fake(sym: str, interval: str, count: int = 100, _df=as_of, _ts=df_full.index[i]):
                 if interval == ENTRY_TF:
                     return _df
+                if interval in confirmation_dfs and not confirmation_dfs[interval].empty:
+                    tf_df = confirmation_dfs[interval]
+                    as_of_tf = tf_df[tf_df.index <= _ts]
+                    if as_of_tf.empty:
+                        return pd.DataFrame()
+                    return pd.concat([as_of_tf, as_of_tf.iloc[[-1]]])
                 return pd.DataFrame()
 
             strategy.get_market_klines = _fake
