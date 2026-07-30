@@ -785,11 +785,38 @@ tr:hover td {
 
   <div class="section-title">Current Strategy Setup</div>
   <div class="grid config-grid">
-    <div class="card"><div class="card-label">Timeframe</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">Ribbon + Trend Bar</div></div>
-    <div class="card"><div class="card-label">Ribbon Baseline</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">EMA length (arrow 1)</div></div>
-    <div class="card"><div class="card-label">Trend Bar</div><div class="card-value green" id="cfg-confirm">—</div><div class="card-small" id="cfg-confirm-sub">—</div></div>
+    <div class="card"><div class="card-label">Timeframe</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">Chandelier/PVT/RSI trigger</div></div>
+    <div class="card"><div class="card-label">Signal Mode</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">original / confirmed / strict</div></div>
+    <div class="card"><div class="card-label">Entry Buffer</div><div class="card-value green" id="cfg-confirm">—</div><div class="card-small" id="cfg-confirm-sub">—</div></div>
     <div class="card"><div class="card-label">Risk Model</div><div class="card-value orange" id="cfg-rr">—</div><div class="card-small" id="cfg-rr-sub">—</div></div>
   </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <div class="panel-title">Pending Setups</div>
+        <div class="panel-subtitle">Armed, waiting for entry breakout confirmation</div>
+      </div>
+      <span class="badge badge-config" id="pending-count">—</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Dir</th>
+            <th>Entry</th>
+            <th>SL</th>
+            <th>T1</th>
+            <th>RR</th>
+            <th>Score</th>
+            <th>Armed</th>
+          </tr>
+        </thead>
+        <tbody id="pendingRows"></tbody>
+      </table>
+    </div>
+  </section>
 
   <section class="panel">
     <div class="panel-head">
@@ -934,6 +961,7 @@ function render() {
   renderStats();
   renderRuntime();
   renderConfig();
+  renderPendingSetups();
   renderSignals();
 }
 
@@ -968,12 +996,47 @@ function renderRuntime() {
 function renderConfig() {
   const c = data.config;
 
-  set("cfg-tf", `${c.entry_tf}`);
-  set("cfg-quality", `EMA(${c.ribbon_baseline_len})`);
-  set("cfg-confirm", `PAC(${c.trend_bar_pac_length})`);
-  set("cfg-confirm-sub", `Ribbon flip within ${c.ribbon_lookback_bars} bars, confirmed by Trend Bar`);
+  set("cfg-tf", `${c.entry_tf} (${c.signal_mode})`);
+  set("cfg-quality", `${c.signal_mode}`);
+  set("cfg-confirm", `${(c.entry_buffer_pct * 100).toFixed(3)}%`);
+  const confirmSub = c.signal_mode === "strict"
+    ? `VWAP + ${c.mtf_min_confirmations}/3 of ${c.confirmation_timeframes}`
+    : c.signal_mode === "confirmed"
+      ? "EMA ribbon + EMA200"
+      : "raw trigger only";
+  set("cfg-confirm-sub", `${confirmSub}, expires after ${c.pending_signal_expiry_candles} candles`);
   set("cfg-rr", `${c.min_rr}R min`);
-  set("cfg-rr-sub", `TP ${c.target_roi_pct}% | SL ≤ ${c.max_sl_roi_pct}% | ${c.leverage}x`);
+  set("cfg-rr-sub", `SL ≤ ${c.max_sl_roi_pct}% | ${c.leverage}x`);
+}
+
+function renderPendingSetups() {
+  const rows = data.pending_setups || [];
+  set("pending-count", rows.length + " armed");
+
+  const tbody = document.getElementById("pendingRows");
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No pending setups armed.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => {
+    const dir = (r.direction || "").toLowerCase();
+    const sym = (r.symbol || "").replace("_USDT", "/USDT");
+
+    return `
+      <tr>
+        <td><strong>${sym}</strong></td>
+        <td><span class="badge badge-${dir}">${r.direction}</span></td>
+        <td>${fmtNum(r.trigger_price)}</td>
+        <td>${fmtNum(r.sl_price)}</td>
+        <td>${fmtNum(r.tp_price)}</td>
+        <td>${fmtNum(r.rr)}</td>
+        <td>${fmtNum(r.score)}</td>
+        <td>${r.created_at || "—"}</td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function renderSignals() {
