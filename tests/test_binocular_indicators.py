@@ -110,3 +110,59 @@ def test_daily_vwap_resets_at_session_boundary():
     assert vwap.iloc[1] == pytest.approx(day1_vwap_bar2)
     day2_typical_bar1 = (201.0 + 199.0 + 200.0) / 3
     assert vwap.iloc[2] == pytest.approx(day2_typical_bar1)
+
+
+import strategy
+from strategy import calculate_binocular_trigger, detect_transition
+
+
+def test_detect_transition_new_buy():
+    trigger = pd.DataFrame({"buy": [False, False, True], "sell": [False, False, False]})
+    assert detect_transition(trigger) == "LONG"
+
+
+def test_detect_transition_new_sell():
+    trigger = pd.DataFrame({"buy": [False, False, False], "sell": [False, False, True]})
+    assert detect_transition(trigger) == "SHORT"
+
+
+def test_detect_transition_no_change_returns_none():
+    trigger = pd.DataFrame({"buy": [False, True, True], "sell": [False, False, False]})
+    assert detect_transition(trigger) is None
+
+
+def _noisy_trend_df(n: int, step: float, start: float = 100.0, amp: float = 2.5, period: int = 9) -> pd.DataFrame:
+    """A trending series with a sine wobble large enough to produce
+    genuine down-ticks (not just a monotonic climb) -- a perfectly
+    straight-line trend saturates RSI to ~100 for *every* period (no
+    down days at all), so RSI_FAST and RSI_SLOW converge to identical
+    values instead of separating. The wobble here is sized so the
+    Chandelier direction and PVT-vs-signal still land net bullish/
+    bearish, while RSI(25) genuinely reacts faster than RSI(55) to the
+    recent leg. Numeric constants here are reasoned, not hand-executed
+    against pandas -- same convention as tests/strategy_fixtures.py."""
+    sign = 1.0 if step >= 0 else -1.0
+    t = np.arange(n)
+    closes = start + t * step + sign * amp * np.sin(t * 2 * np.pi / period)
+    opens = np.empty(n)
+    opens[0] = closes[0]
+    opens[1:] = closes[:-1]
+    highs = np.maximum(opens, closes) + 0.2
+    lows = np.minimum(opens, closes) - 0.2
+    return pd.DataFrame({
+        "open": opens, "high": highs, "low": lows, "close": closes,
+        "volume": np.full(n, 1000.0),
+    })
+
+
+def test_calculate_binocular_trigger_strong_uptrend_eventually_buys(monkeypatch):
+    monkeypatch.setattr(strategy, "CHANDELIER_ATR_PERIOD", 10)
+    monkeypatch.setattr(strategy, "CHANDELIER_MULTIPLIER", 2.2)
+    monkeypatch.setattr(strategy, "PVT_SIGNAL_LENGTH", 21)
+    monkeypatch.setattr(strategy, "PVT_SIGNAL_TYPE", "SMA")
+    monkeypatch.setattr(strategy, "RSI_FAST_PERIOD", 25)
+    monkeypatch.setattr(strategy, "RSI_SLOW_PERIOD", 55)
+    df = _noisy_trend_df(220, step=1.0)
+    trigger = calculate_binocular_trigger(df)
+    assert bool(trigger["buy"].iloc[-1]) is True
+    assert bool(trigger["sell"].iloc[-1]) is False

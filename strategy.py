@@ -214,6 +214,30 @@ def calculate_daily_vwap(df: pd.DataFrame) -> pd.Series:
     return cum_tp_vol / cum_vol.replace(0.0, np.nan)
 
 
+def calculate_binocular_trigger(df: pd.DataFrame) -> pd.DataFrame:
+    direction, _, _ = calculate_chandelier_direction(df, CHANDELIER_ATR_PERIOD, CHANDELIER_MULTIPLIER)
+    pvt = calculate_pvt(df)
+    pvt_signal = calculate_pvt_signal(pvt, PVT_SIGNAL_LENGTH, PVT_SIGNAL_TYPE)
+    rsi_fast = calculate_rsi(df["close"], RSI_FAST_PERIOD)
+    rsi_slow = calculate_rsi(df["close"], RSI_SLOW_PERIOD)
+
+    buy = (direction == 1) & (pvt > pvt_signal) & (rsi_fast > rsi_slow)
+    sell = (direction == -1) & (pvt < pvt_signal) & (rsi_fast < rsi_slow)
+    return pd.DataFrame({"buy": buy, "sell": sell}, index=df.index)
+
+
+def detect_transition(trigger: pd.DataFrame) -> str | None:
+    if len(trigger) < 2:
+        return None
+    buy_now, buy_prev = bool(trigger["buy"].iloc[-1]), bool(trigger["buy"].iloc[-2])
+    sell_now, sell_prev = bool(trigger["sell"].iloc[-1]), bool(trigger["sell"].iloc[-2])
+    if buy_now and not buy_prev:
+        return "LONG"
+    if sell_now and not sell_prev:
+        return "SHORT"
+    return None
+
+
 def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
     pac_hi = calculate_ema(df["high"], pac_length)
     pac_lo = calculate_ema(df["low"], pac_length)
@@ -267,10 +291,15 @@ from market_data import get_market_klines
 from config import (
     ENTRY_TF, ENTRY_KLINE_COUNT, CANDLE_MINUTES,
     RIBBON_MA1_LEN, RIBBON_MA2_LEN, RIBBON_MA3_LEN, RIBBON_MA4_LEN, RIBBON_MA5_LEN,
-    RIBBON_BASELINE_LEN, RIBBON_LOOKBACK_BARS,
-    TREND_BAR_PAC_LENGTH, ATR_PERIOD, MIN_CANDLE_SETTLE_SECONDS,
-    SL_ATR_BUFFER_MULTIPLIER, SL_FLOOR_ATR_MULT, LEVERAGE, TP_PRICE_PCT, MAX_SL_PRICE_PCT, MIN_RR,
-    ENABLE_LONG_SIGNALS,
+    RIBBON_BASELINE_LEN, ATR_PERIOD, MIN_CANDLE_SETTLE_SECONDS,
+    LEVERAGE, MAX_SL_PRICE_PCT, MIN_RR, ENABLE_LONG_SIGNALS,
+    SIGNAL_MODE, CONFIRMATION_TIMEFRAMES, MTF_MIN_CONFIRMATIONS,
+    ACCOUNT_BALANCE, RISK_PERCENT_PER_TRADE,
+    PVT_SIGNAL_TYPE, PVT_SIGNAL_LENGTH, RSI_FAST_PERIOD, RSI_SLOW_PERIOD,
+    CHANDELIER_ATR_PERIOD, CHANDELIER_MULTIPLIER, BINOCULAR_EMA200_LEN,
+    ENTRY_BUFFER_PCT, PENDING_SIGNAL_EXPIRY_CANDLES,
+    TARGET1_CLOSE_FRACTION, TARGET2_CLOSE_FRACTION, TARGET3_CLOSE_FRACTION,
+    MOVE_SL_TO_BREAKEVEN_AFTER_T1,
 )
 
 
