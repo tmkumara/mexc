@@ -85,3 +85,28 @@ def test_chandelier_does_not_use_future_data():
     dir_partial, _, _ = calculate_chandelier_direction(df.iloc[:25].copy(), atr_period=10, multiplier=2.2)
     for i in range(25):
         assert dir_full.iloc[i] == dir_partial.iloc[i]
+
+
+from strategy import calculate_ema200, calculate_daily_vwap, calculate_ema
+
+
+def test_ema200_matches_calculate_ema():
+    df = _trend_df(210, step=0.5)
+    ema200 = calculate_ema200(df, 200)
+    expected = calculate_ema(df["close"], 200)
+    pd.testing.assert_series_equal(ema200, expected)
+
+
+def test_daily_vwap_resets_at_session_boundary():
+    idx = pd.date_range("2026-01-01", periods=4, freq="12h")  # 2 candles/day, 2 days
+    df = pd.DataFrame({
+        "high":  [101.0, 103.0, 201.0, 203.0],
+        "low":   [99.0, 101.0, 199.0, 201.0],
+        "close": [100.0, 102.0, 200.0, 202.0],
+        "volume": [10.0, 10.0, 10.0, 10.0],
+    }, index=idx)
+    vwap = calculate_daily_vwap(df)
+    day1_vwap_bar2 = (100.0 * 10 + 102.0 * 10) / (10 + 10)
+    assert vwap.iloc[1] == pytest.approx(day1_vwap_bar2)
+    day2_typical_bar1 = (201.0 + 199.0 + 200.0) / 3
+    assert vwap.iloc[2] == pytest.approx(day2_typical_bar1)

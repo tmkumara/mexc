@@ -201,6 +201,19 @@ def calculate_chandelier_direction(
     return direction_s, long_stop_prev_s, short_stop_prev_s
 
 
+def calculate_ema200(df: pd.DataFrame, length: int) -> pd.Series:
+    return calculate_ema(df["close"], length)
+
+
+def calculate_daily_vwap(df: pd.DataFrame) -> pd.Series:
+    typical = (df["high"] + df["low"] + df["close"]) / 3.0
+    tp_vol = typical * df["volume"]
+    day = df.index.normalize()
+    cum_tp_vol = tp_vol.groupby(day).cumsum()
+    cum_vol = df["volume"].groupby(day).cumsum()
+    return cum_tp_vol / cum_vol.replace(0.0, np.nan)
+
+
 def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
     pac_hi = calculate_ema(df["high"], pac_length)
     pac_lo = calculate_ema(df["low"], pac_length)
