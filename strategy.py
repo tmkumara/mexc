@@ -137,6 +137,19 @@ def calculate_ema_ribbon(
     )
 
 
+def calculate_pvt(df: pd.DataFrame) -> pd.Series:
+    close = df["close"]
+    volume = df["volume"]
+    pct_change = close.pct_change()
+    return (pct_change * volume).fillna(0.0).cumsum()
+
+
+def calculate_pvt_signal(pvt: pd.Series, length: int, ma_type: str) -> pd.Series:
+    if ma_type.upper() == "EMA":
+        return pvt.ewm(span=length, adjust=False).mean()
+    return pvt.rolling(window=length, min_periods=1).mean()
+
+
 def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
     pac_hi = calculate_ema(df["high"], pac_length)
     pac_lo = calculate_ema(df["low"], pac_length)
