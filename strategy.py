@@ -303,6 +303,89 @@ def position_size(direction: str, entry: float, sl: float) -> float:
     return round(risk_amount / risk_per_unit, 6)
 
 
+def _build_pending_setup(
+    symbol: str, direction: str, df: pd.DataFrame, reject_sink: dict | None = None
+) -> dict | None:
+    high = float(df["high"].iloc[-1])
+    low = float(df["low"].iloc[-1])
+    prev_high = float(df["high"].iloc[-2])
+    prev_low = float(df["low"].iloc[-2])
+
+    if direction == "LONG":
+        entry = high * (1 + ENTRY_BUFFER_PCT)
+        sl = min(prev_low, low)
+        diff = (high - prev_low) * 2
+        t1, t2, t3 = high + diff, high + 2 * diff, high + 3 * diff
+    else:
+        entry = low * (1 - ENTRY_BUFFER_PCT)
+        sl = max(prev_high, high)
+        diff = (prev_high - low) * 2
+        t1, t2, t3 = low - diff, low - 2 * diff, low - 3 * diff
+
+    if not valid_trade_geometry(direction, entry, t1, sl):
+        _bump(reject_sink, "invalid_geometry")
+        return None
+
+    if abs(entry - sl) / entry > MAX_SL_PRICE_PCT:
+        _bump(reject_sink, "stop_too_wide")
+        return None
+
+    rr = abs(t1 - entry) / abs(entry - sl)
+    if rr < MIN_RR:
+        _bump(reject_sink, "rr_below_min")
+        return None
+
+    return {
+        "symbol": symbol,
+        "direction": direction,
+        "trigger_price": entry,
+        "entry_low": entry,
+        "entry_high": entry,
+        "sl_price": sl,
+        "tp_price": round(t1, 8),
+        "tp2_price": round(t2, 8),
+        "tp3_price": round(t3, 8),
+        "rr": round(rr, 2),
+        "position_size": position_size(direction, entry, sl),
+    }
+
+
+def _score_pending_setup(
+    direction: str, df: pd.DataFrame, rr: float, mtf_confirmations: int | None
+) -> float:
+    pvt = calculate_pvt(df)
+    pvt_signal = calculate_pvt_signal(pvt, PVT_SIGNAL_LENGTH, PVT_SIGNAL_TYPE)
+    rsi_fast = calculate_rsi(df["close"], RSI_FAST_PERIOD)
+    rsi_slow = calculate_rsi(df["close"], RSI_SLOW_PERIOD)
+
+    pvt_range = max(abs(pvt.iloc[-20:]).max(), 1e-9)
+    pvt_strength = min(1.0, abs(pvt.iloc[-1] - pvt_signal.iloc[-1]) / pvt_range)
+    rsi_strength = min(1.0, abs(rsi_fast.iloc[-1] - rsi_slow.iloc[-1]) / 30.0)
+    score = 40.0 * ((pvt_strength + rsi_strength) / 2.0)
+
+    if SIGNAL_MODE == "original":
+        score += 20.0
+    else:
+        lengths = (RIBBON_MA1_LEN, RIBBON_MA2_LEN, RIBBON_MA3_LEN, RIBBON_MA4_LEN, RIBBON_MA5_LEN)
+        ribbon = calculate_ema_ribbon(df, lengths, RIBBON_BASELINE_LEN)
+        atr_last = max(float(calculate_atr(df, ATR_PERIOD).iloc[-1]), 1e-9)
+        separation = abs(float(ribbon["ma5"].iloc[-1]) - float(ribbon["baseline"].iloc[-1]))
+        score += 20.0 * min(1.0, separation / (atr_last * 2.0))
+
+    rr_quality = (
+        min(1.0, max(0.0, (rr - MIN_RR) / (2.0 - MIN_RR))) if MIN_RR < 2.0
+        else (1.0 if rr >= MIN_RR else 0.0)
+    )
+    score += 20.0 * rr_quality
+
+    close = float(df["close"].iloc[-1])
+    entry_target = close * (1 + ENTRY_BUFFER_PCT) if direction == "LONG" else close * (1 - ENTRY_BUFFER_PCT)
+    clearance_pct = abs(entry_target - close) / close
+    score += 20.0 * max(0.0, 1.0 - min(1.0, clearance_pct / 0.01))
+
+    return round(min(100.0, max(0.0, score)), 1)
+
+
 def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
     pac_hi = calculate_ema(df["high"], pac_length)
     pac_lo = calculate_ema(df["low"], pac_length)
