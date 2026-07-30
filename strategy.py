@@ -386,6 +386,89 @@ def _score_pending_setup(
     return round(min(100.0, max(0.0, score)), 1)
 
 
+def _classify_no_trigger_reason(df: pd.DataFrame) -> str:
+    direction, _, _ = calculate_chandelier_direction(df, CHANDELIER_ATR_PERIOD, CHANDELIER_MULTIPLIER)
+    pvt = calculate_pvt(df)
+    pvt_signal = calculate_pvt_signal(pvt, PVT_SIGNAL_LENGTH, PVT_SIGNAL_TYPE)
+    rsi_fast = calculate_rsi(df["close"], RSI_FAST_PERIOD)
+    rsi_slow = calculate_rsi(df["close"], RSI_SLOW_PERIOD)
+
+    dir_last = int(direction.iloc[-1])
+    if dir_last == 1:
+        if not (pvt.iloc[-1] > pvt_signal.iloc[-1]):
+            return "no_pvt_momentum"
+        if not (rsi_fast.iloc[-1] > rsi_slow.iloc[-1]):
+            return "no_rsi_regime"
+    else:
+        if not (pvt.iloc[-1] < pvt_signal.iloc[-1]):
+            return "no_pvt_momentum"
+        if not (rsi_fast.iloc[-1] < rsi_slow.iloc[-1]):
+            return "no_rsi_regime"
+    return "no_chandelier_direction"
+
+
+def detect_pending_setup(symbol: str, reject_sink: dict | None = None) -> dict | None:
+    try:
+        raw = get_market_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
+        if raw is None or raw.empty:
+            _bump(reject_sink, "missing_data")
+            return None
+
+        closed = raw.iloc[:-1].copy()
+
+        min_history = max(
+            RIBBON_BASELINE_LEN, BINOCULAR_EMA200_LEN, CHANDELIER_ATR_PERIOD,
+            RSI_SLOW_PERIOD, PVT_SIGNAL_LENGTH,
+        ) + 10
+        if len(closed) < min_history:
+            _bump(reject_sink, "insufficient_history")
+            return None
+
+        candle_close_time = closed.index[-1].to_pydatetime() + timedelta(minutes=CANDLE_MINUTES)
+        candle_age = (datetime.utcnow() - candle_close_time).total_seconds()
+        if candle_age < MIN_CANDLE_SETTLE_SECONDS:
+            _bump(reject_sink, "candle_not_settled")
+            return None
+
+        trigger = calculate_binocular_trigger(closed)
+        direction = detect_transition(trigger)
+        if direction is None:
+            _bump(reject_sink, _classify_no_trigger_reason(closed))
+            return None
+
+        if direction == "LONG" and not ENABLE_LONG_SIGNALS:
+            _bump(reject_sink, "long_disabled")
+            return None
+
+        if SIGNAL_MODE in ("confirmed", "strict") and not confirmed_mode_ok(direction, closed):
+            _bump(reject_sink, "no_ribbon_confirmation")
+            return None
+
+        mtf_confirmations = None
+        if SIGNAL_MODE == "strict":
+            ok, mtf_confirmations = strict_mode_ok(direction, closed, symbol)
+            if not ok:
+                _bump(reject_sink, "no_vwap_confirmation" if mtf_confirmations == 0 else "no_mtf_confirmation")
+                return None
+
+        setup = _build_pending_setup(symbol, direction, closed, reject_sink)
+        if setup is None:
+            return None
+
+        setup["score"] = _score_pending_setup(direction, closed, setup["rr"], mtf_confirmations)
+        setup["setup_reason"] = f"Binocular {SIGNAL_MODE} trigger"
+        setup["trend_summary"] = "Chandelier/PVT/RSI"
+        setup["created_at"] = datetime.now(timezone.utc).isoformat()
+        setup["expires_at"] = (
+            datetime.now(timezone.utc) + timedelta(minutes=PENDING_SIGNAL_EXPIRY_CANDLES * CANDLE_MINUTES)
+        ).isoformat()
+        return setup
+    except Exception as e:
+        logger.error("[BINOCULAR-DETECT-ERROR] %s: %s", symbol, e, exc_info=True)
+        _bump(reject_sink, "error")
+        return None
+
+
 def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
     pac_hi = calculate_ema(df["high"], pac_length)
     pac_lo = calculate_ema(df["low"], pac_length)

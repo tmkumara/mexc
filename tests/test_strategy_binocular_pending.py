@@ -117,3 +117,30 @@ def test_score_pending_setup_higher_rr_scores_higher(monkeypatch):
     low_rr_score = _score_pending_setup("LONG", df, rr=strategy.MIN_RR, mtf_confirmations=None)
     high_rr_score = _score_pending_setup("LONG", df, rr=strategy.MIN_RR + 1.0, mtf_confirmations=None)
     assert high_rr_score > low_rr_score
+
+
+from tests.strategy_fixtures import patch_klines
+from strategy import detect_pending_setup
+
+
+def test_detect_pending_setup_returns_none_on_missing_data(monkeypatch):
+    monkeypatch.setattr(strategy, "get_market_klines", lambda *a, **k: pd.DataFrame())
+    sink = {}
+    assert detect_pending_setup("XRP_USDT", reject_sink=sink) is None
+    assert sink.get("missing_data") == 1
+
+
+def test_detect_pending_setup_returns_none_on_flat_series(monkeypatch):
+    from tests.strategy_fixtures import make_15m_trend_df
+    df = make_15m_trend_df("LONG", bars=260, start_price=100.0)
+    # Force a perfectly flat series (no trend) by overwriting close with a
+    # constant -- flat data never flips Chandelier direction cleanly on a
+    # fresh transition, so no pending setup should ever be created.
+    flat = df.copy()
+    flat["close"] = 100.0
+    flat["open"] = 100.0
+    flat["high"] = 100.05
+    flat["low"] = 99.95
+    patch_klines(monkeypatch, strategy, flat)
+    sink = {}
+    assert detect_pending_setup("XRP_USDT", reject_sink=sink) is None
