@@ -295,6 +295,14 @@ def strict_mode_ok(direction: str, df: pd.DataFrame, symbol: str) -> tuple[bool,
     return confirmations >= MTF_MIN_CONFIRMATIONS, confirmations
 
 
+def position_size(direction: str, entry: float, sl: float) -> float:
+    risk_per_unit = (entry - sl) if direction == "LONG" else (sl - entry)
+    if risk_per_unit <= 0:
+        return 0.0
+    risk_amount = ACCOUNT_BALANCE * RISK_PERCENT_PER_TRADE / 100.0
+    return round(risk_amount / risk_per_unit, 6)
+
+
 def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
     pac_hi = calculate_ema(df["high"], pac_length)
     pac_lo = calculate_ema(df["low"], pac_length)

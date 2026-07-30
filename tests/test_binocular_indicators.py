@@ -229,3 +229,24 @@ def test_strict_mode_requires_min_mtf_confirmations(monkeypatch):
     ok, confirmations = strict_mode_ok("LONG", uptrend, "XRP_USDT")
     assert ok is False
     assert confirmations == 0
+
+
+from strategy import position_size
+
+
+def test_position_size_long(monkeypatch):
+    monkeypatch.setattr(strategy, "ACCOUNT_BALANCE", 10000.0)
+    monkeypatch.setattr(strategy, "RISK_PERCENT_PER_TRADE", 1.0)
+    size = position_size("LONG", entry=100.0, sl=98.0)
+    assert size == pytest.approx(50.0)
+
+
+def test_position_size_short(monkeypatch):
+    monkeypatch.setattr(strategy, "ACCOUNT_BALANCE", 5000.0)
+    monkeypatch.setattr(strategy, "RISK_PERCENT_PER_TRADE", 2.0)
+    size = position_size("SHORT", entry=100.0, sl=103.0)
+    assert size == pytest.approx(100.0 / 3.0, abs=1e-4)
+
+
+def test_position_size_zero_risk_returns_zero():
+    assert position_size("LONG", entry=100.0, sl=100.0) == 0.0
