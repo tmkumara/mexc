@@ -1,22 +1,30 @@
 """
-Ribbon-Flip Trend-Bar Confirmation v1.
+Binocular Pending-Breakout v1.
 
-A 6-EMA ribbon (30/35/40/45/50 vs a 60-period baseline) flipping fully
-bullish or bearish is "arrow 1"; a Price-Action-Channel Trend Bar
-confirming the same direction within RIBBON_LOOKBACK_BARS of that flip is
-"arrow 2". If the ribbon reverts before the Trend Bar confirms, the setup
-is invalidated -- recomputed fresh every scan, no persisted arm state.
-Only completed candles are ever used. See
-docs/superpowers/specs/2026-07-29-ribbon-trendbar-confirmation-design.md.
+Trigger: a Chandelier Exit ATR-direction flip + PVT-vs-signal-line
+momentum + dual-RSI(fast/slow) regime, transition-detected fresh every
+scan (no persisted arm state). SIGNAL_MODE=confirmed (default) also
+requires the 6-EMA ribbon (30/35/40/45/50 vs 60) and EMA200 to agree;
+SIGNAL_MODE=strict additionally requires daily-VWAP side and multi-
+timeframe confirmation. See
+docs/superpowers/specs/2026-07-30-binocular-pending-breakout-design.md.
 
-The structural SL (swing since the ribbon flip + a small ATR buffer) is
-floored at SL_FLOOR_ATR_MULT x ATR so it's never tighter than normal
-15m candle noise. LONG signals can be disabled via ENABLE_LONG_SIGNALS
-(true by default) -- LONG underperformed SHORT in every backtest
-configuration tested; set to false to run SHORT-only, as backtesting
-recommends. The last closed candle must be at least
-MIN_CANDLE_SETTLE_SECONDS old before it's used -- MEXC's kline REST data
-for a just-closed candle can still get revised shortly after close.
+A fresh transition creates a PENDING setup (persisted via
+database.armed_setups): a precomputed entry level (buffer beyond the
+signal candle's high/low), a structural SL (swing extreme of the signal
+candle + prior candle, capped at MAX_SL_PRICE_PCT), and 3 stacked targets
+(diff = (high - prev_low) x 2 style). The setup expires after
+PENDING_SIGNAL_EXPIRY_CANDLES candles if price never breaks the entry
+level, or is invalidated if an opposite transition appears first or SL
+is hit before entry. Confirmed setups are tracked through a 3-target
+partial-exit ladder (see outcome_check.check_target_ladder) -- 50%/30%/
+20% closed at T1/T2/T3, SL moved to breakeven after T1.
+
+LONG signals can be disabled via ENABLE_LONG_SIGNALS (true by default).
+The last closed candle must be at least MIN_CANDLE_SETTLE_SECONDS old
+before it's used -- MEXC's kline REST data for a just-closed candle can
+still get revised shortly after close. Only completed candles are ever
+used anywhere in this pipeline.
 """
 
 from __future__ import annotations
@@ -517,53 +525,6 @@ def check_setup_confirmation(setup: dict) -> tuple[str, float | None]:
     return "waiting", None
 
 
-def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
-    pac_hi = calculate_ema(df["high"], pac_length)
-    pac_lo = calculate_ema(df["low"], pac_length)
-    high, low = df["high"], df["low"]
-
-    color = pd.Series("gray", index=df.index, dtype=object)
-    color[(low > pac_hi) & (high > pac_hi)] = "green"
-    color[(high < pac_lo) & (low < pac_lo)] = "red"
-    return color
-
-
-def _detect_ribbon_flip(
-    df: pd.DataFrame,
-    lengths: tuple[int, int, int, int, int],
-    baseline_length: int,
-    lookback_bars: int,
-) -> tuple[str | None, int | None]:
-    ribbon = calculate_ema_ribbon(df, lengths, baseline_length)
-    ma1, ma2, ma3, ma4, ma5, baseline = (
-        ribbon["ma1"], ribbon["ma2"], ribbon["ma3"], ribbon["ma4"], ribbon["ma5"], ribbon["baseline"]
-    )
-    bullish = (ma1 > baseline) & (ma2 > baseline) & (ma3 > baseline) & (ma4 > baseline) & (ma5 > baseline)
-    bearish = (ma1 < baseline) & (ma2 < baseline) & (ma3 < baseline) & (ma4 < baseline) & (ma5 < baseline)
-
-    n = len(df)
-    last = n - 1
-    stop = max(last - lookback_bars, 0)
-
-    if bool(bullish.iloc[last]):
-        for j in range(last, stop - 1, -1):
-            if not bool(bullish.iloc[j]):
-                break
-            if j == 0 or not bool(bullish.iloc[j - 1]):
-                return "LONG", j
-        return None, None
-
-    if bool(bearish.iloc[last]):
-        for j in range(last, stop - 1, -1):
-            if not bool(bearish.iloc[j]):
-                break
-            if j == 0 or not bool(bearish.iloc[j - 1]):
-                return "SHORT", j
-        return None, None
-
-    return None, None
-
-
 # ── evaluate_symbol pipeline ─────────────────────────────────────────
 
 from market_data import get_market_klines
@@ -616,175 +577,6 @@ def _roi_pct(direction: str, entry: float, tp: float, sl: float) -> tuple[float,
     return round(tp_roi, 2), round(sl_roi, 2)
 
 
-def _calculate_tp_sl(
-    direction: str, entry: float, df: pd.DataFrame, flip_index: int, atr_last: float
-) -> tuple[float, float] | None:
-    window_low = float(df["low"].iloc[flip_index:].min())
-    window_high = float(df["high"].iloc[flip_index:].max())
-    floor_dist = atr_last * SL_FLOOR_ATR_MULT
-
-    if direction == "LONG":
-        tp = entry * (1 + TP_PRICE_PCT)
-        structural_sl = window_low - atr_last * SL_ATR_BUFFER_MULTIPLIER
-        # Floor: never let the stop sit closer than SL_FLOOR_ATR_MULT x ATR
-        # from entry, even if the swing-since-flip window is tiny -- a
-        # tighter stop gets clipped by normal candle noise regardless of
-        # whether the directional call is right.
-        structural_sl = min(structural_sl, entry - floor_dist)
-        if structural_sl >= entry:
-            return None
-        if (entry - structural_sl) / entry > MAX_SL_PRICE_PCT:
-            return None
-        return tp, structural_sl
-    else:
-        tp = entry * (1 - TP_PRICE_PCT)
-        structural_sl = window_high + atr_last * SL_ATR_BUFFER_MULTIPLIER
-        structural_sl = max(structural_sl, entry + floor_dist)
-        if structural_sl <= entry:
-            return None
-        if (structural_sl - entry) / entry > MAX_SL_PRICE_PCT:
-            return None
-        return tp, structural_sl
-
-
-def _score_candidate(direction: str, details: dict, rr: float) -> float:
-    atr = max(details["atr"], 1e-9)
-
-    separation = abs(details["ma5_last"] - details["baseline_last"])
-    alignment_quality = min(1.0, separation / (atr * 2.0))
-    score = 40.0 * alignment_quality
-
-    freshness = 1.0 - min(1.0, details["bars_since_flip"] / max(RIBBON_LOOKBACK_BARS, 1))
-    score += 20.0 * freshness
-
-    if direction == "LONG":
-        clearance = (details["low_last"] - details["pac_hi_last"]) / atr
-    else:
-        clearance = (details["pac_lo_last"] - details["high_last"]) / atr
-    trend_bar_quality = min(1.0, max(0.0, clearance / 2.0))
-    score += 20.0 * trend_bar_quality
-
-    rr_quality = min(1.0, max(0.0, (rr - MIN_RR) / (2.0 - MIN_RR))) if MIN_RR < 2.0 else (1.0 if rr >= MIN_RR else 0.0)
-    score += 20.0 * rr_quality
-
-    return round(min(100.0, max(0.0, score)), 1)
-
-
 def _bump(reject_sink: dict | None, key: str) -> None:
     if reject_sink is not None:
         reject_sink[key] = reject_sink.get(key, 0) + 1
-
-
-def evaluate_symbol(
-    symbol: str,
-    btc_context=None,
-    reject_sink: dict | None = None,
-) -> Signal | None:
-    try:
-        raw = get_market_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
-
-        if raw is None or raw.empty:
-            logger.debug("[REJECT] %s missing candle data", symbol)
-            _bump(reject_sink, "missing_data")
-            return None
-
-        closed = raw.iloc[:-1].copy()
-
-        if len(closed) < RIBBON_BASELINE_LEN + RIBBON_LOOKBACK_BARS + 10:
-            logger.debug("[REJECT] %s insufficient candle history", symbol)
-            _bump(reject_sink, "insufficient_history")
-            return None
-
-        candle_close_time = closed.index[-1].to_pydatetime() + timedelta(minutes=CANDLE_MINUTES)
-        candle_age = (datetime.utcnow() - candle_close_time).total_seconds()
-        if candle_age < MIN_CANDLE_SETTLE_SECONDS:
-            logger.debug(
-                "[REJECT] %s last closed candle only %.0fs old (need %ds) -- MEXC data may still settle",
-                symbol, candle_age, MIN_CANDLE_SETTLE_SECONDS,
-            )
-            _bump(reject_sink, "candle_not_settled")
-            return None
-
-        lengths = (RIBBON_MA1_LEN, RIBBON_MA2_LEN, RIBBON_MA3_LEN, RIBBON_MA4_LEN, RIBBON_MA5_LEN)
-        direction, flip_index = _detect_ribbon_flip(closed, lengths, RIBBON_BASELINE_LEN, RIBBON_LOOKBACK_BARS)
-        if direction is None:
-            logger.debug("[REJECT] %s no ribbon flip", symbol)
-            _bump(reject_sink, "no_ribbon_flip")
-            return None
-
-        if direction == "LONG" and not ENABLE_LONG_SIGNALS:
-            logger.debug("[REJECT] %s LONG signals disabled", symbol)
-            _bump(reject_sink, "long_disabled")
-            return None
-
-        trend_bar = calculate_trend_bar(closed, TREND_BAR_PAC_LENGTH)
-        current_color = trend_bar.iloc[-1]
-        expected_color = "green" if direction == "LONG" else "red"
-        if current_color != expected_color:
-            logger.debug("[REJECT] %s no trend bar confirmation", symbol)
-            _bump(reject_sink, "no_trend_bar_confirmation")
-            return None
-
-        atr_last = float(calculate_atr(closed, ATR_PERIOD).iloc[-1])
-        entry = float(closed["close"].iloc[-1])
-
-        tp_sl = _calculate_tp_sl(direction, entry, closed, flip_index, atr_last)
-        if tp_sl is None:
-            logger.debug("[REJECT] %s structural stop too wide", symbol)
-            _bump(reject_sink, "stop_too_wide")
-            return None
-        tp, sl = tp_sl
-
-        if not valid_trade_geometry(direction, entry, tp, sl):
-            logger.debug("[REJECT] %s invalid trade geometry", symbol)
-            _bump(reject_sink, "invalid_geometry")
-            return None
-
-        rr = _calc_rr(direction, entry, tp, sl)
-        if rr < MIN_RR:
-            logger.debug("[REJECT] %s RR %.2f below %.2f", symbol, rr, MIN_RR)
-            _bump(reject_sink, "rr_below_min")
-            return None
-
-        tp_roi, sl_roi = _roi_pct(direction, entry, tp, sl)
-
-        ribbon = calculate_ema_ribbon(closed, lengths, RIBBON_BASELINE_LEN)
-        pac_hi = calculate_ema(closed["high"], TREND_BAR_PAC_LENGTH)
-        pac_lo = calculate_ema(closed["low"], TREND_BAR_PAC_LENGTH)
-        score_details = {
-            "ma5_last": float(ribbon["ma5"].iloc[-1]),
-            "baseline_last": float(ribbon["baseline"].iloc[-1]),
-            "atr": atr_last,
-            "bars_since_flip": (len(closed) - 1) - flip_index,
-            "low_last": float(closed["low"].iloc[-1]),
-            "high_last": float(closed["high"].iloc[-1]),
-            "pac_hi_last": float(pac_hi.iloc[-1]),
-            "pac_lo_last": float(pac_lo.iloc[-1]),
-        }
-        score = _score_candidate(direction, score_details, rr)
-
-        logger.info(
-            "[CANDIDATE] %s %s score=%.1f entry=%.6g tp=%.6g sl=%.6g rr=%.2f",
-            symbol, direction, score, entry, tp, sl, rr,
-        )
-
-        return Signal(
-            symbol=symbol,
-            direction=direction,
-            entry_price=round(entry, 8),
-            tp_price=round(tp, 8),
-            sl_price=round(sl, 8),
-            leverage=LEVERAGE,
-            tp_roi_pct=tp_roi,
-            sl_roi_pct=sl_roi,
-            timeframe_summary="EMA ribbon flip + Trend Bar confirmation",
-            generated_at=datetime.now(timezone.utc),
-            rr=round(rr, 2),
-            score=score,
-            entry_low=entry,
-            entry_high=entry,
-        )
-    except Exception as e:
-        logger.error("[EVAL-ERROR] %s: %s", symbol, e, exc_info=True)
-        _bump(reject_sink, "error")
-        return None
