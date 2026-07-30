@@ -47,6 +47,9 @@ class Signal:
     score: float
     entry_low: float
     entry_high: float
+    tp2_price: float | None = None
+    tp3_price: float | None = None
+    position_size: float | None = None
 
 
 # ── indicators ──────────────────────────────────────────────────────

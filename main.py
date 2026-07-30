@@ -33,7 +33,7 @@ import strategy
 import bot as tg
 import coin_scanner
 import scalper_v3_strategy as v3
-from outcome_check import check_tp_sl
+from outcome_check import check_tp_sl, check_target_ladder
 from market_data import get_market_klines
 from config import (
     LKT,
@@ -60,11 +60,13 @@ from config import (
     COIN_POOL_MIN_SELECTED,
     COINGLASS_API_KEY,
     STRATEGY_NAME,
-    TARGET_ROI_PCT,
     MAX_SL_ROI_PCT,
     DRY_RUN,
     DRY_RUN_SAVE_SIGNALS,
     STRATEGY_V1_ENABLED,
+    SIGNAL_MODE,
+    ENTRY_BUFFER_PCT,
+    PENDING_SIGNAL_EXPIRY_CANDLES,
     SCALPER_V3_ENABLED,
     SCALPER_V3_TIMEFRAME,
     SCALPER_V3_SCAN_INTERVAL_MINUTES,
@@ -126,93 +128,83 @@ async def scan_and_fire_signals(app: Application) -> None:
         return
 
     now = datetime.now(timezone.utc)
-    cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
-    today_start    = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
+    db.expire_old_armed_setups(now)
 
-    signals_today = db.count_signals_since(today_start)
-    if signals_today >= MAX_DAILY_SIGNALS:
-        logger.info("[SCAN] Daily cap reached (%d/%d) — skipping", signals_today, MAX_DAILY_SIGNALS)
-        return
-
-    last_sig = db.latest_signal_time()
-    if last_sig is not None and (now - last_sig).total_seconds() < MIN_DAILY_SIGNAL_GAP_MINUTES * 60:
-        logger.info("[SCAN] Min signal gap not met — skipping")
-        return
+    # ── Phase 1: process existing pending (armed) setups ────────────
+    armed = db.get_armed_setups(limit=len(coins) + 20)
+    armed_symbols = {s["symbol"] for s in armed}
 
     active_signals = db.count_active_signals()
-    slots = MAX_CONCURRENT_SIGNALS - active_signals
-    if slots <= 0:
-        logger.info("[SCAN] %d/%d active signals — no slots", active_signals, MAX_CONCURRENT_SIGNALS)
-        return
-
-    to_scan = [s for s in coins if not db.signal_exists_for_coin(s, cooldown_since)]
-
-    # One private reject-reason dict per symbol -- each is written by exactly
-    # one worker thread, so no shared-state locking is needed.
-    reject_maps = [dict() for _ in to_scan]
-
-    loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as executor:
-        results = await loop.run_in_executor(
-            None,
-            lambda: list(executor.map(
-                lambda i: strategy.evaluate_symbol(to_scan[i], reject_sink=reject_maps[i]),
-                range(len(to_scan)),
-            )),
-        )
-
-    candidates = sorted(
-        (sig for sig in results if sig is not None),
-        key=lambda sig: sig.score,
-        reverse=True,
-    )
-
-    reject_counts: dict[str, int] = {}
-    for m in reject_maps:
-        for k, v in m.items():
-            reject_counts[k] = reject_counts.get(k, 0) + v
-    reject_summary = ", ".join(
-        f"{k}={v}" for k, v in sorted(reject_counts.items(), key=lambda kv: -kv[1])
-    ) or "none"
-
-    if not candidates:
-        logger.info(
-            "[SCAN] Done — %d coins scanned, no candidates | rejects: %s",
-            len(to_scan), reject_summary,
-        )
-        return
-
-    active_long  = db.count_active_signals_by_direction("LONG")
+    active_long = db.count_active_signals_by_direction("LONG")
     active_short = db.count_active_signals_by_direction("SHORT")
+    today_start = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
+    signals_today = db.count_signals_since(today_start)
+    last_sig = db.latest_signal_time()
 
-    fired = 0
-    max_fire = min(slots, SIGNALS_PER_SCAN, MAX_DAILY_SIGNALS - signals_today)
+    for setup in armed:
+        status, fill_price = strategy.check_setup_confirmation(setup)
 
-    for sig in candidates:
-        if fired >= max_fire:
-            break
-
-        if not strategy.direction_slot_available(sig.direction, active_long, active_short):
-            logger.debug("[SCAN] %s %s blocked by direction limit", sig.symbol, sig.direction)
+        if status == "expired":
+            db.mark_armed_setup_expired(setup["id"])
+            continue
+        if status == "invalidated":
+            db.mark_armed_setup_invalidated(setup["id"], reason="opposite_transition_or_sl")
+            continue
+        if status == "waiting":
             continue
 
-        if db.signal_exists_for_coin(sig.symbol, cooldown_since):
-            logger.debug("[SCAN] %s cooldown hit after parallel scan", sig.symbol)
+        # status == "confirmed"
+        slots = MAX_CONCURRENT_SIGNALS - active_signals
+        daily_ok = signals_today < MAX_DAILY_SIGNALS
+        gap_ok = (
+            last_sig is None
+            or (now - last_sig).total_seconds() >= MIN_DAILY_SIGNAL_GAP_MINUTES * 60
+        )
+        direction_ok = strategy.direction_slot_available(setup["direction"], active_long, active_short)
+
+        if slots <= 0 or not daily_ok or not gap_ok or not direction_ok:
+            db.mark_armed_setup_missed(setup["id"], reason="budget_or_slot_unavailable")
             continue
+
+        tp_roi, sl_roi = strategy._roi_pct(setup["direction"], fill_price, setup["tp_price"], setup["sl_price"])
+        sig = strategy.Signal(
+            symbol=setup["symbol"],
+            direction=setup["direction"],
+            entry_price=fill_price,
+            tp_price=setup["tp_price"],
+            sl_price=setup["sl_price"],
+            leverage=LEVERAGE,
+            tp_roi_pct=tp_roi,
+            sl_roi_pct=sl_roi,
+            timeframe_summary=setup.get("setup_reason", ""),
+            generated_at=now,
+            rr=setup["rr"],
+            score=setup["score"],
+            entry_low=fill_price,
+            entry_high=fill_price,
+            tp2_price=setup.get("tp2_price"),
+            tp3_price=setup.get("tp3_price"),
+            position_size=setup.get("position_size"),
+        )
 
         if not strategy.valid_trade_geometry(sig.direction, sig.entry_price, sig.tp_price, sig.sl_price):
             logger.error(
                 "[SIGNAL-BLOCK] Invalid geometry %s %s entry=%.8g tp=%.8g sl=%.8g",
                 sig.symbol, sig.direction, sig.entry_price, sig.tp_price, sig.sl_price,
             )
+            db.mark_armed_setup_invalidated(setup["id"], reason="invalid_geometry_at_confirm")
             continue
 
         if DRY_RUN and not DRY_RUN_SAVE_SIGNALS:
             logger.info(
-                "[DRY-RUN] Would fire | %s %s @ %.6g TP=%.6g SL=%.6g RR=%.2f score=%.1f",
-                sig.symbol, sig.direction, sig.entry_price, sig.tp_price, sig.sl_price, sig.rr, sig.score,
+                "[DRY-RUN] Would confirm | %s %s @ %.6g TP1=%.6g TP2=%.6g TP3=%.6g SL=%.6g RR=%.2f",
+                sig.symbol, sig.direction, sig.entry_price, sig.tp_price,
+                sig.tp2_price, sig.tp3_price, sig.sl_price, sig.rr,
             )
-            fired += 1
+            db.mark_armed_setup_fired(setup["id"], signal_id=-1)
+            active_signals += 1
+            signals_today += 1
+            last_sig = now
             if sig.direction == "LONG":
                 active_long += 1
             else:
@@ -234,29 +226,73 @@ async def scan_and_fire_signals(app: Application) -> None:
                 entry_timeframe=ENTRY_TF,
                 trend_timeframe=ENTRY_TF,
                 setup_reason=sig.timeframe_summary,
+                tp2_price=sig.tp2_price,
+                tp3_price=sig.tp3_price,
+                position_size=sig.position_size,
             )
+            db.mark_armed_setup_fired(setup["id"], signal_id)
 
             if not DRY_RUN:
                 await tg.broadcast_signal(app, sig, signal_id)
 
-            fired += 1
+            active_signals += 1
+            signals_today += 1
+            last_sig = now
             if sig.direction == "LONG":
                 active_long += 1
             else:
                 active_short += 1
 
             logger.info(
-                "[SIGNAL] Fired #%d %s %s score=%.1f entry=%.6g tp=%.6g sl=%.6g rr=%.2f",
+                "[SIGNAL] Confirmed #%d %s %s score=%.1f entry=%.6g tp1=%.6g tp2=%.6g tp3=%.6g sl=%.6g rr=%.2f",
                 signal_id, sig.symbol, sig.direction, sig.score,
-                sig.entry_price, sig.tp_price, sig.sl_price, sig.rr,
+                sig.entry_price, sig.tp_price, sig.tp2_price, sig.tp3_price, sig.sl_price, sig.rr,
             )
-
         except Exception as e:
-            logger.error("[SCAN] Failed to fire signal for %s: %s", sig.symbol, e, exc_info=True)
+            logger.error("[SCAN] Failed to confirm setup for %s: %s", setup["symbol"], e, exc_info=True)
+
+    # ── Phase 2: scan for new pending setups ────────────────────────
+    cooldown_since = now - timedelta(minutes=SIGNAL_COOLDOWN_MINUTES)
+    to_scan = [
+        s for s in coins
+        if s not in armed_symbols and not db.signal_exists_for_coin(s, cooldown_since)
+    ]
+
+    reject_maps = [dict() for _ in to_scan]
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as executor:
+        results = await loop.run_in_executor(
+            None,
+            lambda: list(executor.map(
+                lambda i: strategy.detect_pending_setup(to_scan[i], reject_sink=reject_maps[i]),
+                range(len(to_scan)),
+            )),
+        )
+
+    new_setups = [s for s in results if s is not None]
+
+    reject_counts: dict[str, int] = {}
+    for m in reject_maps:
+        for k, v in m.items():
+            reject_counts[k] = reject_counts.get(k, 0) + v
+    reject_summary = ", ".join(
+        f"{k}={v}" for k, v in sorted(reject_counts.items(), key=lambda kv: -kv[1])
+    ) or "none"
+
+    for setup in new_setups:
+        try:
+            db.save_armed_setup(setup)
+            logger.info(
+                "[PENDING] Armed %s %s entry=%.6g sl=%.6g tp1=%.6g score=%.1f rr=%.2f",
+                setup["symbol"], setup["direction"], setup["trigger_price"],
+                setup["sl_price"], setup["tp_price"], setup["score"], setup["rr"],
+            )
+        except Exception as e:
+            logger.error("[SCAN] Failed to arm setup for %s: %s", setup["symbol"], e, exc_info=True)
 
     logger.info(
-        "[SCAN] Done — %d/%d coins scanned, %d candidate(s), %d fired | rejects: %s",
-        len(to_scan), len(coins), len(candidates), fired, reject_summary,
+        "[SCAN] Done — %d armed processed, %d/%d coins scanned for new setups, %d new pending | rejects: %s",
+        len(armed), len(to_scan), len(coins), len(new_setups), reject_summary,
     )
 
 
