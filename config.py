@@ -54,16 +54,20 @@ MIN_24H_VOLUME_USD: float            = float(os.getenv("MIN_24H_VOLUME_USD", str
 MAX_SPREAD_PCT: float                = float(os.getenv("MAX_SPREAD_PCT", "0.35"))
 MIN_PRICE_CHANGE_24H_PCT: float      = float(os.getenv("MIN_PRICE_CHANGE_24H_PCT", "0.0"))
 
-# ── Strategy: Ribbon-Flip Trend-Bar Confirmation v1 ─────────────────
+# ── Strategy: Binocular Pending-Breakout v1 ─────────────────────────
 STRATEGY_NAME: str = os.getenv(
     "STRATEGY_NAME",
-    "Ribbon-Flip Trend-Bar Confirmation v1",
+    "Binocular Pending-Breakout v1",
 )
 
 ENTRY_TF: str = os.getenv("ENTRY_TF", "15m")
-ENTRY_KLINE_COUNT: int = int(os.getenv("ENTRY_KLINE_COUNT", "120"))
+ENTRY_KLINE_COUNT: int = int(os.getenv("ENTRY_KLINE_COUNT", "220"))
+# Bumped from 120 -- EMA200 (confirmed/strict SIGNAL_MODE) needs ~200 bars
+# of warmup, plus margin for the Chandelier(10)/RSI(55)/PVT-signal(21)
+# periods and the ribbon baseline(60).
 
-# 6-EMA ribbon (Pine script defaults) -- "arrow 1"
+# 6-EMA ribbon (Pine script defaults) -- confirmed/strict-mode filter,
+# not the primary trigger (see SIGNAL_MODE below).
 RIBBON_MA1_LEN: int = int(os.getenv("RIBBON_MA1_LEN", "30"))
 RIBBON_MA2_LEN: int = int(os.getenv("RIBBON_MA2_LEN", "35"))
 RIBBON_MA3_LEN: int = int(os.getenv("RIBBON_MA3_LEN", "40"))
@@ -71,55 +75,48 @@ RIBBON_MA4_LEN: int = int(os.getenv("RIBBON_MA4_LEN", "45"))
 RIBBON_MA5_LEN: int = int(os.getenv("RIBBON_MA5_LEN", "50"))
 RIBBON_BASELINE_LEN: int = int(os.getenv("RIBBON_BASELINE_LEN", "60"))
 
-# How many bars back a ribbon flip may have happened and still count as
-# "recent enough" to arm a setup -- bounds the "wait for arrow 2" step
-# without persisted arm state (recomputed fresh every scan). Backtesting
-# (60d, XRP/DOGE/WLD) found no edge from widening this beyond 1 -- an
-# exact-bar flip performs as well as a several-bar window, so there's no
-# benefit to persisting arm/monitor state for a longer wait.
-RIBBON_LOOKBACK_BARS: int = int(os.getenv("RIBBON_LOOKBACK_BARS", "1"))
-
 # Minimum age (seconds) the last CLOSED candle must have before a signal
 # can fire on it. MEXC's kline REST data for a just-closed candle can still
-# get revised for a short window after the close (observed live: a candle
-# read as Trend-Bar-confirming moments after close no longer read that way
-# a few minutes later). Scans run every SCAN_INTERVAL_MINUTES, so a candle
-# rejected here for being too fresh gets picked up on a later scan attempt
-# within the same RIBBON_LOOKBACK_BARS window instead of being missed.
+# get revised for a short window after the close.
 MIN_CANDLE_SETTLE_SECONDS: int = int(os.getenv("MIN_CANDLE_SETTLE_SECONDS", "90"))
 
-# Price-Action-Channel "Trend Bar" confirmation -- "arrow 2"
-TREND_BAR_PAC_LENGTH: int = int(os.getenv("TREND_BAR_PAC_LENGTH", "50"))
-
-# ATR period used for the structural-SL buffer and candidate scoring.
+# ATR period backing the Chandelier trailing-stop direction flip.
 ATR_PERIOD: int = int(os.getenv("ATR_PERIOD", "14"))
 
-SL_ATR_BUFFER_MULTIPLIER: float = float(os.getenv("SL_ATR_BUFFER_MULTIPLIER", "0.10"))
-
-# Floor on the structural SL distance, as a multiple of ATR -- real data
-# showed the plain swing-since-flip SL is often tighter than a single 15m
-# candle's normal noise range, causing premature stop-outs on otherwise
-# correct directional calls. Backtesting confirmed flooring the stop fixes
-# this (net ROI improved substantially at both 1.5x and 2.0x; 2.0x tested
-# best).
-SL_FLOOR_ATR_MULT: float = float(os.getenv("SL_FLOOR_ATR_MULT", "2.0"))
-
-# LONG signals underperformed SHORT in every backtest configuration tested
-# (stateless lookback sweep, arm/monitor, with and without the SL floor) --
-# never once net positive. Left enabled for live trading (both directions)
-# so the asymmetry can keep being observed on live data; set to "false" to
-# run SHORT-only, which is what backtesting recommends.
+# LONG signals underperformed SHORT in every backtest of the prior
+# ribbon-flip strategy -- left enabled by default so the asymmetry can
+# keep being observed on live data; set to "false" to run SHORT-only.
 ENABLE_LONG_SIGNALS: bool = os.getenv("ENABLE_LONG_SIGNALS", "true").lower() == "true"
 
-TARGET_ROI_PCT: float = float(os.getenv("TARGET_ROI_PCT", "15.0"))
 MAX_SL_ROI_PCT: float = float(os.getenv("MAX_SL_ROI_PCT", "10.0"))
-
 LEVERAGE: int = int(os.getenv("LEVERAGE", "20"))
-
-TP_PRICE_PCT: float = TARGET_ROI_PCT / 100.0 / LEVERAGE
 MAX_SL_PRICE_PCT: float = MAX_SL_ROI_PCT / 100.0 / LEVERAGE
 
 MIN_RR: float = float(os.getenv("MIN_RR", "1.5"))
+
+# ── Strategy: Binocular Pending-Breakout v1 ─────────────────────────
+SIGNAL_MODE: str = os.getenv("SIGNAL_MODE", "confirmed")   # "original" | "confirmed" | "strict"
+CONFIRMATION_TIMEFRAMES: str = os.getenv("CONFIRMATION_TIMEFRAMES", "30m,1h,4h")   # strict mode only
+MTF_MIN_CONFIRMATIONS: int = int(os.getenv("MTF_MIN_CONFIRMATIONS", "2"))          # strict mode only
+
+ACCOUNT_BALANCE: float = float(os.getenv("ACCOUNT_BALANCE", "10000"))              # informational only
+RISK_PERCENT_PER_TRADE: float = float(os.getenv("RISK_PERCENT_PER_TRADE", "1.0"))  # informational only
+
+PVT_SIGNAL_TYPE: str = os.getenv("PVT_SIGNAL_TYPE", "SMA")           # "SMA" | "EMA"
+PVT_SIGNAL_LENGTH: int = int(os.getenv("PVT_SIGNAL_LENGTH", "21"))
+RSI_FAST_PERIOD: int = int(os.getenv("RSI_FAST_PERIOD", "25"))
+RSI_SLOW_PERIOD: int = int(os.getenv("RSI_SLOW_PERIOD", "55"))
+CHANDELIER_ATR_PERIOD: int = int(os.getenv("CHANDELIER_ATR_PERIOD", "10"))
+CHANDELIER_MULTIPLIER: float = float(os.getenv("CHANDELIER_MULTIPLIER", "2.2"))
+BINOCULAR_EMA200_LEN: int = int(os.getenv("BINOCULAR_EMA200_LEN", "200"))
+
+ENTRY_BUFFER_PCT: float = float(os.getenv("ENTRY_BUFFER_PCT", "0.0002"))   # 0.02%
+PENDING_SIGNAL_EXPIRY_CANDLES: int = int(os.getenv("PENDING_SIGNAL_EXPIRY_CANDLES", "5"))
+
+TARGET1_CLOSE_FRACTION: float = float(os.getenv("TARGET1_CLOSE_FRACTION", "0.5"))
+TARGET2_CLOSE_FRACTION: float = float(os.getenv("TARGET2_CLOSE_FRACTION", "0.3"))
+TARGET3_CLOSE_FRACTION: float = float(os.getenv("TARGET3_CLOSE_FRACTION", "0.2"))
+MOVE_SL_TO_BREAKEVEN_AFTER_T1: bool = os.getenv("MOVE_SL_TO_BREAKEVEN_AFTER_T1", "true").lower() == "true"
 
 SCAN_INTERVAL_MINUTES: int = int(os.getenv("SCAN_INTERVAL_MINUTES", "5"))
 
