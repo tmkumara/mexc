@@ -260,6 +260,41 @@ def confirmed_mode_ok(direction: str, df: pd.DataFrame) -> bool:
     )
 
 
+def mtf_signal(df_tf: pd.DataFrame) -> tuple[bool, bool]:
+    direction, _, _ = calculate_chandelier_direction(df_tf, CHANDELIER_ATR_PERIOD, CHANDELIER_MULTIPLIER)
+    pvt = calculate_pvt(df_tf)
+    pvt_signal = calculate_pvt_signal(pvt, PVT_SIGNAL_LENGTH, PVT_SIGNAL_TYPE)
+    buy = bool(direction.iloc[-1] == 1 and pvt.iloc[-1] > pvt_signal.iloc[-1])
+    sell = bool(direction.iloc[-1] == -1 and pvt.iloc[-1] < pvt_signal.iloc[-1])
+    return buy, sell
+
+
+def strict_mode_ok(direction: str, df: pd.DataFrame, symbol: str) -> tuple[bool, int]:
+    vwap = calculate_daily_vwap(df)
+    close = float(df["close"].iloc[-1])
+    vwap_last = float(vwap.iloc[-1])
+    vwap_ok = close > vwap_last if direction == "LONG" else close < vwap_last
+    if not vwap_ok:
+        return False, 0
+
+    confirmations = 0
+    timeframes = [t.strip() for t in CONFIRMATION_TIMEFRAMES.split(",") if t.strip()]
+    for tf in timeframes:
+        tf_df = get_market_klines(symbol, tf, count=ENTRY_KLINE_COUNT)
+        if tf_df is None or tf_df.empty:
+            continue
+        tf_closed = tf_df.iloc[:-1]
+        if len(tf_closed) < 60:
+            continue
+        buy, sell = mtf_signal(tf_closed)
+        if direction == "LONG" and buy:
+            confirmations += 1
+        elif direction == "SHORT" and sell:
+            confirmations += 1
+
+    return confirmations >= MTF_MIN_CONFIRMATIONS, confirmations
+
+
 def calculate_trend_bar(df: pd.DataFrame, pac_length: int) -> pd.Series:
     pac_hi = calculate_ema(df["high"], pac_length)
     pac_lo = calculate_ema(df["low"], pac_length)

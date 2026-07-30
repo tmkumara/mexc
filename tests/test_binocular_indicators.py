@@ -181,3 +181,51 @@ def test_confirmed_mode_ok_for_short_downtrend():
     df = _trend_df(260, step=-0.5)
     assert confirmed_mode_ok("SHORT", df) is True
     assert confirmed_mode_ok("LONG", df) is False
+
+
+from strategy import mtf_signal, strict_mode_ok
+
+
+def test_mtf_signal_omits_rsi_term(monkeypatch):
+    monkeypatch.setattr(strategy, "CHANDELIER_ATR_PERIOD", 10)
+    monkeypatch.setattr(strategy, "CHANDELIER_MULTIPLIER", 2.2)
+    monkeypatch.setattr(strategy, "PVT_SIGNAL_LENGTH", 21)
+    monkeypatch.setattr(strategy, "PVT_SIGNAL_TYPE", "SMA")
+    df = _trend_df(220, step=1.0)
+    buy, sell = mtf_signal(df)
+    assert buy is True
+    assert sell is False
+
+
+def test_strict_mode_requires_vwap_side(monkeypatch):
+    monkeypatch.setattr(strategy, "CONFIRMATION_TIMEFRAMES", "30m")
+    monkeypatch.setattr(strategy, "MTF_MIN_CONFIRMATIONS", 1)
+    idx = pd.date_range("2026-01-01", periods=5, freq="15min")
+    df = pd.DataFrame({
+        "high":  [105.0, 106.0, 107.0, 108.0, 109.0],
+        "low":   [95.0, 96.0, 97.0, 98.0, 99.0],
+        "close": [90.0, 91.0, 92.0, 93.0, 80.0],
+        "volume": [1000.0] * 5,
+    }, index=idx)
+    ok, confirmations = strict_mode_ok("LONG", df, "XRP_USDT")
+    assert ok is False
+    assert confirmations == 0
+
+
+def test_strict_mode_requires_min_mtf_confirmations(monkeypatch):
+    monkeypatch.setattr(strategy, "CONFIRMATION_TIMEFRAMES", "30m,1h,4h")
+    monkeypatch.setattr(strategy, "MTF_MIN_CONFIRMATIONS", 2)
+    monkeypatch.setattr(strategy, "ENTRY_KLINE_COUNT", 220)
+
+    uptrend = _trend_df(220, step=1.0)
+    uptrend.index = pd.date_range("2026-01-01", periods=220, freq="15min")
+    downtrend_tf = _trend_df(220, step=-1.0)
+
+    def _fake_klines(symbol, interval, count=100):
+        return pd.concat([downtrend_tf, downtrend_tf.iloc[[-1]]])
+
+    monkeypatch.setattr(strategy, "get_market_klines", _fake_klines)
+
+    ok, confirmations = strict_mode_ok("LONG", uptrend, "XRP_USDT")
+    assert ok is False
+    assert confirmations == 0
