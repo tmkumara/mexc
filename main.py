@@ -1,12 +1,15 @@
 """
-Main entry point — Ribbon-Flip Trend-Bar Confirmation v1.
+Main entry point — Binocular Pending-Breakout v1.
 
 Scheduler jobs / background tasks:
   Every SCAN_INTERVAL_MINUTES (default 5m), a few seconds after candle
-  close — scanner: evaluate every pooled coin against the 15m/5m strategy,
-  apply the BTC safety filter, score, rank, and fire signals within the
-  daily/gap/concurrent/direction limits.
-  Every OUTCOME_CHECK_MINUTES — outcome checker (plain SL-first TP/SL).
+  close — scanner: two-phase pending-breakout loop. Phase 1 checks every
+  currently-armed pending setup for entry-breakout confirmation, expiry,
+  or invalidation; confirmed setups fire within the daily/gap/concurrent/
+  direction limits. Phase 2 scans the remaining coin pool for new
+  Chandelier/PVT/RSI trigger transitions and arms new pending setups.
+  Every OUTCOME_CHECK_MINUTES — outcome checker (3-target partial-exit
+  ladder, breakeven after T1).
   Every COIN_REFRESH_HOURS — coin pool refresh.
   23:55 daily     — daily report
   Mon 07:00       — weekly report
@@ -637,7 +640,7 @@ async def main():
     # Signal scanner -- every SCAN_INTERVAL_MINUTES, a few seconds after
     # candle close so MEXC has finalized the candle.
     if STRATEGY_V1_ENABLED:
-        logger.info("[V1] Ribbon-Flip Trend-Bar Confirmation scanner ENABLED")
+        logger.info("[V1] Binocular Pending-Breakout scanner ENABLED")
         scheduler.add_job(
             scan_and_fire_signals,
             CronTrigger(minute=f"*/{SCAN_INTERVAL_MINUTES}", second=5),
@@ -645,7 +648,7 @@ async def main():
             id="signal_scanner",
         )
     else:
-        logger.info("[V1] Ribbon-Flip Trend-Bar Confirmation scanner DISABLED (STRATEGY_V1_ENABLED=false)")
+        logger.info("[V1] Binocular Pending-Breakout scanner DISABLED (STRATEGY_V1_ENABLED=false)")
 
     scheduler.add_job(
         check_outcomes,

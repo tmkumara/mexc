@@ -135,10 +135,10 @@ SIGNAL_EXPIRE_HOURS: int = int(os.getenv("SIGNAL_EXPIRE_HOURS", "6"))
 
 SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "4"))
 
-# ── Strategy: Ribbon-Flip Trend-Bar Confirmation v1 ──
-# On by default for backward compatibility; set false in .env to stop
-# firing new v1 signals (e.g. once v3 is validated and preferred).
-# Outcome checking for any already-pending v1 signals keeps running
+# ── Strategy: Binocular Pending-Breakout v1 (primary scanner gate) ──
+# On by default; set false in .env to stop arming new pending setups and
+# confirming new signals (e.g. once v3 is validated and preferred).
+# Outcome checking for any already-pending signals keeps running
 # regardless, so open trades still resolve to win/loss/expired.
 STRATEGY_V1_ENABLED: bool = os.getenv("STRATEGY_V1_ENABLED", "true").lower() == "true"
 
