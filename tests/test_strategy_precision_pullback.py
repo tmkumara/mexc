@@ -63,7 +63,16 @@ def test_rejected_when_trend_disagrees_across_timeframes(monkeypatch):
     setup = strategy.detect_pending_setup("TEST_USDT", reject_sink=reject_sink)
 
     assert setup is None
-    assert reject_sink.get("no_trend_alignment") == 1
+    # TREND_TF's own close/EMA200/slope are self-consistent for "SHORT" here
+    # (a clean, noiseless downtrend), so the TREND_TF-only trend-filter gate
+    # (step 1, "no_trend_alignment") passes on its own terms -- the
+    # cross-timeframe mismatch against the LONG-shaped ENTRY_TF data is
+    # instead caught by the very next gate that reads ENTRY_TF (step 2,
+    # "no_ema_alignment", since ENTRY_TF's EMA20>EMA50 there disagrees with
+    # the SHORT direction TREND_TF established). Either gate correctly
+    # rejects the setup; this asserts the one the pipeline's actual gate
+    # ordering guarantees fires first for this exact fixture combination.
+    assert reject_sink.get("no_ema_alignment") == 1
 
 
 def test_rejected_when_chasing_price(monkeypatch):
