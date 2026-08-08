@@ -152,6 +152,53 @@ def _atr_pct_ok(atr_last: float, close: float) -> bool:
     return ATR_MIN_PCT <= atr_pct <= ATR_MAX_PCT
 
 
+def _score_pending_setup(
+    direction: str,
+    df: pd.DataFrame,
+    ema_trend: pd.Series,
+    slope_lookback: int,
+    pullback_distance_pct: float,
+    vol_ma: pd.Series,
+) -> float:
+    """0-100 rubric: 15m EMA200 trend(20) + 5m EMA20/50 alignment(15) --
+    both flat since they're already gated pass/fail upstream -- plus
+    EMA200 slope strength(10), pullback quality(15), RSI reset(10, flat,
+    already gated), confirmation-candle clearance(15), volume(10), and
+    ATR environment(5, flat, already gated)."""
+    score = 20.0 + 15.0
+
+    ema_last = float(ema_trend.iloc[-1])
+    ema_prev = float(ema_trend.iloc[-1 - slope_lookback]) if len(ema_trend) > slope_lookback else ema_last
+    slope_move_pct = abs(ema_last - ema_prev) / ema_last if ema_last else 0.0
+    score += 10.0 * min(1.0, slope_move_pct / 0.01)
+
+    if pullback_distance_pct <= PULLBACK_PREFERRED_DISTANCE_PCT:
+        pullback_score = 1.0
+    else:
+        span = max(NO_CHASE_MAX_DISTANCE_PCT - PULLBACK_PREFERRED_DISTANCE_PCT, 1e-9)
+        pullback_score = max(0.0, 1.0 - (pullback_distance_pct - PULLBACK_PREFERRED_DISTANCE_PCT) / span)
+    score += 15.0 * min(1.0, pullback_score)
+
+    score += 10.0
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    candle_range = max(float(last["high"]) - float(last["low"]), 1e-9)
+    if direction == "LONG":
+        clearance = (float(last["close"]) - max(float(last["open"]), float(prev["high"]))) / candle_range
+    else:
+        clearance = (min(float(last["open"]), float(prev["low"])) - float(last["close"])) / candle_range
+    score += 15.0 * min(1.0, max(0.0, clearance))
+
+    vol_ratio = float(last["volume"]) / max(float(vol_ma.iloc[-1]), 1e-9)
+    vol_score = min(1.0, max(0.0, (vol_ratio - VOLUME_CONFIRM_MULT) / VOLUME_CONFIRM_MULT))
+    score += 10.0 * vol_score
+
+    score += 5.0
+
+    return round(min(100.0, max(0.0, score)), 1)
+
+
 def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
     high, low, close = df["high"], df["low"], df["close"]
     atr = calculate_atr(df, atr_period)

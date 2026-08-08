@@ -57,13 +57,13 @@ def make_pullback_confirmation_df(
     trend_last = closes[-1]
 
     pullback = [
-        trend_last - 0.9 * sign,
-        trend_last - 1.6 * sign,
-        trend_last - 1.9 * sign,
+        trend_last - 1.0 * sign,
+        trend_last - 3.0 * sign,
+        trend_last - 3.5 * sign,
     ]
     closes.extend(pullback)
 
-    confirm_close = pullback[-1] + 3.0 * sign
+    confirm_close = pullback[-1] + 1.2 * sign
     closes.append(confirm_close)
 
     closes = np.array(closes)

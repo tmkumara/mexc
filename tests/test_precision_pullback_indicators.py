@@ -125,3 +125,37 @@ def test_atr_pct_ok_too_low():
 
 def test_atr_pct_ok_too_high():
     assert strategy._atr_pct_ok(atr_last=1.5, close=100.0) is False
+
+
+from tests.strategy_fixtures import make_pullback_confirmation_df
+
+
+def test_score_pending_setup_within_bounds_and_passes_gate_long():
+    df = make_pullback_confirmation_df("LONG").iloc[:-1]
+    ema_trend = strategy.calculate_ema(df["close"], config.EMA_TREND_LEN)
+    vol_ma = strategy.calculate_volume_ma(df, config.VOLUME_MA_PERIOD)
+    ema20 = strategy.calculate_ema(df["close"], config.EMA_FAST_LEN)
+    close = float(df["close"].iloc[-1])
+    distance_pct = abs(close - float(ema20.iloc[-1])) / close
+
+    score = strategy._score_pending_setup(
+        "LONG", df, ema_trend, config.EMA_TREND_SLOPE_LOOKBACK, distance_pct, vol_ma
+    )
+
+    assert 0.0 <= score <= 100.0
+    assert score >= config.MIN_SIGNAL_SCORE
+
+
+def test_score_lower_when_pullback_distance_larger():
+    df = make_pullback_confirmation_df("LONG").iloc[:-1]
+    ema_trend = strategy.calculate_ema(df["close"], config.EMA_TREND_LEN)
+    vol_ma = strategy.calculate_volume_ma(df, config.VOLUME_MA_PERIOD)
+
+    score_tight = strategy._score_pending_setup(
+        "LONG", df, ema_trend, config.EMA_TREND_SLOPE_LOOKBACK, 0.0005, vol_ma
+    )
+    score_wide = strategy._score_pending_setup(
+        "LONG", df, ema_trend, config.EMA_TREND_SLOPE_LOOKBACK, 0.0025, vol_ma
+    )
+
+    assert score_tight > score_wide
