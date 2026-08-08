@@ -38,6 +38,15 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# TODO(Task 6): temporary import block so Task 4/5's new functions can
+# resolve their config names ahead of the real bottom-of-file import
+# block rewrite. Removed once Task 6 rewrites that block wholesale.
+from config import (
+    RSI_LONG_RESET_MIN, RSI_LONG_RESET_MAX, RSI_SHORT_RESET_MIN, RSI_SHORT_RESET_MAX,
+    VOLUME_CONFIRM_MULT, MAX_CANDLE_BODY_PCT, ATR_MIN_PCT, ATR_MAX_PCT, EMA_TREND_LEN,
+    NO_CHASE_MAX_DISTANCE_PCT, PULLBACK_PREFERRED_DISTANCE_PCT,
+)
+
 
 @dataclass
 class Signal:
@@ -86,6 +95,61 @@ def calculate_atr(df: pd.DataFrame, period: int) -> pd.Series:
         (low - prev_close).abs(),
     ], axis=1).max(axis=1)
     return tr.ewm(alpha=1.0 / period, min_periods=1, adjust=False).mean()
+
+
+def calculate_volume_ma(df: pd.DataFrame, period: int) -> pd.Series:
+    return df["volume"].rolling(window=period, min_periods=1).mean()
+
+
+def _ema_trend_slope_up(ema_trend: pd.Series, lookback: int) -> bool:
+    if len(ema_trend) <= lookback:
+        return False
+    return float(ema_trend.iloc[-1]) > float(ema_trend.iloc[-1 - lookback])
+
+
+def _rsi_reset_ok(direction: str, rsi: pd.Series, lookback: int) -> bool:
+    if len(rsi) < 2:
+        return False
+    if direction == "LONG":
+        zone_lo, zone_hi = RSI_LONG_RESET_MIN, RSI_LONG_RESET_MAX
+    else:
+        zone_lo, zone_hi = RSI_SHORT_RESET_MIN, RSI_SHORT_RESET_MAX
+
+    window = rsi.iloc[-(lookback + 1):]
+    was_in_zone = bool(((window >= zone_lo) & (window <= zone_hi)).any())
+    if not was_in_zone:
+        return False
+
+    turning = rsi.iloc[-1] > rsi.iloc[-2] if direction == "LONG" else rsi.iloc[-1] < rsi.iloc[-2]
+    return bool(turning)
+
+
+def _confirmation_candle_ok(direction: str, df: pd.DataFrame, ema20: pd.Series, vol_ma: pd.Series) -> bool:
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    close, open_ = float(last["close"]), float(last["open"])
+    high, low, volume = float(last["high"]), float(last["low"]), float(last["volume"])
+    ema20_last = float(ema20.iloc[-1])
+    vol_ma_last = float(vol_ma.iloc[-1])
+
+    if volume <= vol_ma_last * VOLUME_CONFIRM_MULT:
+        return False
+
+    if direction == "LONG":
+        return close > open_ and close > ema20_last and close > float(prev["high"])
+    return close < open_ and close < ema20_last and close < float(prev["low"])
+
+
+def _abnormal_candle(df: pd.DataFrame) -> bool:
+    last = df.iloc[-1]
+    open_, close = float(last["open"]), float(last["close"])
+    body_pct = abs(close - open_) / open_
+    return body_pct > MAX_CANDLE_BODY_PCT
+
+
+def _atr_pct_ok(atr_last: float, close: float) -> bool:
+    atr_pct = atr_last / close
+    return ATR_MIN_PCT <= atr_pct <= ATR_MAX_PCT
 
 
 def calculate_supertrend(df: pd.DataFrame, atr_period: int, multiplier: float) -> pd.DataFrame:
