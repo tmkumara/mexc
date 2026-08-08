@@ -49,24 +49,29 @@ def make_pullback_confirmation_df(
     volume) that should satisfy detect_pending_setup's full pipeline.
     SHORT mirrors every inequality. Ends with one duplicated last row so
     callers can safely iloc[:-1] to drop the "forming" candle, matching
-    every other fixture in this module."""
+    every other fixture in this module.
+
+    Trend and pullback/confirm offsets are all PERCENTAGE-based (relative
+    to the trend's own last close), not fixed dollar amounts -- fixed
+    dollar offsets made LONG (which drifts to a high absolute price
+    level here) and SHORT (which drifts to a low one) behave very
+    differently against price-relative gates like NO_CHASE_MAX_DISTANCE_PCT
+    and MAX_CANDLE_BODY_PCT. Percentage-based offsets keep both
+    directions symmetric regardless of price level."""
     sign = 1.0 if direction == "LONG" else -1.0
     trend_bars = bars - 4
-    step = 0.25 * sign
-    closes = list(start_price + np.arange(trend_bars) * step)
+    step_pct = 0.0015 * sign
+    closes = start_price * (1.0 + step_pct) ** np.arange(trend_bars)
     trend_last = closes[-1]
 
     pullback = [
-        trend_last - 1.0 * sign,
-        trend_last - 3.0 * sign,
-        trend_last - 3.5 * sign,
+        trend_last * (1 - 0.006 * sign),
+        trend_last * (1 - 0.016 * sign),
+        trend_last * (1 - 0.02 * sign),
     ]
-    closes.extend(pullback)
+    confirm_close = pullback[-1] * (1 + 0.006 * sign)
+    closes = np.concatenate([closes, pullback, [confirm_close]])
 
-    confirm_close = pullback[-1] + 1.2 * sign
-    closes.append(confirm_close)
-
-    closes = np.array(closes)
     opens = np.empty_like(closes)
     opens[0] = start_price
     opens[1:] = closes[:-1]
@@ -74,7 +79,7 @@ def make_pullback_confirmation_df(
     highs = np.maximum(opens, closes) + 0.05
     lows = np.minimum(opens, closes) - 0.05
     volumes = np.full(bars, 1000.0)
-    volumes[-1] = 1400.0   # 1.4x -- above VOLUME_CONFIRM_MULT's default 1.15x
+    volumes[-1] = 2500.0   # 2.5x -- above VOLUME_CONFIRM_MULT's default 1.15x
 
     idx = pd.date_range("2026-01-01", periods=bars, freq="5min")
     df = pd.DataFrame(
