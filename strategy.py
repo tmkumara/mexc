@@ -594,17 +594,27 @@ def check_setup_confirmation(setup: dict) -> tuple[str, float | None]:
 from market_data import get_market_klines
 from config import (
     ENTRY_TF, ENTRY_KLINE_COUNT, CANDLE_MINUTES,
-    RIBBON_MA1_LEN, RIBBON_MA2_LEN, RIBBON_MA3_LEN, RIBBON_MA4_LEN, RIBBON_MA5_LEN,
-    RIBBON_BASELINE_LEN, ATR_PERIOD, MIN_CANDLE_SETTLE_SECONDS,
-    LEVERAGE, MAX_SL_PRICE_PCT, MIN_RR, ENABLE_LONG_SIGNALS,
-    SIGNAL_MODE, CONFIRMATION_TIMEFRAMES, MTF_MIN_CONFIRMATIONS,
-    ACCOUNT_BALANCE, RISK_PERCENT_PER_TRADE,
-    PVT_SIGNAL_TYPE, PVT_SIGNAL_LENGTH, RSI_FAST_PERIOD, RSI_SLOW_PERIOD,
-    CHANDELIER_ATR_PERIOD, CHANDELIER_MULTIPLIER, BINOCULAR_EMA200_LEN,
+    ATR_PERIOD, MIN_CANDLE_SETTLE_SECONDS,
+    LEVERAGE, MAX_SL_PRICE_PCT, ENABLE_LONG_SIGNALS,
     ENTRY_BUFFER_PCT, PENDING_SIGNAL_EXPIRY_CANDLES,
-    TARGET1_CLOSE_FRACTION, TARGET2_CLOSE_FRACTION, TARGET3_CLOSE_FRACTION,
-    MOVE_SL_TO_BREAKEVEN_AFTER_T1,
 )
+# NOTE (interim state, Tasks 3-6 of the Precision Pullback Scalper v1 plan):
+# config.py's Binocular-era constants (RIBBON_*, MIN_RR, SIGNAL_MODE,
+# CONFIRMATION_TIMEFRAMES, MTF_MIN_CONFIRMATIONS, ACCOUNT_BALANCE,
+# RISK_PERCENT_PER_TRADE, PVT_*, RSI_FAST/SLOW_PERIOD, CHANDELIER_*,
+# BINOCULAR_EMA200_LEN, TARGET1/2/3_CLOSE_FRACTION,
+# MOVE_SL_TO_BREAKEVEN_AFTER_T1) were removed from config.py in Task 3, one
+# task before the old Binocular pipeline below is itself removed in Task 6.
+# This import block is trimmed to only the names that still exist so the
+# module imports successfully in the interim; the old Binocular functions
+# below that reference the removed names as bare globals will raise
+# NameError if actually CALLED (not merely imported) until Task 6 deletes
+# them -- expected and harmless, since nothing in this plan's new tests
+# (Tasks 4-5) calls the old Binocular functions, and the old Binocular
+# tests (tests/test_binocular_indicators.py, tests/test_strategy_binocular_pending.py)
+# are already scoped for deletion in Task 13, same as the plan's own
+# already-accepted pattern from Task 6 onward -- this note just documents
+# it starting one task earlier than the plan text anticipated.
 
 
 def valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
