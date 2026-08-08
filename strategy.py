@@ -472,9 +472,17 @@ def _build_pending_setup(
     }
 
 
-def _score_pending_setup(
+def _score_pending_setup_binocular_legacy(
     direction: str, df: pd.DataFrame, rr: float, mtf_confirmations: int | None
 ) -> float:
+    # NOTE (interim state, Task 6 deletes this whole old-Binocular function
+    # along with the rest of the pipeline below): renamed from
+    # _score_pending_setup, which now collides with Task 5's new scoring
+    # function of the same name defined earlier in this file -- Python
+    # binds the LAST top-level def in the module, so the old one was
+    # silently shadowing the new one for every caller, not just this
+    # function's own call site below. Renaming here (not the new function)
+    # keeps Task 5's function at its brief-specified name.
     pvt = calculate_pvt(df)
     pvt_signal = calculate_pvt_signal(pvt, PVT_SIGNAL_LENGTH, PVT_SIGNAL_TYPE)
     rsi_fast = calculate_rsi(df["close"], RSI_FAST_PERIOD)
@@ -577,7 +585,7 @@ def detect_pending_setup(symbol: str, reject_sink: dict | None = None) -> dict |
         if setup is None:
             return None
 
-        setup["score"] = _score_pending_setup(direction, closed, setup["rr"], mtf_confirmations)
+        setup["score"] = _score_pending_setup_binocular_legacy(direction, closed, setup["rr"], mtf_confirmations)
         setup["setup_reason"] = f"Binocular {SIGNAL_MODE} trigger"
         setup["trend_summary"] = "Chandelier/PVT/RSI"
         setup["created_at"] = datetime.now(timezone.utc).isoformat()
