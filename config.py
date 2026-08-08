@@ -54,69 +54,76 @@ MIN_24H_VOLUME_USD: float            = float(os.getenv("MIN_24H_VOLUME_USD", str
 MAX_SPREAD_PCT: float                = float(os.getenv("MAX_SPREAD_PCT", "0.35"))
 MIN_PRICE_CHANGE_24H_PCT: float      = float(os.getenv("MIN_PRICE_CHANGE_24H_PCT", "0.0"))
 
-# ── Strategy: Binocular Pending-Breakout v1 ─────────────────────────
+# ── Strategy: Precision Pullback Scalper v1 ─────────────────────────
 STRATEGY_NAME: str = os.getenv(
     "STRATEGY_NAME",
-    "Binocular Pending-Breakout v1",
+    "Precision Pullback Scalper v1",
 )
 
-ENTRY_TF: str = os.getenv("ENTRY_TF", "15m")
-ENTRY_KLINE_COUNT: int = int(os.getenv("ENTRY_KLINE_COUNT", "220"))
-# Bumped from 120 -- EMA200 (confirmed/strict SIGNAL_MODE) needs ~200 bars
-# of warmup, plus margin for the Chandelier(10)/RSI(55)/PVT-signal(21)
-# periods and the ribbon baseline(60).
+TREND_TF: str = os.getenv("TREND_TF", "15m")
+ENTRY_TF: str = os.getenv("ENTRY_TF", "5m")
+ENTRY_KLINE_COUNT: int = int(os.getenv("ENTRY_KLINE_COUNT", "260"))
+# EMA200 (trend filter, on TREND_TF) needs ~200 bars of warmup plus the
+# slope lookback and margin; ENTRY_TF's own EMA200-agreement check needs
+# the same on ENTRY_TF, plus RSI14/ATR14/VolumeMA20's much shorter
+# warmup -- 260 covers all of it with margin.
 
-# 6-EMA ribbon (Pine script defaults) -- confirmed/strict-mode filter,
-# not the primary trigger (see SIGNAL_MODE below).
-RIBBON_MA1_LEN: int = int(os.getenv("RIBBON_MA1_LEN", "30"))
-RIBBON_MA2_LEN: int = int(os.getenv("RIBBON_MA2_LEN", "35"))
-RIBBON_MA3_LEN: int = int(os.getenv("RIBBON_MA3_LEN", "40"))
-RIBBON_MA4_LEN: int = int(os.getenv("RIBBON_MA4_LEN", "45"))
-RIBBON_MA5_LEN: int = int(os.getenv("RIBBON_MA5_LEN", "50"))
-RIBBON_BASELINE_LEN: int = int(os.getenv("RIBBON_BASELINE_LEN", "60"))
+EMA_FAST_LEN: int = int(os.getenv("EMA_FAST_LEN", "20"))
+EMA_SLOW_LEN: int = int(os.getenv("EMA_SLOW_LEN", "50"))
+EMA_TREND_LEN: int = int(os.getenv("EMA_TREND_LEN", "200"))
+EMA_TREND_SLOPE_LOOKBACK: int = int(os.getenv("EMA_TREND_SLOPE_LOOKBACK", "5"))
+EMA_SEPARATION_MIN_PCT: float = float(os.getenv("EMA_SEPARATION_MIN_PCT", "0.05")) / 100.0
+
+RSI_PERIOD: int = int(os.getenv("RSI_PERIOD", "14"))
+RSI_LONG_RESET_MIN: float = float(os.getenv("RSI_LONG_RESET_MIN", "42"))
+RSI_LONG_RESET_MAX: float = float(os.getenv("RSI_LONG_RESET_MAX", "55"))
+RSI_SHORT_RESET_MIN: float = float(os.getenv("RSI_SHORT_RESET_MIN", "45"))
+RSI_SHORT_RESET_MAX: float = float(os.getenv("RSI_SHORT_RESET_MAX", "58"))
+PULLBACK_LOOKBACK_BARS: int = int(os.getenv("PULLBACK_LOOKBACK_BARS", "5"))
+
+# architecture.txt gives two overlapping pullback-distance thresholds --
+# a "preferred ~0.20%, reject beyond 0.35-0.40%" range and a separately
+# emphasized "biggest win-rate improvement" 0.30% cap. Resolved (see
+# design spec) as: NO_CHASE_MAX_DISTANCE_PCT is the hard reject, and
+# PULLBACK_PREFERRED_DISTANCE_PCT only feeds the score.
+PULLBACK_PREFERRED_DISTANCE_PCT: float = float(os.getenv("PULLBACK_PREFERRED_DISTANCE_PCT", "0.20")) / 100.0
+NO_CHASE_MAX_DISTANCE_PCT: float = float(os.getenv("NO_CHASE_MAX_DISTANCE_PCT", "0.30")) / 100.0
+
+VOLUME_MA_PERIOD: int = int(os.getenv("VOLUME_MA_PERIOD", "20"))
+VOLUME_CONFIRM_MULT: float = float(os.getenv("VOLUME_CONFIRM_MULT", "1.15"))
+MAX_CANDLE_BODY_PCT: float = float(os.getenv("MAX_CANDLE_BODY_PCT", "0.8")) / 100.0
+
+ATR_MIN_PCT: float = float(os.getenv("ATR_MIN_PCT", "0.25")) / 100.0
+ATR_MAX_PCT: float = float(os.getenv("ATR_MAX_PCT", "1.20")) / 100.0
+
+MIN_SIGNAL_SCORE: float = float(os.getenv("MIN_SIGNAL_SCORE", "80"))
 
 # Minimum age (seconds) the last CLOSED candle must have before a signal
 # can fire on it. MEXC's kline REST data for a just-closed candle can still
 # get revised for a short window after the close.
 MIN_CANDLE_SETTLE_SECONDS: int = int(os.getenv("MIN_CANDLE_SETTLE_SECONDS", "90"))
 
-# ATR period backing the Chandelier trailing-stop direction flip.
+# ATR period backing the ATR% volatility-band filter.
 ATR_PERIOD: int = int(os.getenv("ATR_PERIOD", "14"))
 
-# LONG signals underperformed SHORT in every backtest of the prior
-# ribbon-flip strategy -- left enabled by default so the asymmetry can
-# keep being observed on live data; set to "false" to run SHORT-only.
 ENABLE_LONG_SIGNALS: bool = os.getenv("ENABLE_LONG_SIGNALS", "true").lower() == "true"
 
+# Fixed TP/SL sizing -- architecture.txt's core simplification: TP/SL are
+# NOT derived from structure or ATR, they're flat ROI-%-at-LEVERAGE
+# distances. Raw RR is therefore a fixed 0.70:1 by construction; there is
+# no MIN_RR gate for this strategy (quality control is MIN_SIGNAL_SCORE).
 MAX_SL_ROI_PCT: float = float(os.getenv("MAX_SL_ROI_PCT", "10.0"))
 LEVERAGE: int = int(os.getenv("LEVERAGE", "20"))
 MAX_SL_PRICE_PCT: float = MAX_SL_ROI_PCT / 100.0 / LEVERAGE
 
-MIN_RR: float = float(os.getenv("MIN_RR", "1.5"))
+TP_ROI_PCT: float = float(os.getenv("TP_ROI_PCT", "7.0"))
+TP_PRICE_PCT: float = TP_ROI_PCT / 100.0 / LEVERAGE
 
-# ── Strategy: Binocular Pending-Breakout v1 ─────────────────────────
-SIGNAL_MODE: str = os.getenv("SIGNAL_MODE", "confirmed")   # "original" | "confirmed" | "strict"
-CONFIRMATION_TIMEFRAMES: str = os.getenv("CONFIRMATION_TIMEFRAMES", "30m,1h,4h")   # strict mode only
-MTF_MIN_CONFIRMATIONS: int = int(os.getenv("MTF_MIN_CONFIRMATIONS", "2"))          # strict mode only
-
-ACCOUNT_BALANCE: float = float(os.getenv("ACCOUNT_BALANCE", "10000"))              # informational only
-RISK_PERCENT_PER_TRADE: float = float(os.getenv("RISK_PERCENT_PER_TRADE", "1.0"))  # informational only
-
-PVT_SIGNAL_TYPE: str = os.getenv("PVT_SIGNAL_TYPE", "SMA")           # "SMA" | "EMA"
-PVT_SIGNAL_LENGTH: int = int(os.getenv("PVT_SIGNAL_LENGTH", "21"))
-RSI_FAST_PERIOD: int = int(os.getenv("RSI_FAST_PERIOD", "25"))
-RSI_SLOW_PERIOD: int = int(os.getenv("RSI_SLOW_PERIOD", "55"))
-CHANDELIER_ATR_PERIOD: int = int(os.getenv("CHANDELIER_ATR_PERIOD", "10"))
-CHANDELIER_MULTIPLIER: float = float(os.getenv("CHANDELIER_MULTIPLIER", "2.2"))
-BINOCULAR_EMA200_LEN: int = int(os.getenv("BINOCULAR_EMA200_LEN", "200"))
+BREAKEVEN_TRIGGER_ROI_PCT: float = float(os.getenv("BREAKEVEN_TRIGGER_ROI_PCT", "4.0"))
+BREAKEVEN_TRIGGER_PRICE_PCT: float = BREAKEVEN_TRIGGER_ROI_PCT / 100.0 / LEVERAGE
 
 ENTRY_BUFFER_PCT: float = float(os.getenv("ENTRY_BUFFER_PCT", "0.0002"))   # 0.02%
-PENDING_SIGNAL_EXPIRY_CANDLES: int = int(os.getenv("PENDING_SIGNAL_EXPIRY_CANDLES", "5"))
-
-TARGET1_CLOSE_FRACTION: float = float(os.getenv("TARGET1_CLOSE_FRACTION", "0.5"))
-TARGET2_CLOSE_FRACTION: float = float(os.getenv("TARGET2_CLOSE_FRACTION", "0.3"))
-TARGET3_CLOSE_FRACTION: float = float(os.getenv("TARGET3_CLOSE_FRACTION", "0.2"))
-MOVE_SL_TO_BREAKEVEN_AFTER_T1: bool = os.getenv("MOVE_SL_TO_BREAKEVEN_AFTER_T1", "true").lower() == "true"
+PENDING_SIGNAL_EXPIRY_CANDLES: int = int(os.getenv("PENDING_SIGNAL_EXPIRY_CANDLES", "3"))   # 3 x 5m = 15 min
 
 SCAN_INTERVAL_MINUTES: int = int(os.getenv("SCAN_INTERVAL_MINUTES", "5"))
 
@@ -134,80 +141,6 @@ SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "240"))
 SIGNAL_EXPIRE_HOURS: int = int(os.getenv("SIGNAL_EXPIRE_HOURS", "6"))
 
 SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "4"))
-
-# ── Strategy: Binocular Pending-Breakout v1 (primary scanner gate) ──
-# On by default; set false in .env to stop arming new pending setups and
-# confirming new signals (e.g. once v3 is validated and preferred).
-# Outcome checking for any already-pending signals keeps running
-# regardless, so open trades still resolve to win/loss/expired.
-STRATEGY_V1_ENABLED: bool = os.getenv("STRATEGY_V1_ENABLED", "true").lower() == "true"
-
-# ── Strategy: Super Scalper v3 (SuperTrend + Keltner + regime filter) ──
-# Off by default -- runs alongside v1 in main.py only when explicitly
-# enabled, and never live-trades until LIVE_ENABLED is flipped true.
-SCALPER_V3_ENABLED: bool = os.getenv("SCALPER_V3_ENABLED", "false").lower() == "true"
-SCALPER_V3_TIMEFRAME: str = os.getenv("SCALPER_V3_TIMEFRAME", "5m")
-SCALPER_V3_HISTORY_BARS: int = int(os.getenv("SCALPER_V3_HISTORY_BARS", "300"))
-
-SCALPER_V3_ATR_PERIOD: int = int(os.getenv("SCALPER_V3_ATR_PERIOD", "10"))
-SCALPER_V3_ATR_MULT: float = float(os.getenv("SCALPER_V3_ATR_MULT", "2.5"))
-SCALPER_V3_KC_EMA: int = int(os.getenv("SCALPER_V3_KC_EMA", "20"))
-SCALPER_V3_KC_ATR_PERIOD: int = int(os.getenv("SCALPER_V3_KC_ATR_PERIOD", "14"))
-SCALPER_V3_KC_MULT: float = float(os.getenv("SCALPER_V3_KC_MULT", "2.0"))
-SCALPER_V3_ENTRY_ZONE: float = float(os.getenv("SCALPER_V3_ENTRY_ZONE", "0.55"))
-SCALPER_V3_SLOPE_LOOKBACK: int = int(os.getenv("SCALPER_V3_SLOPE_LOOKBACK", "3"))
-SCALPER_V3_AO_FAST: int = int(os.getenv("SCALPER_V3_AO_FAST", "5"))
-SCALPER_V3_AO_SLOW: int = int(os.getenv("SCALPER_V3_AO_SLOW", "34"))
-SCALPER_V3_STRENGTH_LOOKBACK: int = int(os.getenv("SCALPER_V3_STRENGTH_LOOKBACK", "5"))
-SCALPER_V3_ADX_PERIOD: int = int(os.getenv("SCALPER_V3_ADX_PERIOD", "14"))
-SCALPER_V3_ADX_MIN: float = float(os.getenv("SCALPER_V3_ADX_MIN", "22.0"))
-SCALPER_V3_CHOP_PERIOD: int = int(os.getenv("SCALPER_V3_CHOP_PERIOD", "14"))
-SCALPER_V3_CHOP_MAX: float = float(os.getenv("SCALPER_V3_CHOP_MAX", "50.0"))
-SCALPER_V3_EXPAND_PERIOD: int = int(os.getenv("SCALPER_V3_EXPAND_PERIOD", "20"))
-SCALPER_V3_EXPAND_MIN: float = float(os.getenv("SCALPER_V3_EXPAND_MIN", "1.10"))
-SCALPER_V3_MIN_STRENGTH: int = int(os.getenv("SCALPER_V3_MIN_STRENGTH", "2"))
-# regime() votes on 3 independent signals (ADX/Choppiness/band-expansion) and
-# labels anything with >=2 "TRENDING". 6978d54 relaxed this to 2 based on a
-# backtest fidelity fix, but 2026-07-21..25 live data (106 signals) showed
-# 2/3-vote trades net -241% ROI (69 trades) vs 3/3-vote trades roughly
-# breakeven at -10.5% ROI (35 trades) -- reverted back to requiring
-# unanimous votes.
-SCALPER_V3_MIN_REGIME_VOTES: int = int(os.getenv("SCALPER_V3_MIN_REGIME_VOTES", "3"))
-
-# Flat SL/TP sizing (replaces the structural SuperTrend-SL / Keltner-TP1-TP2
-# exits -- see scalper_v3_strategy._calc_tp_sl). Both entry paths use the
-# same fixed ROI-at-LEVERAGE distance, no trailing stop, no breakeven step.
-SCALPER_V3_TARGET_ROI_PCT: float = float(os.getenv("SCALPER_V3_TARGET_ROI_PCT", "10.0"))
-SCALPER_V3_MAX_SL_ROI_PCT: float = float(os.getenv("SCALPER_V3_MAX_SL_ROI_PCT", "10.0"))
-SCALPER_V3_TP_PRICE_PCT: float = SCALPER_V3_TARGET_ROI_PCT / 100.0 / LEVERAGE
-SCALPER_V3_MAX_SL_PRICE_PCT: float = SCALPER_V3_MAX_SL_ROI_PCT / 100.0 / LEVERAGE
-
-# Informational progress checkpoint (Telegram ping only -- does not move
-# the SL or close the trade). Stored in the tp1_price column/field.
-SCALPER_V3_TP1_NOTIFY_ROI_PCT: float = float(os.getenv("SCALPER_V3_TP1_NOTIFY_ROI_PCT", "7.0"))
-SCALPER_V3_TP1_NOTIFY_PRICE_PCT: float = SCALPER_V3_TP1_NOTIFY_ROI_PCT / 100.0 / LEVERAGE
-
-# Funding-rate safety filter -- block entries when funding is stacked hard
-# against the trade direction (crowded-trade / squeeze risk).
-SCALPER_V3_MAX_ADVERSE_FUNDING_PCT: float = float(
-    os.getenv("SCALPER_V3_MAX_ADVERSE_FUNDING_PCT", "0.05")
-)
-
-# Move SL to breakeven (entry price) once TP1 (kc_mid) fills.
-SCALPER_V3_BREAKEVEN_AFTER_TP1: bool = os.getenv("SCALPER_V3_BREAKEVEN_AFTER_TP1", "true").lower() == "true"
-
-SCALPER_V3_SCAN_INTERVAL_MINUTES: int = int(os.getenv("SCALPER_V3_SCAN_INTERVAL_MINUTES", "5"))
-SCALPER_V3_MAX_CONCURRENT_SIGNALS: int = int(os.getenv("SCALPER_V3_MAX_CONCURRENT_SIGNALS", "2"))
-SCALPER_V3_SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SCALPER_V3_SIGNAL_COOLDOWN_MINUTES", "240"))
-SCALPER_V3_EXPIRE_HOURS: int = int(os.getenv("SCALPER_V3_EXPIRE_HOURS", "6"))
-# 2026-07-21..25 live data (106 signals, mostly votes=2) fired up to 40/day
-# with only MAX_CONCURRENT_SIGNALS as a brake. With PF sitting at ~1.0-1.05
-# even under the restored votes=3 gate (see 2026-07-25 backtest), more
-# trades/day is pure variance, not more expectancy -- cap exposure while
-# the edge is this thin.
-SCALPER_V3_MAX_DAILY_SIGNALS: int = int(os.getenv("SCALPER_V3_MAX_DAILY_SIGNALS", "10"))
-SCALPER_V3_MIN_DAILY_SIGNAL_GAP_MINUTES: int = int(os.getenv("SCALPER_V3_MIN_DAILY_SIGNAL_GAP_MINUTES", "15"))
-STRATEGY_NAME_V3: str = os.getenv("STRATEGY_NAME_V3", "Super Scalper v3")
 
 # ── Live trading master switch -- paper-trade / backtest-only until
 # explicitly flipped true after reviewing optimization results. ─────────
