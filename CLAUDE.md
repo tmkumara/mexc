@@ -31,7 +31,7 @@ tail -f /opt/signals/mexc_bot.log  # file logs
 - **Dashboard URL:** `http://68.168.222.74:6060/?token=<WEBUI_TOKEN>`
 - **Auto-deploy:** push to `main` → GitHub Actions SSHs in, git pulls, pip installs, restarts both services
 - **Workflow file:** `.github/workflows/deploy.yml`
-- **DB clear utility:** `python clear_db.py` (or `python clear_db.py --yes` to skip confirm)
+- **DB clear utility:** `python clear_db.py` (or `python clear_db.py --yes` to skip confirm) — after any strategy replacement, restart with `systemctl stop mexc-bot && python clear_db.py --yes && systemctl start mexc-bot` so stale pending setups/signals from the old strategy don't linger
 
 ### One-time dashboard service setup (run once on server)
 ```bash
@@ -66,110 +66,160 @@ systemctl status mexc-dashboard
 The bot is a single-process async application (`main.py`) with three concerns:
 
 **1. Signal generation** (`strategy.py`)
-Runs on APScheduler every `SCAN_INTERVAL_MINUTES` (default 5), a few seconds after candle close. Single public entry point `evaluate_symbol(symbol, btc_context=None)` — a straight per-cycle evaluation, no arm/monitor state machine (`btc_context` is accepted for call-site compatibility but unused — there is no BTC filter in this strategy version). Fetches `ENTRY_TF` (15m) klines and always drops the last (still-forming) bar via `iloc[:-1]`, never evaluating an in-progress candle.
+A two-phase pending-breakout model, persisted in the `armed_setups` DB table (actively used by this strategy version — not legacy). Runs on APScheduler every `SCAN_INTERVAL_MINUTES` (default 5), offset far enough into each candle period to clear `MIN_CANDLE_SETTLE_SECONDS` (see the config table note below — this is *not* simply "a few seconds after candle close"). Phase 1 (`check_setup_confirmation`) checks every currently-armed setup for entry-breakout confirmation or expiry; confirmed setups fire within the daily/gap/concurrent/direction limits. Phase 2 (`detect_pending_setup`) scans the remaining coin pool for new dual-timeframe pullback setups and arms new pending setups. Fetches `TREND_TF` (15m) and `ENTRY_TF` (5m) klines separately and always drops the last (still-forming) bar via `iloc[:-1]` on both, never evaluating an in-progress candle.
 
 **2. Coin selection** (`coin_scanner.py`)
 Fetches zero-fee USDT perpetual contracts from MEXC, optionally smart-ranks them by liquidity/volatility/trend/liquidity score (`ENABLE_SMART_COIN_RANKING`), and caches the top `TOP_N_COINS` (80, backfilled to at least `COIN_POOL_MIN_SELECTED`). Refreshed every `COIN_REFRESH_HOURS` (6h) via scheduler. Excludes `EXCLUDE_COINS` (BTC/ETH/SOL/XAUT by default).
 
 **3. Outcome tracking** (`main.py → check_outcomes`)
-Runs every `OUTCOME_CHECK_MINUTES` (default 1). For each `pending` DB signal, fetches recent `ENTRY_TF` candles and calls `outcome_check.check_tp_sl()` — a candle-by-candle high/low scan (no live-price polling), SL-first on a same-candle tie. Marks `win`/`loss`, or `expired` after `SIGNAL_EXPIRE_HOURS` (6h TTL), then sends a Telegram notification — gated by `DRY_RUN` the same way entry broadcasts are, so dry-run mode never talks to Telegram.
+Runs every `OUTCOME_CHECK_MINUTES` (default 1). For each `pending` DB signal, fetches recent `ENTRY_TF` candles and calls `outcome_check.check_tp_sl_with_breakeven()` — a candle-by-candle walk against the fixed single TP/SL, with one breakeven step: once price reaches `BREAKEVEN_TRIGGER_ROI_PCT` (+4% ROI by default) the stop moves to entry. Each candle is checked in order — current stop, then TP, then breakeven-trigger detection — so a single wild candle spanning both the trigger and the original SL is conservatively treated as a full loss. Marks `win`, `loss`, or `breakeven` (a stop-out *after* the breakeven trigger fired — a distinct third outcome, excluded from the win-rate ratio but included in net ROI), or `expired` after `SIGNAL_EXPIRE_HOURS` (6h TTL), then sends a Telegram notification — gated by `DRY_RUN` the same way entry broadcasts are, so dry-run mode never talks to Telegram.
 
-**Telegram bot** (`bot.py`) is stateless except for a module-level `paused` bool. Commands: `/start /help /status /pause /resume /daily /weekly /monthly /stats`. The `Application` object is passed into scheduler jobs as an argument so they can send messages.
+**Telegram bot** (`bot.py`) is stateless except for a module-level `paused` bool. Commands: `/start /help /status /pause /resume /daily /weekly /monthly /stats`. `notify_outcome` renders `win`/`breakeven`/`loss`/`expired` as four visually distinct outcomes. The `Application` object is passed into scheduler jobs as an argument so they can send messages.
 
-**Database** (`database.py`) is a local SQLite file (`signals.db`). Schema: single `signals` table with `status` ∈ `{pending, win, loss, expired}`, plus columns for `strategy_name`, `score`, `rr`, `entry_timeframe`, `trend_timeframe`, `setup_reason`. `init_db()` also creates a legacy `armed_setups` table (schema left in place for backward compatibility) but no code in this strategy reads or writes it — it was the persistence layer for the retired two-phase arm/monitor scalp strategy.
+**Database** (`database.py`) is a local SQLite file (`signals.db`). Schema: single `signals` table with `status` ∈ `{pending, win, loss, breakeven, expired}`, plus columns for `strategy_name`, `score`, `rr`, `entry_timeframe`, `trend_timeframe`, `setup_reason`, `breakeven_triggered_at`. Several columns from retired strategies (`tp1_price`, `tp2_price`, `trend`, `strength`, `ao`, `kc_pos`, `regime`, etc.) remain in the schema — no migration was done when those strategies were removed — but nothing in the live code path writes them anymore. `init_db()` also creates the `armed_setups` table, which this strategy's two-phase pending-breakout pipeline actively reads and writes (see "Signal generation" above).
 
 ## Key Config (`config.py`)
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ENTRY_TF` | 15m | Single timeframe -- both the EMA ribbon and Trend Bar are computed on it |
-| `RIBBON_MA1_LEN` … `RIBBON_MA5_LEN` | 30/35/40/45/50 | The 6-EMA ribbon's five short EMA lengths |
-| `RIBBON_BASELINE_LEN` | 60 | The ribbon's baseline EMA length ("MA6" in the Pine source) |
-| `RIBBON_LOOKBACK_BARS` | 1 | How many bars back a ribbon flip may have happened and still count as "recent enough" (backtesting found no edge widening this — an exact-bar flip performs as well as a several-bar window) |
-| `TREND_BAR_PAC_LENGTH` | 50 | Price-Action-Channel EMA length behind the Trend Bar confirmation |
-| `ATR_PERIOD` | 14 | ATR period for the structural-SL buffer and candidate scoring |
-| `SL_FLOOR_ATR_MULT` | 2.0 | Floors the structural SL at this many ATRs from entry, so it's never tighter than normal candle noise |
-| `ENABLE_LONG_SIGNALS` | true | Both directions live by default; backtesting recommends `false` (SHORT-only) — LONG underperformed SHORT in every configuration tested |
-| `MIN_CANDLE_SETTLE_SECONDS` | 90 | Last closed candle must be at least this old before a signal can fire on it — MEXC's kline data for a just-closed candle can still get revised shortly after close; a candle rejected here gets retried on a later scan (works because `SCAN_INTERVAL_MINUTES` < `ENTRY_TF`, giving multiple scan attempts per candle) |
-| `LEVERAGE` | 20 | Bot's own position leverage; scales ROI% ↔ price% |
-| `TARGET_ROI_PCT` / `MAX_SL_ROI_PCT` | 15.0 / 10.0 | TP/SL sizing at leverage (→ `TP_PRICE_PCT`, `MAX_SL_PRICE_PCT`) |
-| `MIN_RR` | 1.5 | Minimum reward:risk to fire |
+| `TREND_TF` | 15m | Higher timeframe for the EMA200 trend/slope filter |
+| `ENTRY_TF` | 5m | Entry timeframe — EMA20/50 alignment, pullback distance, RSI reset, confirmation candle, ATR band, and the pending-setup entry/SL/TP are all computed here |
+| `EMA_FAST_LEN` / `EMA_SLOW_LEN` | 20 / 50 | `ENTRY_TF` trend-alignment EMAs |
+| `EMA_TREND_LEN` | 200 | EMA200 length, used on both `TREND_TF` (primary trend gate) and `ENTRY_TF` (cross-timeframe agreement gate) |
+| `EMA_TREND_SLOPE_LOOKBACK` | 5 | Bars back the EMA200 slope direction is measured over, on `TREND_TF` |
+| `EMA_SEPARATION_MIN_PCT` | 0.05% | Minimum EMA20/EMA50 separation (as % of price) to count as "aligned" rather than flat/choppy |
+| `RSI_PERIOD` | 14 | RSI period for the pullback reset-zone check |
+| `RSI_LONG_RESET_MIN` / `MAX` | 42 / 55 | LONG RSI reset zone — must have touched this range within `PULLBACK_LOOKBACK_BARS` and now be turning up |
+| `RSI_SHORT_RESET_MIN` / `MAX` | 45 / 58 | SHORT RSI reset zone (mirrored, turning down) |
+| `PULLBACK_LOOKBACK_BARS` | 5 | Bars back the RSI reset-zone touch may have happened and still count |
+| `NO_CHASE_MAX_DISTANCE_PCT` | 0.30% | Hard reject if price is already this far from EMA20 — the "don't chase" gate |
+| `PULLBACK_PREFERRED_DISTANCE_PCT` | 0.20% | Distance at/below which the pullback-quality score term is maxed out (linear decay to 0 at `NO_CHASE_MAX_DISTANCE_PCT`) |
+| `VOLUME_MA_PERIOD` / `VOLUME_CONFIRM_MULT` | 20 / 1.15 | Confirmation candle's volume must exceed this multiple of its N-bar average |
+| `MAX_CANDLE_BODY_PCT` | 0.8% | Reject the confirmation candle if its body exceeds this % of price (abnormal/exhausted move) |
+| `ATR_PERIOD` | 14 | ATR period backing the volatility-band filter |
+| `ATR_MIN_PCT` / `ATR_MAX_PCT` | 0.25% / 1.20% | Required ATR-as-%-of-price band — too quiet or too wild both reject |
+| `MIN_SIGNAL_SCORE` | 80 | 0–100 composite score gate (trend/pullback/candle/volume quality) — see `strategy._score_pending_setup`. **Unvalidated against real data** — a live-data probe found only ~1.8% of bars clear 80 even assuming every binary gate already passed; tuning this (and the `NO_CHASE_MAX_DISTANCE_PCT`/`ATR_MAX_PCT` tension below) is the top agenda item for the deferred backtest/walk-forward session |
+| `LEVERAGE` | 20 | Bot's own position leverage |
+| `TP_ROI_PCT` / `MAX_SL_ROI_PCT` | 7.0 / 10.0 | Fixed TP/SL sizing at leverage — **not** structural or ATR-derived, a flat ROI%-distance. Raw RR is therefore a constant `TP_ROI_PCT / MAX_SL_ROI_PCT` (0.70:1 at defaults) for every setup; there is no RR-based reject gate. ⚠️ The production `.env` currently overrides `MAX_SL_ROI_PCT` to 15.0 (a deliberate, backtested value from the *previous* strategy) — not yet reconciled with this strategy's designed 7/10 ratio |
+| `BREAKEVEN_TRIGGER_ROI_PCT` | 4.0 | Once price reaches this ROI%, the stop moves to entry (see `outcome_check.check_tp_sl_with_breakeven`) |
+| `ENTRY_BUFFER_PCT` | 0.02% | Pending-setup entry level = confirmation candle's high/low ± this buffer |
+| `PENDING_SIGNAL_EXPIRY_CANDLES` | 3 | A pending setup expires if price never breaks the entry level within this many `ENTRY_TF` candles (15 min at the 5m default) |
+| `MIN_CANDLE_SETTLE_SECONDS` | 90 | Last closed candle must be at least this old before a signal can fire on it — MEXC's kline data for a just-closed candle can still get revised shortly after close. **The scan cron is offset within each `SCAN_INTERVAL_MINUTES` window to clear this margin** (`main.py` fires `MIN_CANDLE_SETTLE_SECONDS + 5s` past each candle boundary, not at the boundary, and raises at startup if no valid offset exists). This broke once already — when `ENTRY_TF` moved from 15m to 5m, `CANDLE_MINUTES` became equal to `SCAN_INTERVAL_MINUTES`, and a naive "fire a few seconds after the boundary" cron made the settle check reject every symbol on every scan, forever. Changing either `ENTRY_TF` or `SCAN_INTERVAL_MINUTES` again needs the same check |
+| `ENABLE_LONG_SIGNALS` | true | Both directions live by default |
 | `MAX_ACTIVE_LONG_SIGNALS` / `MAX_ACTIVE_SHORT_SIGNALS` | 1 / 1 | Correlation limit — pending signals per direction |
 | `MAX_CONCURRENT_SIGNALS` | 2 | Total pending signals across both directions |
 | `MAX_DAILY_SIGNALS` | 3 | Signals fired per day |
+| `MIN_DAILY_SIGNAL_GAP_MINUTES` | 60 | Minimum gap between fired signals |
 | `SIGNAL_COOLDOWN_MINUTES` | 240 | Same coin blocked for 4h after a signal |
-| `SIGNAL_EXPIRE_HOURS` | 6 | Pending signals auto-expire |
+| `SIGNAL_EXPIRE_HOURS` | 6 | Fired (pending) signals auto-expire if TP/SL never hit |
 | `TOP_N_COINS` | 80 | Pairs tracked |
 | `EXCLUDE_COINS` | BTC/ETH/SOL/XAUT | Always excluded |
 
-## Signal Logic (strategy.py) — Ribbon-Flip Trend-Bar Confirmation v1
+## Signal Logic (strategy.py) — Precision Pullback Scalper v1
 
-Single-pass evaluation per scan cycle, no persisted setup state. Ported
-from a TradingView Pine Script's 6-EMA ribbon and Price-Action-Channel
-"Trend Bar" indicators, per the exact manual rule: ribbon flips direction
-("arrow 1"), then wait for the Trend Bar to confirm the same direction
-("arrow 2") — if the ribbon reverts first, the setup is invalid. No
-persisted arm/monitor state is used; the "wait" is instead a bounded
-backward search over `RIBBON_LOOKBACK_BARS`, recomputed fresh every scan:
+Dual-timeframe pipeline: `TREND_TF` (15m) EMA200 trend + slope gates direction;
+`ENTRY_TF` (5m) EMA20/EMA50 alignment, a pullback into the EMA20/EMA50 zone
+(bounded by `NO_CHASE_MAX_DISTANCE_PCT`), an RSI14 reset-then-turn, a
+confirming candle (body/close/volume checks), and an ATR% volatility band
+all gate a candidate; a 100-point score must then clear `MIN_SIGNAL_SCORE`.
+SL/TP are fixed ROI-%-at-leverage distances, not structural — quality
+control is entirely the score gate, not RR. Ported into this codebase per
+`docs/superpowers/specs/2026-08-09-precision-pullback-scalper-v1-design.md`.
 
 ```
-strategy.evaluate_symbol(symbol, btc_context=None):
-  0. Reject if the last closed candle is younger than
-     MIN_CANDLE_SETTLE_SECONDS -- MEXC's kline data for a just-closed
-     candle can still get revised for a short window after close.
+strategy.detect_pending_setup(symbol, reject_sink=None):
+  0. Fetch ENTRY_TF and TREND_TF klines separately, each dropping the
+     forming candle via iloc[:-1]. Reject (missing_data /
+     insufficient_history) if either is empty or too short for the
+     longest indicator warmup. Reject (candle_not_settled) if the last
+     closed ENTRY_TF candle is younger than MIN_CANDLE_SETTLE_SECONDS.
 
-  1. _detect_ribbon_flip(df):
-     computes the 6-EMA ribbon (RIBBON_MA1_LEN..MA5_LEN vs
-     RIBBON_BASELINE_LEN) on closed candles. If the ribbon is NOT
-     currently fully aligned (all 5 short EMAs above/below the
-     baseline) -> no trade. If it is aligned, walks backward up to
-     RIBBON_LOOKBACK_BARS bars (default 1 -- essentially requiring the
-     flip on the current or immediately preceding bar) to find the most
-     recent bar where that alignment began (a genuine flip-in, not just
-     "still aligned from ages ago"). No flip found within the window ->
-     no trade. If the flip direction is LONG and ENABLE_LONG_SIGNALS is
-     false -> no trade (true by default -- both directions live).
+  1. Trend filter (TREND_TF, self-referential -- NOT compared against
+     ENTRY_TF at this step): close vs EMA200 and EMA200's own slope over
+     EMA_TREND_SLOPE_LOOKBACK bars must agree (both up = LONG, both down
+     = SHORT) -> no agreement rejects no_trend_alignment.
 
-  2. calculate_trend_bar(df, TREND_BAR_PAC_LENGTH):
-     on the latest CLOSED candle, checks whether the candle's entire
-     range sits above (green) or below (red) a Price-Action-Channel
-     built from EMA(high, TREND_BAR_PAC_LENGTH) / EMA(low,
-     TREND_BAR_PAC_LENGTH). Must match the ribbon's direction (green
-     for LONG, red for SHORT) -> otherwise no trade. Because the ribbon
-     search above already re-derives the flip fresh each scan, a
-     reverted-then-reflipped ribbon is naturally excluded without any
-     extra "did it revert" bookkeeping.
+  2. EMA20/EMA50 alignment (ENTRY_TF): must be on the correct side and
+     separated by at least EMA_SEPARATION_MIN_PCT of price (a flat/
+     choppy-market filter) -> otherwise no_ema_alignment.
 
-  3. _calculate_tp_sl(): fixed-distance TP at TP_PRICE_PCT
-     (= TARGET_ROI_PCT / 100 / LEVERAGE); SL placed at the swing
-     low/high spanning from the ribbon-flip bar through the current
-     bar, plus an ATR buffer (SL_ATR_BUFFER_MULTIPLIER), floored at
-     SL_FLOOR_ATR_MULT x ATR from entry (so the stop is never tighter
-     than normal candle noise), capped at MAX_SL_PRICE_PCT
-     (= MAX_SL_ROI_PCT / 100 / LEVERAGE).
+  3. EMA200 cross-timeframe agreement: ENTRY_TF's own close vs its own
+     EMA200 must agree with the TREND_TF direction from step 1 ->
+     otherwise no_ema200_agreement.
 
-  4. RR = reward / risk must be >= MIN_RR.
+  4. No-chase distance: reject chasing_price if price is already more
+     than NO_CHASE_MAX_DISTANCE_PCT from EMA20 -- don't enter a pullback
+     that's already run away.
 
-  5. _score_candidate(): 0-100 composite — ribbon alignment strength vs
-     ATR (40), flip freshness within the lookback window (20), Trend Bar
-     clearance beyond the PAC channel vs ATR (20), RR quality (20) —
-     used to rank multiple candidates within a scan.
+  5. RSI reset: RSI14 must have touched the direction's reset zone
+     (RSI_LONG/SHORT_RESET_MIN/MAX) within PULLBACK_LOOKBACK_BARS and now
+     be turning back in the trade direction -> otherwise no_rsi_reset.
+
+  6. Confirmation candle: the latest closed ENTRY_TF candle must close
+     beyond its own open, EMA20, and the prior candle's high/low, on
+     volume > VOLUME_MA_PERIOD-bar average x VOLUME_CONFIRM_MULT ->
+     otherwise no_confirmation_candle. Its body must not exceed
+     MAX_CANDLE_BODY_PCT of price -> otherwise abnormal_candle.
+
+  7. ATR% band: ATR14 / price must sit within [ATR_MIN_PCT, ATR_MAX_PCT]
+     -> otherwise atr_out_of_band (too quiet or too wild).
+
+  8. _build_pending_setup(): entry is a breakout buffer (ENTRY_BUFFER_PCT)
+     beyond the confirmation candle's high/low. SL/TP are FIXED
+     ROI-%-at-LEVERAGE distances (MAX_SL_ROI_PCT / TP_ROI_PCT) -- not
+     structural, not ATR-derived. Raw RR is therefore a constant
+     TP_ROI_PCT / MAX_SL_ROI_PCT (0.70 at defaults) for every setup;
+     there is no RR-based reject gate here.
+
+  9. _score_pending_setup(): 0-100 composite -- 20 (trend, flat, already
+     gated) + 15 (alignment, flat) + 10 (EMA200 slope strength) + 15
+     (pullback quality -- full marks at distance <=
+     PULLBACK_PREFERRED_DISTANCE_PCT, linear decay to 0 at
+     NO_CHASE_MAX_DISTANCE_PCT) + 10 (RSI reset, flat) + 15
+     (confirmation-candle clearance beyond the prior high/low) + 10
+     (volume ratio above VOLUME_CONFIRM_MULT) + 5 (ATR band, flat).
+     Reject score_below_min if the total is < MIN_SIGNAL_SCORE.
+
+A passing candidate becomes a PENDING setup (persisted in
+database.armed_setups). strategy.check_setup_confirmation(setup), called
+every scan for every currently-armed setup, checks the latest closed
+ENTRY_TF candle: entry-level break -> "confirmed" (fires a Signal);
+same-candle SL breach before the entry level breaks -> "invalidated"
+(conservative same-candle tie-break -- treated as an instant stop, never
+a fill); no confirmation within PENDING_SIGNAL_EXPIRY_CANDLES ->
+"expired"; otherwise "waiting", re-checked next scan.
 ```
 
-There is no BTC market-safety filter in this strategy version (dropped
-along with the zone/Chandelier/PVT/dual-RSI pipeline it replaced) — the
-`btc_context` parameter on `evaluate_symbol` is accepted for call-site
-compatibility only and has no effect.
+`main.scan_and_fire_signals` runs Phase 1 (process every currently-armed
+setup via `check_setup_confirmation`) then Phase 2 (scan the remaining
+coin pool via `detect_pending_setup`, thread-pooled across `SCAN_WORKERS`)
+each cycle, subject to `MAX_DAILY_SIGNALS`, `MIN_DAILY_SIGNAL_GAP_MINUTES`,
+`MAX_CONCURRENT_SIGNALS`, per-coin `SIGNAL_COOLDOWN_MINUTES`, and
+`direction_slot_available()` (the `MAX_ACTIVE_LONG_SIGNALS` /
+`MAX_ACTIVE_SHORT_SIGNALS` correlation limit).
 
-`main.scan_and_fire_signals` evaluates the whole coin pool in a thread pool, sorts candidates by score, and fires the top ones subject to `MAX_DAILY_SIGNALS`, `MIN_DAILY_SIGNAL_GAP_MINUTES`, `MAX_CONCURRENT_SIGNALS`, `SIGNALS_PER_SCAN`, per-coin `SIGNAL_COOLDOWN_MINUTES`, and `direction_slot_available()` (the `MAX_ACTIVE_LONG_SIGNALS`/`MAX_ACTIVE_SHORT_SIGNALS` correlation limit).
+### Outcome checking (`outcome_check.check_tp_sl_with_breakeven`)
 
-### Outcome checking (`outcome_check.check_tp_sl`)
+Walks `ENTRY_TF` candles after entry. Each candle, in this order: (1)
+current stop (the original SL, or entry price once the breakeven trigger
+has fired) — if hit, closes the trade (`loss` if the stop was still the
+original SL, `breakeven` if it had already moved to entry); (2) TP — if
+hit, closes as `win`; (3) only if neither hit, checks whether price
+reached `BREAKEVEN_TRIGGER_ROI_PCT` for the first time this candle and
+moves the stop to entry. This ordering means a single wild candle
+spanning both the breakeven trigger and the original SL is conservatively
+treated as a full loss, matching the SL-first tie-break convention used
+throughout this bot.
 
-Walks 5m candles after entry; SL and TP are both checked by high/low touch, and if both are touched within the same candle the stop wins (conservative tie-break). No breakeven or trailing-stop management is part of v1 — `outcome_replay.py` has a breakeven-aware replay path but it is not used by this strategy; TP/SL are fixed at signal generation and checked as-is until win, loss, or expiry.
-
-Not part of v1 (retired with the old liquidation-scalp strategy): the
-`armed_setups` two-phase arm/monitor workflow, `liq_estimator.py`
-liquidation-cluster filter, VWAP/EMA9-21-50 base signal, and 1m candles.
+Not part of this strategy version (retired and deleted): `liq_estimator.py`
+liquidation-cluster filter, Super Scalper v3 (`super_scalper_v3.py` /
+`scalper_v3_strategy.py`), `nw_kernel.py`, the 6-EMA ribbon and
+Chandelier/PVT/dual-RSI trigger, the 3-target partial-exit ladder and its
+`check_target_ladder` walker, plain `check_tp_sl` (single-TP, no
+breakeven), and VWAP/multi-timeframe "strict mode" confirmation — all
+Binocular-era, fully removed from `strategy.py`/`outcome_check.py`.
+`outcome_replay.py` still exists in the repo but has no caller in this
+strategy version.
 
 ## MEXC API (`mexc_client.py`)
 
