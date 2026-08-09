@@ -12,7 +12,6 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import ParseMode
 
-import config as cfg
 import database as db
 import reports
 from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, LKT, STRATEGY_NAME
