@@ -26,7 +26,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -44,6 +44,26 @@ from config import (
 )
 
 MAX_REST_COUNT = 2000   # single-request ceiling this script asks MEXC for
+
+
+class _SimulatedDatetime(datetime):
+    """Stand-in for strategy.datetime during backtesting. check_setup_confirmation
+    computes age_minutes = (datetime.now(timezone.utc) - created_at) --
+    with a historical created_at and the REAL wall clock, that's always
+    enormous, so every pending setup would be marked expired after just
+    one simulated bar instead of PENDING_SIGNAL_EXPIRY_CANDLES. Overriding
+    only now() to return the current as-of bar's timestamp fixes this;
+    fromisoformat/utcnow/etc. are inherited unchanged (utcnow() staying
+    on the real wall clock is fine -- detect_pending_setup's settle-age
+    check just needs "not suspiciously fresh", which real-now vs.
+    historical-candle-time always satisfies)."""
+    _sim_now: datetime | None = None
+
+    @classmethod
+    def now(cls, tz=None):
+        if cls._sim_now is None:
+            return super().now(tz)
+        return cls._sim_now if tz is None else cls._sim_now.astimezone(tz)
 
 
 def get_klines_extended(symbol: str, interval: str, days: int) -> pd.DataFrame:
@@ -217,6 +237,9 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
     min_start = max(EMA_TREND_LEN + EMA_TREND_SLOPE_LOOKBACK, EMA_SLOW_LEN, RSI_PERIOD, VOLUME_MA_PERIOD, ATR_PERIOD) + 10
 
     original_get_market_klines = strategy.get_market_klines
+    original_datetime = strategy.datetime
+    entry_tf_minutes = _TF_MINUTES.get(ENTRY_TF, 5)
+    trend_tf_minutes = _TF_MINUTES.get(TREND_TF, 15)
     pending_setup: dict | None = None
     in_trade_until_idx = -1
 
@@ -227,7 +250,15 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
 
             as_of_entry = _with_forming_row(df_entry_full, i, ENTRY_KLINE_COUNT)
             ts = df_entry_full.index[i]
-            as_of_trend = df_trend_full[df_trend_full.index <= ts]
+            # A trend candle is only "closed" by the time this entry bar
+            # closes if trend_open + trend_tf_minutes <= entry_close_time
+            # (= ts + entry_tf_minutes) -- i.e. trend_open <= ts +
+            # entry_tf_minutes - trend_tf_minutes. Filtering by `<= ts`
+            # (the entry bar's own open time) let up to one still-forming
+            # trend candle leak its real historical close/high/low into
+            # detect_pending_setup's trend gate on most bars.
+            trend_cutoff = ts + timedelta(minutes=entry_tf_minutes) - timedelta(minutes=trend_tf_minutes)
+            as_of_trend = df_trend_full[df_trend_full.index <= trend_cutoff]
             if as_of_trend.empty:
                 continue
             as_of_trend = _with_forming_row(as_of_trend, len(as_of_trend) - 1, ENTRY_KLINE_COUNT)
@@ -240,6 +271,12 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
                 return pd.DataFrame()
 
             strategy.get_market_klines = _fake
+
+            bar_now = ts.to_pydatetime()
+            if bar_now.tzinfo is None:
+                bar_now = bar_now.replace(tzinfo=timezone.utc)
+            _SimulatedDatetime._sim_now = bar_now
+            strategy.datetime = _SimulatedDatetime
 
             if pending_setup is not None:
                 status, fill_price = strategy.check_setup_confirmation(pending_setup)
@@ -296,6 +333,7 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
                 pending_setup = setup
     finally:
         strategy.get_market_klines = original_get_market_klines
+        strategy.datetime = original_datetime
 
     return trades
 
