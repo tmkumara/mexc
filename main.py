@@ -1,15 +1,15 @@
 """
-Main entry point — Binocular Pending-Breakout v1.
+Main entry point — Precision Pullback Scalper v1.
 
 Scheduler jobs / background tasks:
   Every SCAN_INTERVAL_MINUTES (default 5m), a few seconds after candle
   close — scanner: two-phase pending-breakout loop. Phase 1 checks every
-  currently-armed pending setup for entry-breakout confirmation, expiry,
-  or invalidation; confirmed setups fire within the daily/gap/concurrent/
-  direction limits. Phase 2 scans the remaining coin pool for new
-  Chandelier/PVT/RSI trigger transitions and arms new pending setups.
-  Every OUTCOME_CHECK_MINUTES — outcome checker (3-target partial-exit
-  ladder, breakeven after T1).
+  currently-armed pending setup for entry-breakout confirmation or expiry;
+  confirmed setups fire within the daily/gap/concurrent/direction limits.
+  Phase 2 scans the remaining coin pool for new EMA-trend/pullback/RSI-
+  reset/confirmation-candle setups and arms new pending setups.
+  Every OUTCOME_CHECK_MINUTES — outcome checker (fixed single TP/SL,
+  breakeven step at BREAKEVEN_TRIGGER_ROI_PCT).
   Every COIN_REFRESH_HOURS — coin pool refresh.
   23:55 daily     — daily report
   Mon 07:00       — weekly report
@@ -24,8 +24,6 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta, date
 
-import pandas as pd
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -35,13 +33,13 @@ import database as db
 import strategy
 import bot as tg
 import coin_scanner
-import scalper_v3_strategy as v3
-from outcome_check import check_tp_sl, check_target_ladder
+from outcome_check import check_tp_sl_with_breakeven
 from market_data import get_market_klines
 from config import (
     LKT,
     LEVERAGE,
     ENTRY_TF,
+    TREND_TF,
     CANDLE_MINUTES,
     SIGNAL_EXPIRE_HOURS,
     COIN_REFRESH_HOURS,
@@ -49,7 +47,6 @@ from config import (
     OUTCOME_CHECK_MINUTES,
     MAX_CONCURRENT_SIGNALS,
     SIGNAL_COOLDOWN_MINUTES,
-    SIGNALS_PER_SCAN,
     MAX_DAILY_SIGNALS,
     MIN_DAILY_SIGNAL_GAP_MINUTES,
     SCAN_WORKERS,
@@ -63,23 +60,13 @@ from config import (
     COIN_POOL_MIN_SELECTED,
     COINGLASS_API_KEY,
     STRATEGY_NAME,
+    MIN_SIGNAL_SCORE,
+    TP_ROI_PCT,
     MAX_SL_ROI_PCT,
+    BREAKEVEN_TRIGGER_ROI_PCT,
+    BREAKEVEN_TRIGGER_PRICE_PCT,
     DRY_RUN,
     DRY_RUN_SAVE_SIGNALS,
-    STRATEGY_V1_ENABLED,
-    SIGNAL_MODE,
-    ENTRY_BUFFER_PCT,
-    PENDING_SIGNAL_EXPIRY_CANDLES,
-    SCALPER_V3_ENABLED,
-    SCALPER_V3_TIMEFRAME,
-    SCALPER_V3_SCAN_INTERVAL_MINUTES,
-    SCALPER_V3_MAX_CONCURRENT_SIGNALS,
-    SCALPER_V3_SIGNAL_COOLDOWN_MINUTES,
-    SCALPER_V3_EXPIRE_HOURS,
-    SCALPER_V3_MAX_DAILY_SIGNALS,
-    SCALPER_V3_MIN_DAILY_SIGNAL_GAP_MINUTES,
-    STRATEGY_NAME_V3,
-    LIVE_ENABLED,
 )
 
 
@@ -151,7 +138,7 @@ async def scan_and_fire_signals(app: Application) -> None:
             db.mark_armed_setup_expired(setup["id"])
             continue
         if status == "invalidated":
-            db.mark_armed_setup_invalidated(setup["id"], reason="opposite_transition_or_sl")
+            db.mark_armed_setup_invalidated(setup["id"], reason="sl_hit_before_entry")
             continue
         if status == "waiting":
             continue
@@ -185,9 +172,6 @@ async def scan_and_fire_signals(app: Application) -> None:
             score=setup["score"],
             entry_low=fill_price,
             entry_high=fill_price,
-            tp2_price=setup.get("tp2_price"),
-            tp3_price=setup.get("tp3_price"),
-            position_size=setup.get("position_size"),
         )
 
         if not strategy.valid_trade_geometry(sig.direction, sig.entry_price, sig.tp_price, sig.sl_price):
@@ -200,9 +184,8 @@ async def scan_and_fire_signals(app: Application) -> None:
 
         if DRY_RUN and not DRY_RUN_SAVE_SIGNALS:
             logger.info(
-                "[DRY-RUN] Would confirm | %s %s @ %.6g TP1=%.6g TP2=%.6g TP3=%.6g SL=%.6g RR=%.2f",
-                sig.symbol, sig.direction, sig.entry_price, sig.tp_price,
-                sig.tp2_price, sig.tp3_price, sig.sl_price, sig.rr,
+                "[DRY-RUN] Would confirm | %s %s @ %.6g TP=%.6g SL=%.6g RR=%.2f",
+                sig.symbol, sig.direction, sig.entry_price, sig.tp_price, sig.sl_price, sig.rr,
             )
             db.mark_armed_setup_fired(setup["id"], signal_id=-1)
             active_signals += 1
@@ -227,11 +210,8 @@ async def scan_and_fire_signals(app: Application) -> None:
                 score=sig.score,
                 rr=sig.rr,
                 entry_timeframe=ENTRY_TF,
-                trend_timeframe=ENTRY_TF,
+                trend_timeframe=TREND_TF,
                 setup_reason=sig.timeframe_summary,
-                tp2_price=sig.tp2_price,
-                tp3_price=sig.tp3_price,
-                position_size=sig.position_size,
             )
             db.mark_armed_setup_fired(setup["id"], signal_id)
 
@@ -247,9 +227,9 @@ async def scan_and_fire_signals(app: Application) -> None:
                 active_short += 1
 
             logger.info(
-                "[SIGNAL] Confirmed #%d %s %s score=%.1f entry=%.6g tp1=%.6g tp2=%.6g tp3=%.6g sl=%.6g rr=%.2f",
+                "[SIGNAL] Confirmed #%d %s %s score=%.1f entry=%.6g tp=%.6g sl=%.6g rr=%.2f",
                 signal_id, sig.symbol, sig.direction, sig.score,
-                sig.entry_price, sig.tp_price, sig.tp2_price, sig.tp3_price, sig.sl_price, sig.rr,
+                sig.entry_price, sig.tp_price, sig.sl_price, sig.rr,
             )
         except Exception as e:
             logger.error("[SCAN] Failed to confirm setup for %s: %s", setup["symbol"], e, exc_info=True)
@@ -286,7 +266,7 @@ async def scan_and_fire_signals(app: Application) -> None:
         try:
             db.save_armed_setup(setup)
             logger.info(
-                "[PENDING] Armed %s %s entry=%.6g sl=%.6g tp1=%.6g score=%.1f rr=%.2f",
+                "[PENDING] Armed %s %s entry=%.6g sl=%.6g tp=%.6g score=%.1f rr=%.2f",
                 setup["symbol"], setup["direction"], setup["trigger_price"],
                 setup["sl_price"], setup["tp_price"], setup["score"], setup["rr"],
             )
@@ -301,28 +281,6 @@ async def scan_and_fire_signals(app: Application) -> None:
 
 # ── Outcome checker ───────────────────────────────────────────────
 
-def _calculate_pnl_roi(
-    direction: str,
-    outcome: str,
-    entry_price: float,
-    tp_price: float,
-    sl_price: float,
-) -> float:
-    if outcome == "win":
-        price_move_pct = (
-            (tp_price - entry_price) / entry_price * 100
-            if direction == "LONG"
-            else (entry_price - tp_price) / entry_price * 100
-        )
-    else:
-        price_move_pct = (
-            (sl_price - entry_price) / entry_price * 100
-            if direction == "LONG"
-            else (entry_price - sl_price) / entry_price * 100
-        )
-    return price_move_pct * LEVERAGE
-
-
 async def check_outcomes(app: Application) -> None:
     pending = db.get_pending_signals()
     now = datetime.now(timezone.utc)
@@ -332,43 +290,7 @@ async def check_outcomes(app: Application) -> None:
         direction = sig["direction"]
         entry_price = sig["entry_price"]
         sl_price = sig["sl_price"]
-        tp1_price = sig["tp_price"]
-        tp2_price = sig.get("tp2_price")
-        tp3_price = sig.get("tp3_price")
-
-        if tp2_price is None or tp3_price is None:
-            # Pre-migration or non-Binocular row (e.g. a leftover v1 row) --
-            # fall back to plain TP/SL so it can still resolve to
-            # win/loss/expired instead of hanging forever.
-            if not strategy.valid_trade_geometry(direction, entry_price, tp1_price, sl_price):
-                db.update_signal_outcome(sig["id"], "expired", 0.0)
-                continue
-            generated = datetime.fromisoformat(sig["generated_at"])
-            if generated.tzinfo is None:
-                generated = generated.replace(tzinfo=timezone.utc)
-            if (now - generated).total_seconds() > SIGNAL_EXPIRE_HOURS * 3600:
-                db.update_signal_outcome(sig["id"], "expired", 0.0)
-                if not DRY_RUN:
-                    await tg.notify_outcome(app, {**sig, "status": "expired", "pnl_roi": 0.0})
-                continue
-            elapsed_min = max((now - generated).total_seconds() / 60, CANDLE_MINUTES)
-            fetch_count = int(elapsed_min / CANDLE_MINUTES) + 3
-            try:
-                df = get_market_klines(symbol, ENTRY_TF, count=fetch_count)
-                if df is None or df.empty or len(df) < 2:
-                    continue
-            except Exception as e:
-                logger.warning("Could not fetch candles for %s: %s", symbol, e)
-                continue
-            entry_candle_cutoff = (generated - timedelta(minutes=CANDLE_MINUTES)).replace(tzinfo=None)
-            outcome = check_tp_sl(direction, entry_price, tp1_price, sl_price, df, entry_candle_cutoff)
-            if outcome is None:
-                continue
-            pnl = _calculate_pnl_roi(direction, outcome, entry_price, tp1_price, sl_price)
-            db.update_signal_outcome(sig["id"], outcome, pnl)
-            if not DRY_RUN:
-                await tg.notify_outcome(app, {**sig, "status": outcome, "pnl_roi": pnl})
-            continue
+        tp_price = sig["tp_price"]
 
         generated = datetime.fromisoformat(sig["generated_at"])
         if generated.tzinfo is None:
@@ -396,9 +318,13 @@ async def check_outcomes(app: Application) -> None:
             continue
 
         entry_candle_cutoff = (generated - timedelta(minutes=CANDLE_MINUTES)).replace(tzinfo=None)
+        breakeven_trigger_price = (
+            entry_price * (1 + BREAKEVEN_TRIGGER_PRICE_PCT) if direction == "LONG"
+            else entry_price * (1 - BREAKEVEN_TRIGGER_PRICE_PCT)
+        )
 
-        result = check_target_ladder(
-            direction, entry_price, sl_price, tp1_price, tp2_price, tp3_price,
+        result = check_tp_sl_with_breakeven(
+            direction, entry_price, sl_price, tp_price, breakeven_trigger_price,
             df, entry_candle_cutoff,
         )
         if result is None:
@@ -406,200 +332,17 @@ async def check_outcomes(app: Application) -> None:
 
         pnl = result["pnl_roi_pct"] * LEVERAGE
 
-        if result["t1_hit_at"] is not None and sig.get("tp1_hit_at") is None:
-            db.mark_signal_tp1_hit(sig["id"], result["t1_hit_at"])
-            db.mark_signal_breakeven_triggered(sig["id"], result["t1_hit_at"])
-            if not DRY_RUN:
-                await tg.notify_target_progress(app, {**sig}, stage=1)
-        if result["t2_hit_at"] is not None and sig.get("tp2_hit_at") is None:
-            db.mark_signal_tp2_hit(sig["id"], result["t2_hit_at"])
-            if not DRY_RUN:
-                await tg.notify_target_progress(app, {**sig}, stage=2)
+        if result["breakeven_triggered_at"] is not None and sig.get("breakeven_triggered_at") is None:
+            db.mark_signal_breakeven_triggered(sig["id"], result["breakeven_triggered_at"])
 
         db.update_signal_outcome(sig["id"], result["status"], pnl)
-        logger.info(
-            "Signal %s %s (%s) stage=%d %+.1f%%",
-            sig["id"], result["status"].upper(), symbol, result["final_stage"], pnl,
-        )
+        logger.info("Signal %s %s (%s) %+.1f%%", sig["id"], result["status"].upper(), symbol, pnl)
 
         if not DRY_RUN:
             try:
-                await tg.notify_outcome(app, {**sig, "status": result["status"], "pnl_roi": pnl, "final_stage": result["final_stage"]})
+                await tg.notify_outcome(app, {**sig, "status": result["status"], "pnl_roi": pnl})
             except Exception as e:
                 logger.error("Failed to notify %s for %s: %s", result["status"], symbol, e)
-
-
-# ── Super Scalper v3 scanner (OFF by default — SCALPER_V3_ENABLED) ──
-#
-# Additive and independent of the v1 scan/outcome loop above: separate
-# strategy_name, separate cooldown/concurrency limits, separate DB rows.
-# LIVE_ENABLED gates real order intent the same way DRY_RUN gates v1 --
-# with LIVE_ENABLED=false this only ever logs candidates/skips and (if
-# DRY_RUN is also false) sends a paper-trade Telegram alert, never more.
-
-async def scan_and_fire_signals_v3(app: Application) -> None:
-    if not SCALPER_V3_ENABLED:
-        return
-    if tg.paused:
-        logger.info("[SCAN-V3] Paused — skipping")
-        return
-
-    coins = coin_scanner.get_cached_coins()
-    if not coins:
-        logger.warning("[SCAN-V3] Empty coin pool — skipping")
-        return
-
-    now = datetime.now(timezone.utc)
-    cooldown_since = now - timedelta(minutes=SCALPER_V3_SIGNAL_COOLDOWN_MINUTES)
-    today_start = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=timezone.utc)
-
-    signals_today = db.count_signals_since_by_strategy(today_start, STRATEGY_NAME_V3)
-    if signals_today >= SCALPER_V3_MAX_DAILY_SIGNALS:
-        logger.info("[SCAN-V3] Daily cap reached (%d/%d) — skipping", signals_today, SCALPER_V3_MAX_DAILY_SIGNALS)
-        return
-
-    last_sig = db.latest_signal_time_by_strategy(STRATEGY_NAME_V3)
-    if last_sig is not None and (now - last_sig).total_seconds() < SCALPER_V3_MIN_DAILY_SIGNAL_GAP_MINUTES * 60:
-        logger.info("[SCAN-V3] Min signal gap not met — skipping")
-        return
-
-    active = db.count_active_signals_by_strategy(STRATEGY_NAME_V3)
-    slots = SCALPER_V3_MAX_CONCURRENT_SIGNALS - active
-    if slots <= 0:
-        logger.info("[SCAN-V3] %d/%d active v3 signals — no slots", active, SCALPER_V3_MAX_CONCURRENT_SIGNALS)
-        return
-
-    max_fire = min(slots, SCALPER_V3_MAX_DAILY_SIGNALS - signals_today)
-
-    to_scan = [s for s in coins if not db.signal_exists_for_coin_strategy(s, cooldown_since, STRATEGY_NAME_V3)]
-
-    fired = 0
-    skipped = 0
-    for symbol in to_scan:
-        if fired >= max_fire:
-            break
-        try:
-            result = v3.evaluate_symbol_v3(symbol)
-        except Exception as e:
-            logger.error("[SCAN-V3] %s eval failed: %s", symbol, e, exc_info=True)
-            continue
-
-        if result is None:
-            continue
-
-        if isinstance(result, v3.SkippedSignal):
-            skipped += 1
-            db.save_skipped_signal(
-                symbol=result.symbol, reason=result.reason, generated_at=result.generated_at,
-                direction=result.direction, strategy_name=STRATEGY_NAME_V3,
-                trend=result.details.get("trend"), strength=result.details.get("strength"),
-                ao=result.details.get("ao"), kc_pos=result.details.get("kc_pos"),
-                regime=result.details.get("regime"), regime_votes=result.details.get("regime_votes"),
-                adx=result.details.get("adx"), chop=result.details.get("chop"),
-            )
-            logger.debug("[SCAN-V3-BLOCKED] %s %s: %s", symbol, result.direction, result.reason)
-            continue
-
-        signal_id = db.save_v3_signal(
-            symbol=result.symbol, direction=result.direction,
-            entry_price=result.entry_price, sl_price=result.sl_price,
-            tp1_price=result.tp1_price, tp2_price=result.tp2_price,
-            generated_at=result.generated_at, strategy_name=STRATEGY_NAME_V3,
-            trend=result.trend, strength=result.strength, ao=result.ao, kc_pos=result.kc_pos,
-            regime=result.regime, regime_votes=result.regime_votes, adx=result.adx, chop=result.chop,
-            setup_reason=result.setup_reason,
-        )
-
-        if not DRY_RUN:
-            try:
-                sent = await tg.broadcast_v3_signal(app, result, signal_id)
-                if sent is not None:
-                    db.set_signal_message_id(signal_id, sent.message_id)
-            except Exception as e:
-                logger.error("[SCAN-V3] Telegram broadcast failed for %s: %s", symbol, e)
-
-        fired += 1
-        logger.info(
-            "[SIGNAL-V3] Fired #%d %s %s entry=%.6g tp1=%.6g tp2=%.6g sl=%.6g live_enabled=%s",
-            signal_id, result.symbol, result.direction,
-            result.entry_price, result.tp1_price, result.tp2_price, result.sl_price, LIVE_ENABLED,
-        )
-
-    logger.info(
-        "[SCAN-V3] Done — %d coins scanned, %d fired, %d skipped-and-logged",
-        len(to_scan), fired, skipped,
-    )
-
-
-async def check_outcomes_v3(app: Application) -> None:
-    if not SCALPER_V3_ENABLED:
-        return
-
-    pending = db.get_pending_signals_by_strategy(STRATEGY_NAME_V3)
-    now = datetime.now(timezone.utc)
-
-    for sig in pending:
-        symbol = sig["symbol"]
-        direction = sig["direction"]
-        entry_price = sig["entry_price"]
-        tp1_price = sig["tp1_price"]
-        tp2_price = sig["tp2_price"]
-        sl_price = sig["sl_price"]
-        generated = datetime.fromisoformat(sig["generated_at"])
-        if generated.tzinfo is None:
-            generated = generated.replace(tzinfo=timezone.utc)
-
-        if (now - generated).total_seconds() > SCALPER_V3_EXPIRE_HOURS * 3600:
-            db.update_signal_outcome(sig["id"], "expired", 0.0)
-            logger.info("[V3] Signal %s expired (%s)", sig["id"], symbol)
-            if not DRY_RUN:
-                try:
-                    await tg.notify_outcome(app, {**sig, "status": "expired", "pnl_roi": 0.0})
-                except Exception as e:
-                    logger.error("[V3] Failed to notify expiry for %s: %s", symbol, e)
-            continue
-
-        try:
-            df = v3.update_rolling_history(symbol)
-            if df is None or df.empty:
-                continue
-            computed = v3.get_engine(symbol).compute(df)
-        except Exception as e:
-            logger.warning("[V3] Could not compute candles for %s: %s", symbol, e)
-            continue
-
-        bars_after_entry = computed[computed.index > pd.Timestamp(generated).tz_localize(None)]
-        if bars_after_entry.empty:
-            continue
-
-        result = v3.walk_trade(direction, entry_price, sl_price, tp1_price, tp2_price, bars_after_entry, trail=False)
-
-        if result["tp1_hit"] and sig.get("tp1_hit_at") is None:
-            db.mark_signal_tp1_hit(sig["id"], now)
-            if not DRY_RUN:
-                try:
-                    await tg.notify_v3_progress(app, sig)
-                except Exception as e:
-                    logger.error("[V3] Failed to send progress ping for %s: %s", symbol, e)
-
-        if result["status"] == "pending":
-            continue
-
-        pnl_pct = (
-            (result["exit_price"] - entry_price) / entry_price * 100.0
-            if direction == "LONG"
-            else (entry_price - result["exit_price"]) / entry_price * 100.0
-        )
-        db.update_signal_outcome(sig["id"], result["status"], round(pnl_pct, 4))
-        logger.info(
-            "[V3] Signal %s %s (%s) exit=%s reason=%s %+.2f%%",
-            sig["id"], result["status"].upper(), symbol, result["exit_price"], result["exit_reason"], pnl_pct,
-        )
-        if not DRY_RUN:
-            try:
-                await tg.notify_outcome(app, {**sig, "status": result["status"], "pnl_roi": pnl_pct})
-            except Exception as e:
-                logger.error("[V3] Failed to notify %s for %s: %s", result["status"], symbol, e)
 
 
 # ── Main ──────────────────────────────────────────────────────────
@@ -607,11 +350,12 @@ async def check_outcomes_v3(app: Application) -> None:
 async def main():
     logger.info("Starting MEXC Signal Bot")
     logger.info("Strategy: %s", STRATEGY_NAME)
-    logger.info("Entry TF: %s", ENTRY_TF)
-    logger.info("Signal mode: %s", SIGNAL_MODE)
-    logger.info("Entry buffer: %.4f%%", ENTRY_BUFFER_PCT * 100)
-    logger.info("Pending expiry: %d candles", PENDING_SIGNAL_EXPIRY_CANDLES)
-    logger.info("Max SL ROI: %.0f%%", MAX_SL_ROI_PCT)
+    logger.info("Trend TF: %s  Entry TF: %s", TREND_TF, ENTRY_TF)
+    logger.info("Min signal score: %.0f", MIN_SIGNAL_SCORE)
+    logger.info(
+        "TP: +%.1f%% ROI  SL: -%.1f%% ROI  Breakeven at +%.1f%% ROI",
+        TP_ROI_PCT, MAX_SL_ROI_PCT, BREAKEVEN_TRIGGER_ROI_PCT,
+    )
     logger.info("Leverage: %dx", LEVERAGE)
     logger.info("Dry run: %s", "enabled" if DRY_RUN else "disabled")
     logger.info(
@@ -637,18 +381,12 @@ async def main():
         },
     )
 
-    # Signal scanner -- every SCAN_INTERVAL_MINUTES, a few seconds after
-    # candle close so MEXC has finalized the candle.
-    if STRATEGY_V1_ENABLED:
-        logger.info("[V1] Binocular Pending-Breakout scanner ENABLED")
-        scheduler.add_job(
-            scan_and_fire_signals,
-            CronTrigger(minute=f"*/{SCAN_INTERVAL_MINUTES}", second=5),
-            args=[app],
-            id="signal_scanner",
-        )
-    else:
-        logger.info("[V1] Binocular Pending-Breakout scanner DISABLED (STRATEGY_V1_ENABLED=false)")
+    scheduler.add_job(
+        scan_and_fire_signals,
+        CronTrigger(minute=f"*/{SCAN_INTERVAL_MINUTES}", second=5),
+        args=[app],
+        id="signal_scanner",
+    )
 
     scheduler.add_job(
         check_outcomes,
@@ -662,24 +400,6 @@ async def main():
         CronTrigger(hour=f"*/{COIN_REFRESH_HOURS}"),
         id="coin_refresh",
     )
-
-    if SCALPER_V3_ENABLED:
-        logger.info(
-            "[V3] Super Scalper v3 scanner ENABLED (paper-trade only, live_enabled=%s)",
-            LIVE_ENABLED,
-        )
-        scheduler.add_job(
-            scan_and_fire_signals_v3,
-            CronTrigger(minute=f"*/{SCALPER_V3_SCAN_INTERVAL_MINUTES}", second=10),
-            args=[app],
-            id="signal_scanner_v3",
-        )
-        scheduler.add_job(
-            check_outcomes_v3,
-            IntervalTrigger(minutes=OUTCOME_CHECK_MINUTES),
-            args=[app],
-            id="outcome_checker_v3",
-        )
 
     async def _daily(app=app):
         await tg.auto_daily_report(type("ctx", (), {"application": app})())
