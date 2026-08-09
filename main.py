@@ -61,6 +61,7 @@ from config import (
     COINGLASS_API_KEY,
     STRATEGY_NAME,
     MIN_SIGNAL_SCORE,
+    MIN_CANDLE_SETTLE_SECONDS,
     TP_ROI_PCT,
     MAX_SL_ROI_PCT,
     BREAKEVEN_TRIGGER_ROI_PCT,
@@ -381,9 +382,30 @@ async def main():
         },
     )
 
+    # The scanner must fire late enough into each candle period that the
+    # just-closed candle has already cleared MIN_CANDLE_SETTLE_SECONDS --
+    # otherwise strategy.detect_pending_setup's settle-age check rejects
+    # every symbol on every scan (this actually happened: CANDLE_MINUTES
+    # now equals SCAN_INTERVAL_MINUTES since ENTRY_TF=5m, so a naive
+    # "5 seconds after each boundary" cron -- fine when ENTRY_TF was 15m
+    # and gave 2 of 3 scans a stale-enough candle -- left every candle
+    # only 5s old against a 90s settle requirement). +5s is a small extra
+    # safety margin beyond the configured minimum.
+    _settle_offset_seconds = MIN_CANDLE_SETTLE_SECONDS + 5
+    _settle_offset_minute, _settle_offset_second = divmod(_settle_offset_seconds, 60)
+    if _settle_offset_minute >= SCAN_INTERVAL_MINUTES:
+        raise RuntimeError(
+            f"MIN_CANDLE_SETTLE_SECONDS ({MIN_CANDLE_SETTLE_SECONDS}) leaves no valid "
+            f"scan offset within a {SCAN_INTERVAL_MINUTES}-minute SCAN_INTERVAL_MINUTES "
+            f"window -- lower MIN_CANDLE_SETTLE_SECONDS or raise SCAN_INTERVAL_MINUTES."
+        )
+
     scheduler.add_job(
         scan_and_fire_signals,
-        CronTrigger(minute=f"*/{SCAN_INTERVAL_MINUTES}", second=5),
+        CronTrigger(
+            minute=f"{_settle_offset_minute}-59/{SCAN_INTERVAL_MINUTES}",
+            second=_settle_offset_second,
+        ),
         args=[app],
         id="signal_scanner",
     )
