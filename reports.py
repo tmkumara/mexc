@@ -8,18 +8,19 @@ from database import get_signals_in_range, get_all_signals
 
 
 def _stats(signals: list[dict]) -> dict:
-    total   = len(signals)
-    wins    = [s for s in signals if s["status"] == "win"]
-    losses  = [s for s in signals if s["status"] == "loss"]
-    pending = [s for s in signals if s["status"] == "pending"]
-    expired = [s for s in signals if s["status"] == "expired"]
+    total      = len(signals)
+    wins       = [s for s in signals if s["status"] == "win"]
+    losses     = [s for s in signals if s["status"] == "loss"]
+    breakevens = [s for s in signals if s["status"] == "breakeven"]
+    pending    = [s for s in signals if s["status"] == "pending"]
+    expired    = [s for s in signals if s["status"] == "expired"]
 
     win_count  = len(wins)
     loss_count = len(losses)
     closed     = win_count + loss_count
     win_rate   = (win_count / closed * 100) if closed else 0
 
-    net_roi = sum(s["pnl_roi"] or 0 for s in signals if s["status"] in ("win", "loss"))
+    net_roi = sum(s["pnl_roi"] or 0 for s in signals if s["status"] in ("win", "loss", "breakeven"))
 
     best  = max((s["pnl_roi"] or 0 for s in wins),   default=0)
     worst = min((s["pnl_roi"] or 0 for s in losses),  default=0)
@@ -29,7 +30,7 @@ def _stats(signals: list[dict]) -> dict:
 
     return {
         "total": total,
-        "wins": win_count, "losses": loss_count,
+        "wins": win_count, "losses": loss_count, "breakevens": len(breakevens),
         "pending": len(pending), "expired": len(expired),
         "win_rate": win_rate, "net_roi": net_roi,
         "best": best, "worst": worst,
@@ -57,6 +58,7 @@ def _format_report(title: str, signals: list[dict]) -> str:
         f"📡 Total signals:  `{s['total']}`",
         f"✅ Wins:           `{s['wins']}`",
         f"❌ Losses:         `{s['losses']}`",
+        f"⚖️ Breakeven:      `{s['breakevens']}`",
         f"⏳ Pending:        `{s['pending']}`",
         f"💤 Expired:        `{s['expired']}`",
         "",
