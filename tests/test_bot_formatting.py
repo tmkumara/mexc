@@ -11,45 +11,37 @@ def _sample_signal() -> Signal:
         direction="LONG",
         entry_price=1.100000,
         tp_price=1.108250,
-        sl_price=1.095200,
+        sl_price=1.088500,
         leverage=20,
-        tp_roi_pct=15.0,
-        sl_roi_pct=8.7,
-        timeframe_summary="Binocular confirmed trigger",
+        tp_roi_pct=7.0,
+        sl_roi_pct=10.0,
+        timeframe_summary="Precision Pullback confirmation",
         generated_at=datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc),
-        rr=1.72,
+        rr=0.70,
         score=82.5,
         entry_low=1.100000,
         entry_high=1.100000,
-        tp2_price=1.116500,
-        tp3_price=1.124750,
-        position_size=450.25,
     )
 
 
 def test_format_signal_contains_key_fields(monkeypatch):
-    monkeypatch.setattr(bot, "STRATEGY_NAME", "Binocular Pending-Breakout v1")
+    monkeypatch.setattr(bot, "STRATEGY_NAME", "Precision Pullback Scalper v1")
     msg = format_signal(_sample_signal(), signal_id=12)
 
     assert "XRP/USDT" in msg
     assert "LONG" in msg
     assert "1.1" in msg
-    assert "1:1.72" in msg
+    assert "1:0.7" in msg
     assert "20x" in msg
-    assert "Binocular Pending-Breakout v1" in msg
+    assert "Precision Pullback Scalper v1" in msg
     assert "12" in msg
 
 
-def test_format_signal_shows_all_three_targets():
+def test_format_signal_does_not_show_ladder_targets():
     msg = format_signal(_sample_signal(), signal_id=13)
-    assert "1.1082" in msg or "1.10825" in msg
-    assert "1.1165" in msg
-    assert "1.1247" in msg or "1.12475" in msg
-
-
-def test_format_signal_shows_position_size():
-    msg = format_signal(_sample_signal(), signal_id=14)
-    assert "450.25" in msg or "450.2" in msg
+    assert "T2" not in msg
+    assert "T3" not in msg
+    assert "(to T1)" not in msg
 
 
 def test_format_signal_short_uses_red_arrow():

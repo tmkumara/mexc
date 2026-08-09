@@ -1,5 +1,5 @@
 """
-Telegram bot: commands and signal broadcast for VP-OB Confluence strategy.
+Telegram bot: commands and signal broadcast for Precision Pullback Scalper v1.
 
 Signal messages use HTML parse mode.
 """
@@ -67,17 +67,11 @@ def format_signal(signal, signal_id: int) -> str:
         f"{escape(arrow)} — {_bold(coin)} Futures",
         "━━━━━━━━━━━━━━━━━━━━",
         f"📍 Entry:    {_code(f'{signal.entry_price:,.6g}')}",
-        f"🎯 T1 (50%): {_code(f'{signal.tp_price:,.6g}')}  {_italic(f'+{signal.tp_roi_pct:.1f}% gross ROI')}",
+        f"🎯 TP:       {_code(f'{signal.tp_price:,.6g}')}  {_italic(f'+{signal.tp_roi_pct:.1f}% gross ROI')}",
     ]
-    if signal.tp2_price is not None:
-        lines.append(f"🎯 T2 (30%): {_code(f'{signal.tp2_price:,.6g}')}")
-    if signal.tp3_price is not None:
-        lines.append(f"🎯 T3 (20%): {_code(f'{signal.tp3_price:,.6g}')}")
     lines.append(f"🛑 SL:       {_code(f'{signal.sl_price:,.6g}')}  {_italic(f'-{signal.sl_roi_pct:.1f}% gross ROI')}")
-    lines.append(f"📊 RR:       {_code(f'1:{signal.rr:.3g}')} (to T1)")
+    lines.append(f"📊 RR:       {_code(f'1:{signal.rr:.3g}')}")
     lines.append(f"⚡ Leverage: {_code(f'{signal.leverage}x')}  {_italic('Isolated')}")
-    if signal.position_size is not None:
-        lines.append(f"📦 Position size: {_code(f'{signal.position_size:,.4g}')}")
     lines.append(f"🧭 Setup:    {_italic(escape(signal.timeframe_summary))}")
     lines.append(f"📈 Strategy: {STRATEGY_NAME}")
     lines.append("━━━━━━━━━━━━━━━━━━━━")
@@ -92,97 +86,16 @@ async def broadcast_signal(app: Application, signal, signal_id: int) -> None:
     await _send_html(app, msg)
 
 
-async def notify_target_progress(app: Application, signal_db: dict, stage: int) -> None:
-    """Sent when T1 (50% closed, SL moved to breakeven) or T2 (30% more
-    closed) fills. Replies to the original signal message when available."""
-    direction = signal_db["direction"]
-    symbol = signal_db["symbol"].replace("_", "/")
-    arrow = "🟢" if direction == "LONG" else "🔴"
-
-    if stage == 1:
-        label = "T1 hit — 50% closed, SL moved to breakeven"
-    else:
-        label = "T2 hit — 30% more closed"
-
-    msg = "\n".join([
-        f"📶 {_bold('Target Progress')}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"{arrow} {escape(direction)} — {_bold(symbol)}",
-        _code(label),
-        f"🆔 Signal ID: {_code(signal_db['id'])}",
-    ])
-    await _send_html(app, msg, reply_to_message_id=signal_db.get("signal_message_id"))
-
-
-def format_v3_signal(signal, signal_id: int) -> str:
-    """Super Scalper v3 alert -- includes regime/confluence diagnostics
-    alongside the trade levels."""
-    arrow = "🟢 LONG" if signal.direction == "LONG" else "🔴 SHORT"
-    coin  = signal.symbol.replace("_", "/")
-
-    return "\n".join([
-        f"{escape(arrow)} — {_bold(coin)} Futures",
-        _italic("Super Scalper v3"),
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"📍 Entry: {_code(f'{signal.entry_price:,.6g}')}",
-        f"🎯 TP:    {_code(f'{signal.tp2_price:,.6g}')}  {_italic(f'+{cfg.SCALPER_V3_TARGET_ROI_PCT:.0f}% ROI @ {cfg.LEVERAGE}x')}",
-        f"🛑 SL:    {_code(f'{signal.sl_price:,.6g}')}  {_italic(f'-{cfg.SCALPER_V3_MAX_SL_ROI_PCT:.0f}% ROI @ {cfg.LEVERAGE}x, fixed')}",
-        f"📶 Progress ping at: {_code(f'{signal.tp1_price:,.6g}')}  {_italic(f'+{cfg.SCALPER_V3_TP1_NOTIFY_ROI_PCT:.0f}% ROI, informational')}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"🧭 Trend: {_code(signal.trend)}   💪 Strength: {_code(signal.strength)}",
-        f"📉 AO: {_code(f'{signal.ao:.4g}')}   📍 kc_pos: {_code(f'{signal.kc_pos:.2f}')}",
-        f"🌐 Regime: {_code(signal.regime)} ({_code(f'{signal.regime_votes}/3')} votes)",
-        f"📈 ADX: {_code(f'{signal.adx:.1f}')}   🌀 Chop: {_code(f'{signal.chop:.1f}')}",
-        f"💰 Funding: {_code(f'{signal.funding_rate:+.4f}%')}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"⏰ {_code(signal.generated_at.astimezone(LKT).strftime('%Y-%m-%d %H:%M LKT'))}",
-        f"🆔 Signal ID: {_code(signal_id)}",
-        _italic("⚠️ Not financial advice. Use risk management."),
-    ])
-
-
-async def broadcast_v3_signal(app: Application, signal, signal_id: int):
-    msg = format_v3_signal(signal, signal_id)
-    return await _send_html(app, msg)
-
-
-async def notify_v3_progress(app: Application, signal_db: dict) -> None:
-    """Sent once, the first time price reaches the SCALPER_V3_TP1_NOTIFY_ROI_PCT
-    checkpoint (informational only -- SL/TP are unchanged, still flat).
-    Replies to the original signal message when we have its message_id."""
-    direction = signal_db["direction"]
-    symbol    = signal_db["symbol"].replace("_", "/")
-    arrow     = "🟢" if direction == "LONG" else "🔴"
-    entry_price = signal_db["entry_price"]
-    tp1_price   = signal_db["tp1_price"]
-
-    msg = "\n".join([
-        f"📶 {_bold('Progress Update')}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"{arrow} {escape(direction)} — {_bold(symbol)}",
-        f"Reached {_code(f'+{cfg.SCALPER_V3_TP1_NOTIFY_ROI_PCT:.0f}% ROI')} toward the "
-        f"{_code(f'+{cfg.SCALPER_V3_TARGET_ROI_PCT:.0f}% ROI')} target",
-        f"Entry: {_code(f'{entry_price:,.6g}')}   Now near: {_code(f'{tp1_price:,.6g}')}",
-        f"🆔 Signal ID: {_code(signal_db['id'])}",
-    ])
-    await _send_html(app, msg, reply_to_message_id=signal_db.get("signal_message_id"))
-
-
 async def notify_outcome(app: Application, signal_db: dict) -> None:
     direction = signal_db["direction"]
     symbol    = signal_db["symbol"].replace("_", "/")
     status    = signal_db["status"]
     roi       = signal_db.get("pnl_roi") or 0.0
-    final_stage = signal_db.get("final_stage")
 
-    if status == "win" and final_stage == 3:
-        emoji, label = "✅", f"FULL TARGET (T1+T2+T3) {roi:+.1f}%"
-    elif status == "win" and final_stage == 2:
-        emoji, label = "✅", f"T1+T2 HIT, THEN STOPPED {roi:+.1f}%"
-    elif status == "win" and final_stage == 1:
-        emoji, label = "✅", f"T1 HIT, BE STOP {roi:+.1f}%"
-    elif status == "win":
+    if status == "win":
         emoji, label = "✅", f"TARGET HIT {roi:+.1f}%"
+    elif status == "breakeven":
+        emoji, label = "⚖️", f"BREAKEVEN STOP {roi:+.1f}%"
     elif status == "loss":
         emoji, label = "❌", f"STOPPED OUT {roi:+.1f}%"
     else:
@@ -243,10 +156,12 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     from config import (
         STRATEGY_NAME,
-        ENTRY_TF,
-        SIGNAL_MODE, ENTRY_BUFFER_PCT, PENDING_SIGNAL_EXPIRY_CANDLES,
-        MAX_SL_ROI_PCT,
-        MIN_RR,
+        TREND_TF, ENTRY_TF,
+        MIN_SIGNAL_SCORE,
+        TP_ROI_PCT, MAX_SL_ROI_PCT, BREAKEVEN_TRIGGER_ROI_PCT,
+        NO_CHASE_MAX_DISTANCE_PCT,
+        ATR_MIN_PCT, ATR_MAX_PCT,
+        PENDING_SIGNAL_EXPIRY_CANDLES,
         SCAN_INTERVAL_MINUTES,
         OUTCOME_CHECK_MINUTES,
         MAX_CONCURRENT_SIGNALS, MAX_ACTIVE_LONG_SIGNALS, MAX_ACTIVE_SHORT_SIGNALS,
@@ -276,10 +191,11 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"State:       {_code(state)}",
         f"Strategy:    {_code(STRATEGY_NAME)}",
         "━━━━━━━━━━━━━━━━━━━━",
-        f"TF:          {_code(ENTRY_TF)}  (SIGNAL_MODE={SIGNAL_MODE})",
-        f"Entry buf:   {_code(f'{ENTRY_BUFFER_PCT*100:.3f}%')}  {_italic(f'expires after {PENDING_SIGNAL_EXPIRY_CANDLES} candles')}",
-        f"SL cap:      {_code(f'{MAX_SL_ROI_PCT:.0f}% ROI')}",
-        f"RR min:      {_code(f'1:{MIN_RR:.2g}')} (to T1)",
+        f"TF:          {_code(f'{TREND_TF} trend / {ENTRY_TF} entry')}",
+        f"Min score:   {_code(f'{MIN_SIGNAL_SCORE:.0f}/100')}",
+        f"No-chase:    {_code(f'{NO_CHASE_MAX_DISTANCE_PCT*100:.2f}%')}  {_italic(f'ATR band {ATR_MIN_PCT*100:.2f}-{ATR_MAX_PCT*100:.2f}%')}",
+        f"TP / SL:     {_code(f'+{TP_ROI_PCT:.1f}% / -{MAX_SL_ROI_PCT:.1f}% ROI')}  {_italic(f'BE at +{BREAKEVEN_TRIGGER_ROI_PCT:.1f}%')}",
+        f"Pending exp: {_code(f'{PENDING_SIGNAL_EXPIRY_CANDLES} candles')}",
         f"Leverage:    {_code(f'{LEVERAGE}x  Isolated')}",
         "━━━━━━━━━━━━━━━━━━━━",
         f"Scan every:  {_code(f'{SCAN_INTERVAL_MINUTES}min')}",
