@@ -144,17 +144,10 @@ def _format_price(value: Any) -> str:
 def get_stats(since: datetime | None = None) -> dict:
     if not _table_exists("signals"):
         return {
-            "total": 0,
-            "wins": 0,
-            "losses": 0,
-            "pending": 0,
-            "expired": 0,
-            "win_rate": 0.0,
-            "net_roi": 0.0,
-            "best": 0.0,
-            "worst": 0.0,
-            "longs": 0,
-            "shorts": 0,
+            "total": 0, "wins": 0, "losses": 0, "breakevens": 0,
+            "pending": 0, "expired": 0,
+            "win_rate": 0.0, "net_roi": 0.0, "best": 0.0, "worst": 0.0,
+            "longs": 0, "shorts": 0,
         }
 
     if since:
@@ -168,6 +161,7 @@ def get_stats(since: datetime | None = None) -> dict:
     total = len(rows)
     wins = [r for r in rows if r.get("status") == "win"]
     losses = [r for r in rows if r.get("status") == "loss"]
+    breakevens = [r for r in rows if r.get("status") == "breakeven"]
     pending = [r for r in rows if r.get("status") == "pending"]
     expired = [r for r in rows if r.get("status") == "expired"]
     longs = [r for r in rows if r.get("direction") == "LONG"]
@@ -175,22 +169,18 @@ def get_stats(since: datetime | None = None) -> dict:
 
     closed = len(wins) + len(losses)
     win_rate = (len(wins) / closed * 100) if closed else 0.0
-    net_roi = sum(r.get("pnl_roi") or 0 for r in rows if r.get("status") in ("win", "loss"))
+    net_roi = sum(r.get("pnl_roi") or 0 for r in rows if r.get("status") in ("win", "loss", "breakeven"))
     best = max((r.get("pnl_roi") or 0 for r in wins), default=0.0)
     worst = min((r.get("pnl_roi") or 0 for r in losses), default=0.0)
 
     return {
         "total": total,
-        "wins": len(wins),
-        "losses": len(losses),
-        "pending": len(pending),
-        "expired": len(expired),
+        "wins": len(wins), "losses": len(losses), "breakevens": len(breakevens),
+        "pending": len(pending), "expired": len(expired),
         "win_rate": round(win_rate, 1),
         "net_roi": round(net_roi, 1),
-        "best": round(best, 1),
-        "worst": round(worst, 1),
-        "longs": len(longs),
-        "shorts": len(shorts),
+        "best": round(best, 1), "worst": round(worst, 1),
+        "longs": len(longs), "shorts": len(shorts),
     }
 
 
@@ -230,24 +220,24 @@ def get_runtime_status() -> dict:
 
 
 def get_strategy_config() -> dict:
-    """Return dashboard-safe strategy/runtime configuration for Binocular Pending-Breakout v1."""
+    """Return dashboard-safe strategy/runtime configuration for Precision Pullback Scalper v1."""
     return {
-        "strategy": _safe_config_value("STRATEGY_NAME", "Binocular Pending-Breakout v1"),
+        "strategy": _safe_config_value("STRATEGY_NAME", "Precision Pullback Scalper v1"),
+        "trend_tf": _safe_config_value("TREND_TF", "—"),
         "entry_tf": _safe_config_value("ENTRY_TF", "—"),
-        "signal_mode": _safe_config_value("SIGNAL_MODE", "—"),
-        "confirmation_timeframes": _safe_config_value("CONFIRMATION_TIMEFRAMES", "—"),
-        "mtf_min_confirmations": _safe_config_value("MTF_MIN_CONFIRMATIONS", "—"),
+        "min_signal_score": _safe_config_value("MIN_SIGNAL_SCORE", "—"),
+        "tp_roi_pct": _safe_config_value("TP_ROI_PCT", "—"),
+        "max_sl_roi_pct": _safe_config_value("MAX_SL_ROI_PCT", "—"),
+        "breakeven_trigger_roi_pct": _safe_config_value("BREAKEVEN_TRIGGER_ROI_PCT", "—"),
+        "no_chase_max_distance_pct": _safe_config_value("NO_CHASE_MAX_DISTANCE_PCT", "—"),
+        "atr_min_pct": _safe_config_value("ATR_MIN_PCT", "—"),
+        "atr_max_pct": _safe_config_value("ATR_MAX_PCT", "—"),
         "entry_buffer_pct": _safe_config_value("ENTRY_BUFFER_PCT", "—"),
         "pending_signal_expiry_candles": _safe_config_value("PENDING_SIGNAL_EXPIRY_CANDLES", "—"),
-
-        "account_balance": _safe_config_value("ACCOUNT_BALANCE", "—"),
-        "risk_percent_per_trade": _safe_config_value("RISK_PERCENT_PER_TRADE", "—"),
 
         "top_n_coins": _safe_config_value("TOP_N_COINS", "—"),
         "min_volume_usd": _safe_config_value("COIN_POOL_MIN_VOLUME_USD", "—"),
 
-        "max_sl_roi_pct": _safe_config_value("MAX_SL_ROI_PCT", "—"),
-        "min_rr": _safe_config_value("MIN_RR", "—"),
         "leverage": _safe_config_value("LEVERAGE", "—"),
 
         "max_daily_signals": _safe_config_value("MAX_DAILY_SIGNALS", "—"),
@@ -345,7 +335,7 @@ HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Supertrend Pullback Dashboard</title>
+<title>Precision Pullback Scalper Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -694,6 +684,12 @@ tr:hover td {
   border: 1px solid rgba(90, 167, 255, .2);
 }
 
+.badge-breakeven {
+  background: rgba(245, 200, 75, .12);
+  color: var(--yellow);
+  border: 1px solid rgba(245, 200, 75, .2);
+}
+
 .badge-expired {
   background: rgba(143, 161, 183, .10);
   color: var(--muted);
@@ -738,8 +734,8 @@ tr:hover td {
 <header class="header">
   <div class="header-inner">
     <div>
-      <div class="logo"><span>📡</span> Supertrend Pullback Bot</div>
-      <div class="logo-sub">15m Trend (EMA200 + Supertrend) + 5m EMA20 Pullback Reclaim</div>
+      <div class="logo"><span>📡</span> Precision Pullback Scalper Bot</div>
+      <div class="logo-sub">15m EMA200 Trend + 5m EMA20/50 Pullback + RSI Reset</div>
     </div>
     <div class="meta">
       <span class="status-pill connecting" id="wsStatus"><span class="status-dot"></span>Connecting</span>
@@ -765,6 +761,7 @@ tr:hover td {
     <div class="card"><div class="card-label">Signals</div><div class="card-value white" id="c-total">—</div><div class="card-small">Total selected period</div></div>
     <div class="card"><div class="card-label">Wins</div><div class="card-value green" id="c-wins">—</div><div class="card-small">Closed in profit</div></div>
     <div class="card"><div class="card-label">Losses</div><div class="card-value red" id="c-losses">—</div><div class="card-small">Closed by stop</div></div>
+    <div class="card"><div class="card-label">Breakeven</div><div class="card-value yellow" id="c-breakeven">—</div><div class="card-small">Stopped at entry</div></div>
     <div class="card"><div class="card-label">Pending Signals</div><div class="card-value blue" id="c-pending">—</div><div class="card-small">Active trade outcomes</div></div>
     <div class="card">
       <div class="card-label">Win Rate</div>
@@ -785,8 +782,8 @@ tr:hover td {
 
   <div class="section-title">Current Strategy Setup</div>
   <div class="grid config-grid">
-    <div class="card"><div class="card-label">Timeframe</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">Chandelier/PVT/RSI trigger</div></div>
-    <div class="card"><div class="card-label">Signal Mode</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">original / confirmed / strict</div></div>
+    <div class="card"><div class="card-label">Timeframe</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">EMA200 trend + EMA20/50 pullback</div></div>
+    <div class="card"><div class="card-label">Min Score</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">0-100 quality gate</div></div>
     <div class="card"><div class="card-label">Entry Buffer</div><div class="card-value green" id="cfg-confirm">—</div><div class="card-small" id="cfg-confirm-sub">—</div></div>
     <div class="card"><div class="card-label">Risk Model</div><div class="card-value orange" id="cfg-rr">—</div><div class="card-small" id="cfg-rr-sub">—</div></div>
   </div>
@@ -807,7 +804,7 @@ tr:hover td {
             <th>Dir</th>
             <th>Entry</th>
             <th>SL</th>
-            <th>T1</th>
+            <th>TP</th>
             <th>RR</th>
             <th>Score</th>
             <th>Armed</th>
@@ -971,6 +968,7 @@ function renderStats() {
   set("c-total", s.total);
   set("c-wins", s.wins);
   set("c-losses", s.losses);
+  set("c-breakeven", s.breakevens);
   set("c-pending", s.pending);
   set("c-winrate", s.win_rate + "%");
 
@@ -996,17 +994,12 @@ function renderRuntime() {
 function renderConfig() {
   const c = data.config;
 
-  set("cfg-tf", `${c.entry_tf} (${c.signal_mode})`);
-  set("cfg-quality", `${c.signal_mode}`);
+  set("cfg-tf", `${c.trend_tf} / ${c.entry_tf}`);
+  set("cfg-quality", `score ≥ ${c.min_signal_score}`);
   set("cfg-confirm", `${(c.entry_buffer_pct * 100).toFixed(3)}%`);
-  const confirmSub = c.signal_mode === "strict"
-    ? `VWAP + ${c.mtf_min_confirmations}/3 of ${c.confirmation_timeframes}`
-    : c.signal_mode === "confirmed"
-      ? "EMA ribbon + EMA200"
-      : "raw trigger only";
-  set("cfg-confirm-sub", `${confirmSub}, expires after ${c.pending_signal_expiry_candles} candles`);
-  set("cfg-rr", `${c.min_rr}R min`);
-  set("cfg-rr-sub", `SL ≤ ${c.max_sl_roi_pct}% | ${c.leverage}x`);
+  set("cfg-confirm-sub", `no-chase ${(c.no_chase_max_distance_pct * 100).toFixed(2)}%, expires after ${c.pending_signal_expiry_candles} candles`);
+  set("cfg-rr", `+${c.tp_roi_pct}% / -${c.max_sl_roi_pct}%`);
+  set("cfg-rr-sub", `BE at +${c.breakeven_trigger_roi_pct}% | ${c.leverage}x`);
 }
 
 function renderPendingSetups() {
