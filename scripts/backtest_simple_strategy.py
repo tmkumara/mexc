@@ -1,13 +1,16 @@
 """
-Backtest utility for Binocular Pending-Breakout v1.
+Backtest utility for Precision Pullback Scalper v1.
 
 Two-phase simulation: an armed pending setup (from
 strategy.detect_pending_setup, as-of each bar) waits for a breakout
 confirmation (as strategy.check_setup_confirmation would live), then
-outcome_check.check_target_ladder walks the 3-target partial-exit ladder
-forward from the confirming bar -- the exact same functions the live bot
-uses, so backtest and live share one source of truth and no signal logic
-is duplicated here.
+outcome_check.check_tp_sl_with_breakeven walks the fixed single TP/SL
+(with its one breakeven step) forward from the confirming bar -- the
+exact same functions the live bot uses, so backtest and live share one
+source of truth and no signal logic is duplicated here.
+
+Needs both TREND_TF and ENTRY_TF historical data per symbol -- fetch both
+with backtest/fetch_data.py first (arbitrary --interval supported).
 
 History beyond a single REST request's cap (MAX_REST_COUNT) is assembled
 by paging backward via `end` cursors (see get_klines_extended). The
@@ -31,13 +34,13 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import strategy
-from outcome_check import check_target_ladder
+from outcome_check import check_tp_sl_with_breakeven
 from mexc_client import get_klines
 from config import (
-    ENTRY_TF, ENTRY_KLINE_COUNT, _TF_MINUTES,
+    ENTRY_TF, TREND_TF, ENTRY_KLINE_COUNT, _TF_MINUTES,
     ESTIMATED_ENTRY_FEE_PCT, ESTIMATED_EXIT_FEE_PCT, ESTIMATED_SLIPPAGE_PCT,
-    RIBBON_BASELINE_LEN, BINOCULAR_EMA200_LEN, CHANDELIER_ATR_PERIOD,
-    RSI_SLOW_PERIOD, PVT_SIGNAL_LENGTH,
+    EMA_TREND_LEN, EMA_TREND_SLOPE_LOOKBACK, EMA_SLOW_LEN, RSI_PERIOD,
+    VOLUME_MA_PERIOD, ATR_PERIOD, BREAKEVEN_TRIGGER_PRICE_PCT, LEVERAGE,
 )
 
 MAX_REST_COUNT = 2000   # single-request ceiling this script asks MEXC for
@@ -63,15 +66,9 @@ def get_klines_extended(symbol: str, interval: str, days: int) -> pd.DataFrame:
         chunks.append(df)
         earliest = df.index[0].to_pydatetime()
         if seen_earliest is not None and earliest >= seen_earliest:
-            break  # exchange stopped returning older data -- avoid looping forever
+            break
         seen_earliest = earliest
 
-        # Note: do NOT treat `len(df) < MAX_REST_COUNT` as "exchange ran out
-        # of history" -- MEXC does not reliably return the full requested
-        # count even mid-history (observed a first-page request return 1999
-        # instead of 2000), which previously caused premature termination
-        # after a single page. Only stop on reaching the target date or on
-        # the exchange genuinely failing to page further back (checks above).
         if earliest <= target_start:
             break
 
@@ -95,13 +92,10 @@ class Trade:
     tp_price: float
     sl_price: float
     rr: float
-    outcome: str            # "win" | "loss" | "expired"
+    outcome: str            # "win" | "loss" | "breakeven" | "expired"
     gross_roi_pct: float
     net_roi_pct: float
-    final_stage: int = 0
-    t1_hit: bool = False
-    t2_hit: bool = False
-    t3_hit: bool = False
+    breakeven_triggered: bool = False
     closed_at: str = ""
 
 
@@ -121,9 +115,11 @@ class BacktestStats:
 
         wins = [t for t in self.trades if t.outcome == "win"]
         losses = [t for t in self.trades if t.outcome == "loss"]
+        breakevens = [t for t in self.trades if t.outcome == "breakeven"]
         expired = [t for t in self.trades if t.outcome == "expired"]
 
-        win_rate = len(wins) / n * 100.0
+        closed_for_rate = len(wins) + len(losses)
+        win_rate = (len(wins) / closed_for_rate * 100.0) if closed_for_rate else 0.0
         gross_roi = sum(t.gross_roi_pct for t in self.trades)
         total_fees = sum(t.gross_roi_pct - t.net_roi_pct for t in self.trades)
         net_roi = sum(t.net_roi_pct for t in self.trades)
@@ -149,8 +145,9 @@ class BacktestStats:
 
         print(f"Wins:                {len(wins)}")
         print(f"Losses:              {len(losses)}")
+        print(f"Breakeven:           {len(breakevens)}")
         print(f"Expired trades:      {len(expired)}")
-        print(f"Win rate:            {win_rate:.1f}%")
+        print(f"Win rate (win/loss): {win_rate:.1f}%")
         print(f"Gross ROI:           {gross_roi:+.1f}%")
         print(f"Estimated fees:      {total_fees:.1f}%")
         print(f"Net ROI:             {net_roi:+.1f}%")
@@ -177,18 +174,14 @@ class BacktestStats:
         for symbol in sorted({t.symbol for t in self.trades}):
             _bucket_report(f"  {symbol}", [t for t in self.trades if t.symbol == symbol])
 
-        t1_rate = sum(1 for t in self.trades if t.t1_hit) / n * 100
-        t2_rate = sum(1 for t in self.trades if t.t2_hit) / n * 100
-        t3_rate = sum(1 for t in self.trades if t.t3_hit) / n * 100
-        print(f"\nT1 hit rate:          {t1_rate:.1f}%")
-        print(f"T2 hit rate:          {t2_rate:.1f}%")
-        print(f"T3 hit rate:          {t3_rate:.1f}%")
+        breakeven_rate = sum(1 for t in self.trades if t.breakeven_triggered) / n * 100
+        print(f"\nBreakeven-trigger rate: {breakeven_rate:.1f}%")
 
         print("\nMonthly performance:")
         by_month: dict[str, list[Trade]] = defaultdict(list)
         for t in self.trades:
             if t.closed_at:
-                month_key = t.closed_at[:7]  # "YYYY-MM"
+                month_key = t.closed_at[:7]
                 by_month[month_key].append(t)
         for month_key in sorted(by_month):
             _bucket_report(f"  {month_key}", by_month[month_key])
@@ -198,13 +191,7 @@ def _with_forming_row(df: pd.DataFrame, upto_idx: int, window_count: int) -> pd.
     """Last `window_count` rows ending at upto_idx, plus a duplicated last
     row standing in for the still-forming candle, so
     detect_pending_setup's/check_setup_confirmation's iloc[:-1] leaves
-    exactly that trailing window as 'completed'.
-
-    Bounded to `window_count` (ENTRY_KLINE_COUNT) to
-    match what the live bot's get_market_klines(count=...) actually
-    fetches -- an unbounded from-the-start slice would both diverge from
-    live behavior and make indicator recomputation cost grow O(n^2) with
-    history length."""
+    exactly that trailing window as 'completed'."""
     start = max(0, upto_idx + 1 - window_count)
     window = df.iloc[start : upto_idx + 1]
     return pd.concat([window, window.iloc[[-1]]])
@@ -212,98 +199,91 @@ def _with_forming_row(df: pd.DataFrame, upto_idx: int, window_count: int) -> pd.
 
 def backtest_symbol(symbol: str, days: int) -> list[Trade]:
     """Runs in its own worker process (see main()) -- returns this symbol's
-    trades rather than mutating shared state, since process pool workers
-    don't share memory. Two-phase simulation: an armed pending setup
-    waits for a breakout confirmation, then check_target_ladder walks the
-    3-target partial-exit ladder forward from the confirming bar. One
-    setup/trade at a time, same as the single-timeframe walk-forward this
-    script has always used."""
+    trades rather than mutating shared state. One setup/trade at a time."""
     trades: list[Trade] = []
 
-    df_full = get_klines_extended(symbol, ENTRY_TF, days)
+    df_entry_full = get_klines_extended(symbol, ENTRY_TF, days)
+    df_trend_full = get_klines_extended(symbol, TREND_TF, days)
 
-    if df_full.empty:
-        print(f"[{symbol}] no candle history returned -- skipping", flush=True)
+    if df_entry_full.empty or df_trend_full.empty:
+        print(f"[{symbol}] no candle history returned for one or both timeframes -- skipping", flush=True)
         return trades
 
-    print(f"[{symbol}] achieved history: {len(df_full)} x {ENTRY_TF} bars", flush=True)
+    print(
+        f"[{symbol}] achieved history: {len(df_entry_full)} x {ENTRY_TF}, "
+        f"{len(df_trend_full)} x {TREND_TF} bars", flush=True,
+    )
 
-    min_start = max(
-        RIBBON_BASELINE_LEN, BINOCULAR_EMA200_LEN, CHANDELIER_ATR_PERIOD,
-        RSI_SLOW_PERIOD, PVT_SIGNAL_LENGTH,
-    ) + 10
+    min_start = max(EMA_TREND_LEN + EMA_TREND_SLOPE_LOOKBACK, EMA_SLOW_LEN, RSI_PERIOD, VOLUME_MA_PERIOD, ATR_PERIOD) + 10
 
     original_get_market_klines = strategy.get_market_klines
     pending_setup: dict | None = None
     in_trade_until_idx = -1
 
-    from config import SIGNAL_MODE, CONFIRMATION_TIMEFRAMES
-    confirmation_dfs: dict[str, pd.DataFrame] = {}
-    if SIGNAL_MODE == "strict":
-        for tf in [t.strip() for t in CONFIRMATION_TIMEFRAMES.split(",") if t.strip()]:
-            confirmation_dfs[tf] = get_klines_extended(symbol, tf, days)
-
     try:
-        for i in range(min_start, len(df_full) - 1):
+        for i in range(min_start, len(df_entry_full) - 1):
             if i <= in_trade_until_idx:
                 continue
 
-            as_of = _with_forming_row(df_full, i, ENTRY_KLINE_COUNT)
+            as_of_entry = _with_forming_row(df_entry_full, i, ENTRY_KLINE_COUNT)
+            ts = df_entry_full.index[i]
+            as_of_trend = df_trend_full[df_trend_full.index <= ts]
+            if as_of_trend.empty:
+                continue
+            as_of_trend = _with_forming_row(as_of_trend, len(as_of_trend) - 1, ENTRY_KLINE_COUNT)
 
-            def _fake(sym: str, interval: str, count: int = 100, _df=as_of, _ts=df_full.index[i]):
+            def _fake(sym: str, interval: str, count: int = 100, _entry=as_of_entry, _trend=as_of_trend):
                 if interval == ENTRY_TF:
-                    return _df
-                if interval in confirmation_dfs and not confirmation_dfs[interval].empty:
-                    tf_df = confirmation_dfs[interval]
-                    as_of_tf = tf_df[tf_df.index <= _ts]
-                    if as_of_tf.empty:
-                        return pd.DataFrame()
-                    return pd.concat([as_of_tf, as_of_tf.iloc[[-1]]])
+                    return _entry
+                if interval == TREND_TF:
+                    return _trend
                 return pd.DataFrame()
 
             strategy.get_market_klines = _fake
 
             if pending_setup is not None:
                 status, fill_price = strategy.check_setup_confirmation(pending_setup)
-                if status == "expired" or status == "invalidated":
+                if status in ("expired", "invalidated"):
                     pending_setup = None
                     continue
                 if status == "waiting":
                     continue
 
                 # confirmed
-                entry_candle_cutoff = df_full.index[i]
-                result = check_target_ladder(
-                    pending_setup["direction"], fill_price, pending_setup["sl_price"],
-                    pending_setup["tp_price"], pending_setup["tp2_price"], pending_setup["tp3_price"],
-                    df_full, entry_candle_cutoff,
+                entry_candle_cutoff = df_entry_full.index[i]
+                direction = pending_setup["direction"]
+                breakeven_trigger_price = (
+                    fill_price * (1 + BREAKEVEN_TRIGGER_PRICE_PCT) if direction == "LONG"
+                    else fill_price * (1 - BREAKEVEN_TRIGGER_PRICE_PCT)
+                )
+                result = check_tp_sl_with_breakeven(
+                    direction, fill_price, pending_setup["sl_price"], pending_setup["tp_price"],
+                    breakeven_trigger_price, df_entry_full, entry_candle_cutoff,
                 )
                 bars_held = 1
                 if result is None:
-                    # Ran off the end of available history -- treat as expired.
-                    outcome, final_stage = "expired", 0
+                    outcome = "expired"
                     gross_roi_pct = 0.0
-                    closed_at_str = str(df_full.index[i])
+                    breakeven_triggered = False
+                    closed_at_str = str(df_entry_full.index[i])
                 else:
                     outcome = result["status"]
-                    final_stage = result["final_stage"]
                     gross_roi_pct = result["pnl_roi_pct"]
-                    closed_idx = df_full.index.get_loc(result["closed_at"])
+                    breakeven_triggered = result["breakeven_triggered_at"] is not None
+                    closed_idx = df_entry_full.index.get_loc(result["closed_at"])
                     bars_held = max(1, closed_idx - i)
                     closed_at_str = str(result["closed_at"])
 
-                from config import LEVERAGE
                 gross_roi = gross_roi_pct * LEVERAGE
                 cost_pct = (ESTIMATED_ENTRY_FEE_PCT + ESTIMATED_EXIT_FEE_PCT + ESTIMATED_SLIPPAGE_PCT) * LEVERAGE
                 net_roi = gross_roi - cost_pct if outcome != "expired" else gross_roi
 
                 trades.append(Trade(
-                    symbol=symbol, direction=pending_setup["direction"], entry_price=fill_price,
+                    symbol=symbol, direction=direction, entry_price=fill_price,
                     tp_price=pending_setup["tp_price"], sl_price=pending_setup["sl_price"],
                     rr=pending_setup["rr"], outcome=outcome,
                     gross_roi_pct=round(gross_roi, 3), net_roi_pct=round(net_roi, 3),
-                    final_stage=final_stage,
-                    t1_hit=final_stage >= 1, t2_hit=final_stage >= 2, t3_hit=final_stage >= 3,
+                    breakeven_triggered=breakeven_triggered,
                     closed_at=closed_at_str,
                 ))
                 in_trade_until_idx = i + bars_held
@@ -312,7 +292,7 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
 
             setup = strategy.detect_pending_setup(symbol)
             if setup is not None:
-                setup["created_at"] = df_full.index[i].isoformat()
+                setup["created_at"] = df_entry_full.index[i].isoformat()
                 pending_setup = setup
     finally:
         strategy.get_market_klines = original_get_market_klines
@@ -321,7 +301,7 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Backtest Binocular Pending-Breakout v1")
+    parser = argparse.ArgumentParser(description="Backtest Precision Pullback Scalper v1")
     parser.add_argument("--symbols", nargs="+", required=True, help="e.g. XRP_USDT DOGE_USDT")
     parser.add_argument("--days", type=int, default=30, help="requested lookback in days (best-effort, paginated via start/end)")
     parser.add_argument("--workers", type=int, default=6, help="parallel worker processes, one symbol each")
