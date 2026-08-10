@@ -91,6 +91,55 @@ def calculate_volume_ma(df: pd.DataFrame, period: int) -> pd.Series:
     return df["volume"].rolling(window=period, min_periods=1).mean()
 
 
+def calculate_zlema(series: pd.Series, length: int) -> pd.Series:
+    """Zero-lag EMA per architecture.txt: lag = floor((length-1)/2);
+    adjusted_price = 2*close - close.shift(lag); ZLEMA = EMA(adjusted, length)."""
+    lag = (length - 1) // 2
+    adjusted = 2.0 * series - series.shift(lag)
+    return adjusted.ewm(span=length, adjust=False).mean()
+
+
+def calculate_zlema_band(
+    df: pd.DataFrame, zlema: pd.Series, atr_period: int, atr_lookback: int, multiplier: float,
+) -> tuple[pd.Series, pd.Series]:
+    """upper/lower = zlema +/- volatility, where volatility is the highest
+    ATR(atr_period) over the last atr_lookback candles, times multiplier
+    (architecture.txt's AlgoAlpha-derived band calculation)."""
+    atr = calculate_atr(df, atr_period)
+    volatility = atr.rolling(window=atr_lookback, min_periods=1).max() * multiplier
+    return zlema + volatility, zlema - volatility
+
+
+def calculate_zlema_trend_state(
+    df: pd.DataFrame, zlema: pd.Series, upper: pd.Series, lower: pd.Series,
+) -> pd.Series:
+    """Stateful trend per architecture.txt: NOT close-vs-zlema. Flips to +1
+    only when close is beyond the upper band, to -1 only when close is
+    beyond the lower band, and otherwise HOLDS the previous state (starts
+    neutral/0 until the first cross). Setting state=+1 every bar close
+    stays above upper is equivalent to 'cross above' detection (it
+    re-asserts the same value), and holding via the else branch is exactly
+    the persistence architecture.txt describes -- same walk shape as this
+    file's calculate_supertrend, for the same reason (each bar's state
+    depends on the previous bar's, not vectorizable as a comparison)."""
+    close = df["close"].to_numpy()
+    upper_v = upper.to_numpy()
+    lower_v = lower.to_numpy()
+    n = len(df)
+    state = np.zeros(n, dtype=int)
+
+    for i in range(n):
+        if close[i] > upper_v[i]:
+            state[i] = 1
+        elif close[i] < lower_v[i]:
+            state[i] = -1
+        elif i > 0:
+            state[i] = state[i - 1]
+        # else: i == 0 and price is inside the band -> stays 0 (neutral)
+
+    return pd.Series(state, index=df.index)
+
+
 def _ema_trend_slope_up(ema_trend: pd.Series, lookback: int) -> bool:
     if len(ema_trend) <= lookback:
         return False
