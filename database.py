@@ -91,49 +91,55 @@ def init_db():
             except Exception:
                 pass
 
-        # ── armed_setups table ─────────────────────────────────────
+        # ── pending_setups table ───────────────────────────────────
         con.execute("""
-            CREATE TABLE IF NOT EXISTS armed_setups (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol          TEXT    NOT NULL,
-                direction       TEXT    NOT NULL,
-                status          TEXT    NOT NULL DEFAULT 'armed',
-                trigger_price   REAL    NOT NULL,
-                entry_low       REAL    NOT NULL,
-                entry_high      REAL    NOT NULL,
-                sl_price        REAL    NOT NULL,
-                tp_price        REAL    NOT NULL,
-                rr              REAL    NOT NULL,
-                score           REAL    NOT NULL,
-                setup_reason    TEXT,
-                trend_summary   TEXT,
-                created_at      TEXT    NOT NULL,
-                expires_at      TEXT    NOT NULL,
-                fired_signal_id INTEGER,
-                fired_at        TEXT,
-                updated_at      TEXT,
-                miss_reason     TEXT
+            CREATE TABLE IF NOT EXISTS pending_setups (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol             TEXT    NOT NULL,
+                direction          TEXT    NOT NULL,
+                status             TEXT    NOT NULL DEFAULT 'pending_pullback',
+
+                macro_tf           TEXT    NOT NULL,
+                trend_tf           TEXT    NOT NULL,
+                pullback_tf        TEXT    NOT NULL,
+                entry_tf           TEXT    NOT NULL,
+
+                macro_trend        INTEGER NOT NULL,
+                trend_state        INTEGER NOT NULL,
+
+                zlema_1h           REAL    NOT NULL,
+                zlema_15m          REAL    NOT NULL,
+
+                pullback_price     REAL    NOT NULL,
+                pullback_time      TEXT    NOT NULL,
+
+                confirmation_high  REAL,
+                confirmation_low   REAL,
+                confirmation_close REAL,
+                confirmation_time  TEXT,
+                trigger_price      REAL,
+
+                score              REAL    NOT NULL,
+
+                setup_time         TEXT    NOT NULL,
+                expires_at         TEXT    NOT NULL,
+                created_at         TEXT    NOT NULL,
+
+                fired_signal_id    INTEGER,
+                fired_at           TEXT,
+                updated_at         TEXT,
+                miss_reason        TEXT
             )
         """)
 
         con.execute("""
-            CREATE INDEX IF NOT EXISTS idx_armed_setups_status
-            ON armed_setups (status)
+            CREATE INDEX IF NOT EXISTS idx_pending_setups_status
+            ON pending_setups (status)
         """)
         con.execute("""
-            CREATE INDEX IF NOT EXISTS idx_armed_setups_symbol_status
-            ON armed_setups (symbol, status)
+            CREATE INDEX IF NOT EXISTS idx_pending_setups_symbol_status
+            ON pending_setups (symbol, status)
         """)
-
-        for col, definition in [
-            ("tp2_price", "REAL"),
-            ("tp3_price", "REAL"),
-            ("position_size", "REAL"),
-        ]:
-            try:
-                con.execute(f"ALTER TABLE armed_setups ADD COLUMN {col} {definition}")
-            except Exception:
-                pass
 
     logger.info("Database initialised")
 
@@ -290,122 +296,119 @@ def count_losses_since(symbol: str, direction: str | None, since: datetime) -> i
         return int(row["cnt"] or 0)
 
 
-# ── armed_setups table ────────────────────────────────────────────
+# ── pending_setups table ─────────────────────────────────────────
 
-def save_armed_setup(setup: dict) -> int | None:
+def save_pending_setup(setup: dict) -> int | None:
     now = datetime.now(timezone.utc).isoformat()
     with _conn() as con:
         cur = con.execute("""
-            INSERT INTO armed_setups (
+            INSERT INTO pending_setups (
                 symbol, direction, status,
-                trigger_price, entry_low, entry_high,
-                sl_price, tp_price, tp2_price, tp3_price, position_size, rr, score,
-                setup_reason, trend_summary,
-                created_at, expires_at, updated_at
-            ) VALUES (?, ?, 'armed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                macro_tf, trend_tf, pullback_tf, entry_tf,
+                macro_trend, trend_state,
+                zlema_1h, zlema_15m,
+                pullback_price, pullback_time,
+                score, setup_time, expires_at, created_at, updated_at
+            ) VALUES (?, ?, 'pending_pullback', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            setup["symbol"],
-            setup["direction"],
-            setup["trigger_price"],
-            setup["entry_low"],
-            setup["entry_high"],
-            setup["sl_price"],
-            setup["tp_price"],
-            setup.get("tp2_price"),
-            setup.get("tp3_price"),
-            setup.get("position_size"),
-            setup["rr"],
-            setup["score"],
-            setup.get("setup_reason", ""),
-            setup.get("trend_summary", ""),
-            now,
-            setup["expires_at"],
-            now,
+            setup["symbol"], setup["direction"],
+            setup["macro_tf"], setup["trend_tf"], setup["pullback_tf"], setup["entry_tf"],
+            setup["macro_trend"], setup["trend_state"],
+            setup["zlema_1h"], setup["zlema_15m"],
+            setup["pullback_price"], setup["pullback_time"],
+            setup["score"], setup["setup_time"], setup["expires_at"], setup["created_at"], now,
         ))
         return cur.lastrowid
 
 
-def get_armed_setups(limit: int = 200) -> list[dict]:
+def get_pending_setups(status: str, limit: int = 200) -> list[dict]:
     with _conn() as con:
         rows = con.execute("""
-            SELECT * FROM armed_setups
-            WHERE status = 'armed'
+            SELECT * FROM pending_setups
+            WHERE status = ?
             ORDER BY score DESC, created_at DESC
             LIMIT ?
-        """, (limit,)).fetchall()
+        """, (status, limit)).fetchall()
         return [dict(r) for r in rows]
 
 
-def get_armed_setup_by_symbol(symbol: str) -> dict | None:
+def get_pending_setup_by_symbol(symbol: str) -> dict | None:
     with _conn() as con:
         row = con.execute("""
-            SELECT * FROM armed_setups
-            WHERE symbol = ? AND status = 'armed'
-            ORDER BY score DESC LIMIT 1
+            SELECT * FROM pending_setups
+            WHERE symbol = ? AND status IN ('pending_pullback', 'pending_breakout')
+            ORDER BY created_at DESC LIMIT 1
         """, (symbol,)).fetchone()
         return dict(row) if row else None
 
 
-def armed_setup_exists(symbol: str) -> bool:
+def pending_setup_exists(symbol: str) -> bool:
     with _conn() as con:
         row = con.execute("""
-            SELECT id FROM armed_setups WHERE symbol = ? AND status = 'armed' LIMIT 1
+            SELECT id FROM pending_setups
+            WHERE symbol = ? AND status IN ('pending_pullback', 'pending_breakout')
+            LIMIT 1
         """, (symbol,)).fetchone()
         return row is not None
 
 
-def mark_armed_setup_fired(setup_id: int, signal_id: int):
+def update_pending_setup_breakout(
+    setup_id: int, confirmation_high: float, confirmation_low: float,
+    confirmation_close: float, confirmation_time: str, trigger_price: float,
+) -> None:
     now = datetime.now(timezone.utc).isoformat()
     with _conn() as con:
         con.execute("""
-            UPDATE armed_setups
-            SET status = 'fired', fired_signal_id = ?, fired_at = ?, updated_at = ?
-            WHERE id = ? AND status = 'armed'
-        """, (signal_id, now, now, setup_id))
+            UPDATE pending_setups
+            SET status = 'pending_breakout',
+                confirmation_high = ?, confirmation_low = ?, confirmation_close = ?,
+                confirmation_time = ?, trigger_price = ?, updated_at = ?
+            WHERE id = ? AND status = 'pending_pullback'
+        """, (confirmation_high, confirmation_low, confirmation_close, confirmation_time, trigger_price, now, setup_id))
 
 
-def mark_armed_setup_missed(setup_id: int, reason: str = ""):
+def mark_pending_setup_fired(setup_id: int, signal_id: int, final_score: float) -> None:
     now = datetime.now(timezone.utc).isoformat()
     with _conn() as con:
         con.execute("""
-            UPDATE armed_setups
-            SET status = 'missed', miss_reason = ?, updated_at = ?
-            WHERE id = ? AND status = 'armed'
-        """, (reason, now, setup_id))
+            UPDATE pending_setups
+            SET status = 'fired', fired_signal_id = ?, fired_at = ?, score = ?, updated_at = ?
+            WHERE id = ?
+        """, (signal_id, now, final_score, now, setup_id))
 
 
-def mark_armed_setup_expired(setup_id: int):
+def mark_pending_setup_missed(setup_id: int, reason: str = "", final_score: float | None = None) -> None:
     now = datetime.now(timezone.utc).isoformat()
     with _conn() as con:
         con.execute("""
-            UPDATE armed_setups
+            UPDATE pending_setups
+            SET status = 'missed', miss_reason = ?, score = COALESCE(?, score), updated_at = ?
+            WHERE id = ?
+        """, (reason, final_score, now, setup_id))
+
+
+def mark_pending_setup_expired(setup_id: int) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as con:
+        con.execute("""
+            UPDATE pending_setups
             SET status = 'expired', updated_at = ?
-            WHERE id = ? AND status = 'armed'
+            WHERE id = ?
         """, (now, setup_id))
 
 
-def mark_armed_setup_invalidated(setup_id: int, reason: str = ""):
-    now = datetime.now(timezone.utc).isoformat()
+def expire_old_pending_setups(now: datetime) -> None:
     with _conn() as con:
         con.execute("""
-            UPDATE armed_setups
-            SET status = 'invalidated', miss_reason = ?, updated_at = ?
-            WHERE id = ? AND status = 'armed'
-        """, (reason, now, setup_id))
-
-
-def expire_old_armed_setups(now: datetime):
-    with _conn() as con:
-        con.execute("""
-            UPDATE armed_setups
+            UPDATE pending_setups
             SET status = 'expired', updated_at = ?
-            WHERE status = 'armed' AND expires_at <= ?
+            WHERE status IN ('pending_pullback', 'pending_breakout') AND expires_at <= ?
         """, (now.isoformat(), now.isoformat()))
 
 
-def count_armed_setups() -> int:
+def count_pending_setups() -> int:
     with _conn() as con:
         row = con.execute(
-            "SELECT COUNT(*) FROM armed_setups WHERE status = 'armed'"
+            "SELECT COUNT(*) FROM pending_setups WHERE status IN ('pending_pullback', 'pending_breakout')"
         ).fetchone()
         return row[0]
