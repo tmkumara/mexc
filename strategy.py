@@ -258,6 +258,116 @@ def detect_pending_setup(symbol: str, reject_sink: dict | None = None) -> dict |
         return None
 
 
+def _breakout_stage_score(
+    direction: str, confirmation_high: float, confirmation_low: float,
+    confirmation_close: float, candles_to_break: int,
+) -> float:
+    """0-30: up to 20 ('fresh' crossover -- loses 5 points per extra
+    candle it took to break the trigger price beyond the first one,
+    floored at 0) + up to 10 (confirmation candle's close position within
+    its own high-low range -- how cleanly it closed near its high for
+    LONG / low for SHORT)."""
+    freshness = max(0.0, 20.0 - 5.0 * max(0, candles_to_break - 1))
+
+    candle_range = max(confirmation_high - confirmation_low, 1e-9)
+    if direction == "LONG":
+        clearance = (confirmation_close - confirmation_low) / candle_range
+    else:
+        clearance = (confirmation_high - confirmation_close) / candle_range
+    quality = 10.0 * min(1.0, max(0.0, clearance))
+
+    return round(freshness + quality, 1)
+
+
+def check_setup_confirmation(setup: dict) -> tuple[str, float | None, dict | None]:
+    symbol = setup["symbol"]
+    direction = setup["direction"]
+    status = setup["status"]
+
+    setup_time = datetime.fromisoformat(setup["setup_time"])
+    if setup_time.tzinfo is None:
+        setup_time = setup_time.replace(tzinfo=timezone.utc)
+    age_minutes = (datetime.now(timezone.utc) - setup_time).total_seconds() / 60.0
+    if age_minutes > PENDING_EXPIRY_CANDLES * CANDLE_MINUTES:
+        return "expired", None, None
+
+    raw = get_market_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
+    if raw is None or raw.empty:
+        return "waiting", None, None
+    closed = raw.iloc[:-1].copy()
+    if len(closed) < ZERO_LAG_LENGTH + 5:
+        return "waiting", None, None
+
+    if status == "pending_pullback":
+        zlema = calculate_zlema(closed["close"], ZERO_LAG_LENGTH)
+        prev_close, curr_close = float(closed["close"].iloc[-2]), float(closed["close"].iloc[-1])
+        prev_zlema, curr_zlema = float(zlema.iloc[-2]), float(zlema.iloc[-1])
+        curr_open = float(closed["open"].iloc[-1])
+
+        if direction == "LONG":
+            crossed = prev_close <= prev_zlema and curr_close > curr_zlema
+            candle_ok = curr_close > curr_open
+        else:
+            crossed = prev_close >= prev_zlema and curr_close < curr_zlema
+            candle_ok = curr_close < curr_open
+
+        if not (crossed and candle_ok):
+            return "waiting", None, None
+
+        last = closed.iloc[-1]
+        confirmation_high, confirmation_low = float(last["high"]), float(last["low"])
+        confirmation_close = float(last["close"])
+        if direction == "LONG":
+            trigger_price = confirmation_high * (1 + ENTRY_BUFFER_PCT)
+        else:
+            trigger_price = confirmation_low * (1 - ENTRY_BUFFER_PCT)
+
+        return "armed_breakout", None, {
+            "confirmation_high": confirmation_high,
+            "confirmation_low": confirmation_low,
+            "confirmation_close": confirmation_close,
+            "confirmation_time": closed.index[-1].isoformat(),
+            "trigger_price": trigger_price,
+        }
+
+    # status == "pending_breakout"
+    last = closed.iloc[-1]
+    high, low = float(last["high"]), float(last["low"])
+    trigger_price = float(setup["trigger_price"])
+
+    entry_hit = (high > trigger_price) if direction == "LONG" else (low < trigger_price)
+    if not entry_hit:
+        return "waiting", None, None
+
+    confirmation_time = datetime.fromisoformat(setup["confirmation_time"])
+    if confirmation_time.tzinfo is None:
+        confirmation_time = confirmation_time.replace(tzinfo=timezone.utc)
+    candle_ts = closed.index[-1].to_pydatetime()
+    if candle_ts.tzinfo is None:
+        candle_ts = candle_ts.replace(tzinfo=timezone.utc)
+    candles_to_break = max(1, round((candle_ts - confirmation_time).total_seconds() / 60.0 / CANDLE_MINUTES))
+
+    breakout_score = _breakout_stage_score(
+        direction, float(setup["confirmation_high"]), float(setup["confirmation_low"]),
+        float(setup["confirmation_close"]), candles_to_break,
+    )
+    final_score = round(min(100.0, float(setup["score"]) + breakout_score), 1)
+    if final_score < MIN_SIGNAL_SCORE:
+        return "missed", None, {"score": final_score}
+
+    return "confirmed", trigger_price, {"score": final_score}
+
+
+def build_trade_prices(direction: str, entry: float) -> tuple[float, float]:
+    if direction == "LONG":
+        sl = entry * (1 - SL_PRICE_PCT)
+        tp = entry * (1 + TP_PRICE_PCT)
+    else:
+        sl = entry * (1 + SL_PRICE_PCT)
+        tp = entry * (1 - TP_PRICE_PCT)
+    return round(tp, 8), round(sl, 8)
+
+
 # ── evaluate_symbol pipeline ─────────────────────────────────────────
 
 from market_data import get_market_klines

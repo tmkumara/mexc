@@ -110,6 +110,11 @@ def make_zero_lag_pullback_df(
     return pd.concat([df, df.iloc[[-1]]])
 
 
+CROSSOVER_LEG_BARS = 10
+CROSSOVER_LEG_STEP_PCT = 0.001
+CROSSOVER_CROSS_STEP_PCT = 0.01
+
+
 def make_zero_lag_crossover_df(
     direction: str = "LONG", bars: int = 90, start_price: float = 100.0,
 ) -> pd.DataFrame:
@@ -117,18 +122,40 @@ def make_zero_lag_crossover_df(
     ZLEMA for most of the series, then the final closed candle crosses
     back with a directional confirmation close (close > open for LONG,
     close < open for SHORT) -- the shape check_setup_confirmation's
-    pending_pullback stage looks for. Ends with one duplicated last row."""
+    pending_pullback stage looks for. Ends with one duplicated last row.
+
+    NOT a pure constant-ratio geometric series the whole way through --
+    the plan's original literal fixture code was, and against the real
+    calculate_zlema it turned out to never actually put price on the
+    wrong side of its own ZLEMA at all: `2*close - close.shift(lag)`
+    applied to a monotonically declining close pulls the adjusted series
+    (and therefore ZLEMA) BELOW the raw close throughout, so `close <=
+    zlema` was never true (verified empirically: close stayed 0.5-2.7
+    points above zlema for the entire declining leg). Same family of
+    bootstrap-construction issue make_zero_lag_trend_df hit, different
+    symptom.
+
+    The fix used here, following the same pattern: a flat,
+    near-zero-volatility baseline (so ZLEMA starts clean and tracks price
+    closely, clear of the shift-to-index-0 artifact), then a short,
+    shallow directional leg (CROSSOVER_LEG_BARS at CROSSOVER_LEG_STEP_PCT
+    per bar -- shallow enough that ZLEMA keeps pace and genuinely ends up
+    on the 'wrong' side of the now-declined price), then one final
+    reversal candle (CROSSOVER_CROSS_STEP_PCT) that closes back past
+    ZLEMA on the correct side -- verified for both LONG and SHORT at
+    bars=90."""
     sign = 1.0 if direction == "LONG" else -1.0
     idx = pd.date_range("2026-01-01", periods=bars, freq="5min")
-    below_bars = bars - 1
-    closes = start_price * (1.0 - 0.0008 * sign) ** np.arange(below_bars)
-    last_below = closes[-1]
-    crossover_close = last_below * (1 + 0.01 * sign)
-    closes = np.concatenate([closes, [crossover_close]])
+    leg_bars = min(CROSSOVER_LEG_BARS, max(bars - 2, 1))
+    flat_bars = bars - leg_bars - 1
+    flat_closes = np.full(flat_bars, start_price)
+    leg_closes = start_price * (1.0 - CROSSOVER_LEG_STEP_PCT * sign) ** np.arange(1, leg_bars + 1)
+    last_below = leg_closes[-1]
+    crossover_close = last_below * (1 + CROSSOVER_CROSS_STEP_PCT * sign)
+    closes = np.concatenate([flat_closes, leg_closes, [crossover_close]])
     opens = np.empty_like(closes)
     opens[0] = start_price
     opens[1:] = closes[:-1]
-    opens[-1] = last_below
     highs = np.maximum(opens, closes) + 0.05
     lows = np.minimum(opens, closes) - 0.05
     volumes = np.full(bars, 1000.0)
