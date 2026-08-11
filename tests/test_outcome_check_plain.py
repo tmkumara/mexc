@@ -30,6 +30,7 @@ def test_sl_hit_is_a_loss():
         (100.0, 100.1, 99.9, 100.0),
         (100.0, 100.2, 99.4, 99.6),   # low=99.4 breaches SL=99.5
     ])
+    df = pd.concat([df, df.iloc[[-1]]])  # add forming candle (duplicated trailing row)
     cutoff = df.index[0]
     result = check_tp_sl("LONG", entry_price=100.0, sl_price=99.5, tp_price=100.35, df=df, entry_candle_cutoff=cutoff)
 
@@ -43,6 +44,7 @@ def test_same_candle_sl_beats_tp_tie_break():
         (100.0, 100.1, 99.9, 100.0),
         (100.0, 101.0, 99.0, 100.5),   # single wild candle spans both TP and SL
     ])
+    df = pd.concat([df, df.iloc[[-1]]])  # add forming candle (duplicated trailing row)
     cutoff = df.index[0]
     result = check_tp_sl("LONG", entry_price=100.0, sl_price=99.5, tp_price=100.35, df=df, entry_candle_cutoff=cutoff)
 
@@ -65,6 +67,7 @@ def test_short_direction_mirrors():
         (100.0, 100.2, 99.6, 99.65),  # low=99.6 clears SHORT TP=99.65? -- use exact clearance
     ])
     df.iloc[1, df.columns.get_loc("low")] = 99.6
+    df = pd.concat([df, df.iloc[[-1]]])  # add forming candle (duplicated trailing row)
     cutoff = df.index[0]
     result = check_tp_sl("SHORT", entry_price=100.0, sl_price=100.5, tp_price=99.65, df=df, entry_candle_cutoff=cutoff)
     assert result["status"] == "win"

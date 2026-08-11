@@ -27,7 +27,7 @@ def check_tp_sl(
     pnl_roi_pct is the raw price-move percent (not leverage-scaled -- the
     caller applies LEVERAGE).
     """
-    for i in range(len(df)):
+    for i in range(len(df) - 1):
         ts = df.index[i]
         if ts <= entry_candle_cutoff:
             continue
