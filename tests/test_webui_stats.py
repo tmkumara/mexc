@@ -43,10 +43,13 @@ def test_get_stats_reports_breakevens_and_excludes_from_win_rate(temp_db):
     assert stats["net_roi"] == -3.0
 
 
-def test_get_strategy_config_reports_precision_pullback_keys():
+def test_get_strategy_config_reports_zero_lag_keys():
     cfg = webui.get_strategy_config()
     assert "min_signal_score" in cfg
     assert "tp_roi_pct" in cfg
-    assert "breakeven_trigger_roi_pct" in cfg
-    assert "no_chase_max_distance_pct" in cfg
+    assert "sl_roi_pct" in cfg
+    assert "zero_lag_length" in cfg
+    assert "pullback_distance_pct" in cfg
+    assert "no_chase_max_distance_pct" not in cfg
+    assert "breakeven_trigger_roi_pct" not in cfg
     assert "signal_mode" not in cfg

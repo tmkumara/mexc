@@ -220,20 +220,20 @@ def get_runtime_status() -> dict:
 
 
 def get_strategy_config() -> dict:
-    """Return dashboard-safe strategy/runtime configuration for Precision Pullback Scalper v1."""
+    """Return dashboard-safe strategy/runtime configuration for Zero-Lag MTF Pullback v1."""
     return {
-        "strategy": _safe_config_value("STRATEGY_NAME", "Precision Pullback Scalper v1"),
+        "strategy": _safe_config_value("STRATEGY_NAME", "Zero-Lag MTF Pullback v1"),
+        "macro_tf": _safe_config_value("MACRO_TF", "—"),
         "trend_tf": _safe_config_value("TREND_TF", "—"),
+        "pullback_tf": _safe_config_value("PULLBACK_TF", "—"),
         "entry_tf": _safe_config_value("ENTRY_TF", "—"),
         "min_signal_score": _safe_config_value("MIN_SIGNAL_SCORE", "—"),
         "tp_roi_pct": _safe_config_value("TP_ROI_PCT", "—"),
-        "max_sl_roi_pct": _safe_config_value("MAX_SL_ROI_PCT", "—"),
-        "breakeven_trigger_roi_pct": _safe_config_value("BREAKEVEN_TRIGGER_ROI_PCT", "—"),
-        "no_chase_max_distance_pct": _safe_config_value("NO_CHASE_MAX_DISTANCE_PCT", "—"),
-        "atr_min_pct": _safe_config_value("ATR_MIN_PCT", "—"),
-        "atr_max_pct": _safe_config_value("ATR_MAX_PCT", "—"),
-        "entry_buffer_pct": _safe_config_value("ENTRY_BUFFER_PCT", "—"),
-        "pending_signal_expiry_candles": _safe_config_value("PENDING_SIGNAL_EXPIRY_CANDLES", "—"),
+        "sl_roi_pct": _safe_config_value("SL_ROI_PCT", "—"),
+        "zero_lag_length": _safe_config_value("ZERO_LAG_LENGTH", "—"),
+        "zero_lag_multiplier": _safe_config_value("ZERO_LAG_MULTIPLIER", "—"),
+        "pullback_distance_pct": _safe_config_value("PULLBACK_DISTANCE_PCT", "—"),
+        "pending_expiry_candles": _safe_config_value("PENDING_EXPIRY_CANDLES", "—"),
 
         "top_n_coins": _safe_config_value("TOP_N_COINS", "—"),
         "min_volume_usd": _safe_config_value("COIN_POOL_MIN_VOLUME_USD", "—"),
@@ -255,7 +255,7 @@ def get_strategy_config() -> dict:
 
 def get_pending_setups() -> list[dict]:
     import database as db
-    return db.get_armed_setups(limit=50)
+    return db.get_pending_setups("pending_pullback", limit=50) + db.get_pending_setups("pending_breakout", limit=50)
 
 
 def build_payload() -> dict:
@@ -994,12 +994,12 @@ function renderRuntime() {
 function renderConfig() {
   const c = data.config;
 
-  set("cfg-tf", `${c.trend_tf} / ${c.entry_tf}`);
+  set("cfg-tf", `${c.macro_tf}/${c.trend_tf}/${c.pullback_tf}/${c.entry_tf}`);
   set("cfg-quality", `score ≥ ${c.min_signal_score}`);
-  set("cfg-confirm", `${(c.entry_buffer_pct * 100).toFixed(3)}%`);
-  set("cfg-confirm-sub", `no-chase ${(c.no_chase_max_distance_pct * 100).toFixed(2)}%, expires after ${c.pending_signal_expiry_candles} candles`);
-  set("cfg-rr", `+${c.tp_roi_pct}% / -${c.max_sl_roi_pct}%`);
-  set("cfg-rr-sub", `BE at +${c.breakeven_trigger_roi_pct}% | ${c.leverage}x`);
+  set("cfg-confirm", `len=${c.zero_lag_length} mult=${c.zero_lag_multiplier}`);
+  set("cfg-confirm-sub", `pullback ${(c.pullback_distance_pct * 100).toFixed(2)}%, expires after ${c.pending_expiry_candles} candles`);
+  set("cfg-rr", `+${c.tp_roi_pct}% / -${c.sl_roi_pct}%`);
+  set("cfg-rr-sub", `${c.leverage}x  no breakeven`);
 }
 
 function renderPendingSetups() {
