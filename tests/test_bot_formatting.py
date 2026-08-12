@@ -15,7 +15,7 @@ def _sample_signal() -> Signal:
         leverage=20,
         tp_roi_pct=7.0,
         sl_roi_pct=10.0,
-        timeframe_summary="Precision Pullback confirmation",
+        timeframe_summary="4H:Bullish 1H:Agree 15m:Pullback 5m:Recovery",
         generated_at=datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc),
         rr=0.70,
         score=82.5,
@@ -25,7 +25,7 @@ def _sample_signal() -> Signal:
 
 
 def test_format_signal_contains_key_fields(monkeypatch):
-    monkeypatch.setattr(bot, "STRATEGY_NAME", "Precision Pullback Scalper v1")
+    monkeypatch.setattr(bot, "STRATEGY_NAME", "Zero-Lag MTF Pullback v1")
     msg = format_signal(_sample_signal(), signal_id=12)
 
     assert "XRP/USDT" in msg
@@ -33,7 +33,7 @@ def test_format_signal_contains_key_fields(monkeypatch):
     assert "1.1" in msg
     assert "1:0.7" in msg
     assert "20x" in msg
-    assert "Precision Pullback Scalper v1" in msg
+    assert "Zero-Lag MTF Pullback v1" in msg
     assert "12" in msg
 
 
