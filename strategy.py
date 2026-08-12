@@ -1,29 +1,33 @@
 """
-Precision Pullback Scalper v1.
+Zero-Lag MTF Pullback v1.
 
-Dual-timeframe pipeline: TREND_TF (15m) EMA200 trend + slope gates
-direction; ENTRY_TF (5m) EMA20/EMA50 alignment, a pullback into the
-EMA20/EMA50 zone (bounded by NO_CHASE_MAX_DISTANCE_PCT), an RSI14
-reset-then-turn, a confirming candle (body/close/volume checks), and an
-ATR% volatility band all gate a candidate; a 100-point score (rewarding
-trend/pullback/candle/volume quality) must clear MIN_SIGNAL_SCORE.
+Four-timeframe pipeline: MACRO_TF (4h) and TREND_TF (1h) zero-lag EMA
+(ZLEMA) trend state must agree -- a stateful walk that flips only on a
+close crossing the ZLEMA +/- ATR-derived band, not a plain
+close-vs-ZLEMA comparison, and otherwise holds its previous state.
+PULLBACK_TF (15m) price must then have pulled back to within
+PULLBACK_DISTANCE_PCT of its own ZLEMA. A passing candidate arms a
+pending_pullback setup (persisted via database.pending_setups), scored
+0-70 on 4H/1H agreement, 1H ZLEMA slope, and pullback quality.
 
-A passing candidate creates a PENDING setup (persisted via
-database.armed_setups): entry is a breakout-buffer beyond the
-confirmation candle's high/low (ENTRY_BUFFER_PCT), SL/TP are FIXED
-ROI-%-at-LEVERAGE distances (TP_ROI_PCT / MAX_SL_ROI_PCT) -- not
-structural or ATR-derived -- so raw RR is a constant 0.70:1 by
-construction; quality control is entirely the score gate. The setup
-expires after PENDING_SIGNAL_EXPIRY_CANDLES candles if price never
-breaks the entry level. Once confirmed, outcome_check.check_tp_sl_with_breakeven
-walks the trade to a single TP/SL, moving the stop to breakeven once
-price reaches BREAKEVEN_TRIGGER_ROI_PCT.
+The armed setup then waits for an ENTRY_TF (5m) ZLEMA crossover plus a
+directional confirmation candle, which records a breakout trigger price
+(the confirmation candle's high/low + ENTRY_BUFFER_PCT) and transitions
+the setup to pending_breakout. Once price actually breaks that trigger,
+the setup fires: SL/TP are FIXED ROI-%-at-LEVERAGE distances
+(TP_ROI_PCT / SL_ROI_PCT) -- not structural or ATR-derived -- and the
+final 0-100 score (the pullback-stage score plus up to 30 more for
+breakout freshness/quality) must clear MIN_SIGNAL_SCORE. No breakeven
+step in this strategy version -- outcome_check.check_tp_sl walks the
+trade to a plain single TP/SL.
 
-LONG signals can be disabled via ENABLE_LONG_SIGNALS (true by default).
-The last closed candle on both timeframes must be at least
-MIN_CANDLE_SETTLE_SECONDS old before it's used -- MEXC's kline REST data
-for a just-closed candle can still get revised shortly after close. Only
-completed candles are ever used anywhere in this pipeline.
+The setup expires PENDING_EXPIRY_CANDLES after arming if it never
+reaches a fired breakout. LONG signals can be disabled via
+ENABLE_LONG_SIGNALS (true by default). The last closed candle on every
+timeframe must be at least MIN_CANDLE_SETTLE_SECONDS old before it's
+used -- MEXC's kline REST data for a just-closed candle can still get
+revised shortly after close. Only completed candles are ever used
+anywhere in this pipeline.
 """
 
 from __future__ import annotations

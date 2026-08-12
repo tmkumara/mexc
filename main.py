@@ -1,15 +1,16 @@
 """
-Main entry point — Precision Pullback Scalper v1.
+Main entry point — Zero-Lag MTF Pullback v1.
 
 Scheduler jobs / background tasks:
   Every SCAN_INTERVAL_MINUTES (default 5m), a few seconds after candle
-  close — scanner: two-phase pending-breakout loop. Phase 1 checks every
-  currently-armed pending setup for entry-breakout confirmation or expiry;
-  confirmed setups fire within the daily/gap/concurrent/direction limits.
-  Phase 2 scans the remaining coin pool for new EMA-trend/pullback/RSI-
-  reset/confirmation-candle setups and arms new pending setups.
-  Every OUTCOME_CHECK_MINUTES — outcome checker (fixed single TP/SL,
-  breakeven step at BREAKEVEN_TRIGGER_ROI_PCT).
+  close — scan_for_new_setups: scans the coin pool for new 4H/1H-trend-
+  agreeing, 15m-pullback setups and arms new pending_pullback rows.
+  Every MONITOR_INTERVAL_MINUTES (default 1m) — monitor_pending_setups:
+  advances armed setups through the 5m ZLEMA-crossover confirmation
+  stage to a breakout trigger, then to a fired signal, within the
+  daily/gap/concurrent/direction limits.
+  Every OUTCOME_CHECK_MINUTES — outcome checker (plain single TP/SL, no
+  breakeven).
   Every COIN_REFRESH_HOURS — coin pool refresh.
   23:55 daily     — daily report
   Mon 07:00       — weekly report
