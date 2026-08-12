@@ -1,16 +1,16 @@
 """
-Backtest utility for Precision Pullback Scalper v1.
+Backtest utility for Zero-Lag MTF Pullback v1.
 
-Two-phase simulation: an armed pending setup (from
-strategy.detect_pending_setup, as-of each bar) waits for a breakout
-confirmation (as strategy.check_setup_confirmation would live), then
-outcome_check.check_tp_sl_with_breakeven walks the fixed single TP/SL
-(with its one breakeven step) forward from the confirming bar -- the
-exact same functions the live bot uses, so backtest and live share one
-source of truth and no signal logic is duplicated here.
+Three-state simulation, mirroring the live pipeline exactly: a
+pending_pullback setup (from strategy.detect_pending_setup, as-of each
+bar) advances to pending_breakout (5m ZLEMA crossover + confirmation
+candle, via strategy.check_setup_confirmation) then to a fired trade
+(price breaks the trigger level) -- the exact same functions the live bot
+uses, so backtest and live share one source of truth and no signal logic
+is duplicated here.
 
-Needs both TREND_TF and ENTRY_TF historical data per symbol -- fetch both
-with backtest/fetch_data.py first (arbitrary --interval supported).
+Needs all four timeframes' historical data per symbol -- fetch with
+backtest/fetch_data.py first (arbitrary --interval supported).
 
 History beyond a single REST request's cap (MAX_REST_COUNT) is assembled
 by paging backward via `end` cursors (see get_klines_extended). The
@@ -34,13 +34,13 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import strategy
-from outcome_check import check_tp_sl_with_breakeven
+from outcome_check import check_tp_sl
 from mexc_client import get_klines
 from config import (
-    ENTRY_TF, TREND_TF, ENTRY_KLINE_COUNT, _TF_MINUTES,
+    MACRO_TF, TREND_TF, PULLBACK_TF, ENTRY_TF, _TF_MINUTES,
+    MACRO_KLINE_COUNT, TREND_KLINE_COUNT, PULLBACK_KLINE_COUNT, ENTRY_KLINE_COUNT,
     ESTIMATED_ENTRY_FEE_PCT, ESTIMATED_EXIT_FEE_PCT, ESTIMATED_SLIPPAGE_PCT,
-    EMA_TREND_LEN, EMA_TREND_SLOPE_LOOKBACK, EMA_SLOW_LEN, RSI_PERIOD,
-    VOLUME_MA_PERIOD, ATR_PERIOD, BREAKEVEN_TRIGGER_PRICE_PCT, LEVERAGE,
+    ZERO_LAG_LENGTH, ZERO_LAG_BAND_LOOKBACK, LEVERAGE, TP_ROI_PCT, SL_ROI_PCT,
 )
 
 MAX_REST_COUNT = 2000   # single-request ceiling this script asks MEXC for
@@ -48,14 +48,14 @@ MAX_REST_COUNT = 2000   # single-request ceiling this script asks MEXC for
 
 class _SimulatedDatetime(datetime):
     """Stand-in for strategy.datetime during backtesting. check_setup_confirmation
-    computes age_minutes = (datetime.now(timezone.utc) - created_at) --
-    with a historical created_at and the REAL wall clock, that's always
+    computes age_minutes = (datetime.now(timezone.utc) - setup_time) --
+    with a historical setup_time and the REAL wall clock, that's always
     enormous, so every pending setup would be marked expired after just
-    one simulated bar instead of PENDING_SIGNAL_EXPIRY_CANDLES. Overriding
-    only now() to return the current as-of bar's timestamp fixes this;
-    fromisoformat/utcnow/etc. are inherited unchanged (utcnow() staying
-    on the real wall clock is fine -- detect_pending_setup's settle-age
-    check just needs "not suspiciously fresh", which real-now vs.
+    one simulated bar instead of PENDING_EXPIRY_CANDLES. Overriding only
+    now() to return the current as-of bar's timestamp fixes this;
+    fromisoformat/utcnow/etc. are inherited unchanged (utcnow() staying on
+    the real wall clock is fine -- detect_pending_setup's settle-age check
+    just needs 'not suspiciously fresh', which real-now vs.
     historical-candle-time always satisfies)."""
     _sim_now: datetime | None = None
 
@@ -112,10 +112,9 @@ class Trade:
     tp_price: float
     sl_price: float
     rr: float
-    outcome: str            # "win" | "loss" | "breakeven" | "expired"
+    outcome: str            # "win" | "loss" | "expired"
     gross_roi_pct: float
     net_roi_pct: float
-    breakeven_triggered: bool = False
     closed_at: str = ""
 
 
@@ -135,7 +134,6 @@ class BacktestStats:
 
         wins = [t for t in self.trades if t.outcome == "win"]
         losses = [t for t in self.trades if t.outcome == "loss"]
-        breakevens = [t for t in self.trades if t.outcome == "breakeven"]
         expired = [t for t in self.trades if t.outcome == "expired"]
 
         closed_for_rate = len(wins) + len(losses)
@@ -165,7 +163,6 @@ class BacktestStats:
 
         print(f"Wins:                {len(wins)}")
         print(f"Losses:              {len(losses)}")
-        print(f"Breakeven:           {len(breakevens)}")
         print(f"Expired trades:      {len(expired)}")
         print(f"Win rate (win/loss): {win_rate:.1f}%")
         print(f"Gross ROI:           {gross_roi:+.1f}%")
@@ -194,9 +191,6 @@ class BacktestStats:
         for symbol in sorted({t.symbol for t in self.trades}):
             _bucket_report(f"  {symbol}", [t for t in self.trades if t.symbol == symbol])
 
-        breakeven_rate = sum(1 for t in self.trades if t.breakeven_triggered) / n * 100
-        print(f"\nBreakeven-trigger rate: {breakeven_rate:.1f}%")
-
         print("\nMonthly performance:")
         by_month: dict[str, list[Trade]] = defaultdict(list)
         for t in self.trades:
@@ -217,29 +211,52 @@ def _with_forming_row(df: pd.DataFrame, upto_idx: int, window_count: int) -> pd.
     return pd.concat([window, window.iloc[[-1]]])
 
 
+def _as_of_higher_tf(
+    df_full: pd.DataFrame, ts, entry_tf_minutes: int, tf_minutes: int, window_count: int,
+) -> pd.DataFrame:
+    """As-of view of a higher timeframe, filtered by CLOSE time relative to
+    the entry bar's own close time (ts + entry_tf_minutes) -- a candle on
+    df_full is only 'closed' by then if its own open + tf_minutes <= that
+    close time. Filtering by open time (`index <= ts`) would leak a
+    still-forming higher-timeframe candle's real historical close/high/low
+    into the strategy on most bars -- this is the exact lookahead bug
+    fixed in commit 7296b5c for the two-timeframe case, generalized here
+    to three higher timeframes."""
+    cutoff = ts + timedelta(minutes=entry_tf_minutes) - timedelta(minutes=tf_minutes)
+    as_of = df_full[df_full.index <= cutoff]
+    if as_of.empty:
+        return as_of
+    return _with_forming_row(as_of, len(as_of) - 1, window_count)
+
+
 def backtest_symbol(symbol: str, days: int) -> list[Trade]:
     """Runs in its own worker process (see main()) -- returns this symbol's
     trades rather than mutating shared state. One setup/trade at a time."""
     trades: list[Trade] = []
 
     df_entry_full = get_klines_extended(symbol, ENTRY_TF, days)
+    df_pullback_full = get_klines_extended(symbol, PULLBACK_TF, days)
     df_trend_full = get_klines_extended(symbol, TREND_TF, days)
+    df_macro_full = get_klines_extended(symbol, MACRO_TF, days)
 
-    if df_entry_full.empty or df_trend_full.empty:
-        print(f"[{symbol}] no candle history returned for one or both timeframes -- skipping", flush=True)
+    if any(d.empty for d in (df_entry_full, df_pullback_full, df_trend_full, df_macro_full)):
+        print(f"[{symbol}] no candle history returned for one or more timeframes -- skipping", flush=True)
         return trades
 
     print(
-        f"[{symbol}] achieved history: {len(df_entry_full)} x {ENTRY_TF}, "
-        f"{len(df_trend_full)} x {TREND_TF} bars", flush=True,
+        f"[{symbol}] achieved history: {len(df_entry_full)}x{ENTRY_TF}, {len(df_pullback_full)}x{PULLBACK_TF}, "
+        f"{len(df_trend_full)}x{TREND_TF}, {len(df_macro_full)}x{MACRO_TF} bars", flush=True,
     )
 
-    min_start = max(EMA_TREND_LEN + EMA_TREND_SLOPE_LOOKBACK, EMA_SLOW_LEN, RSI_PERIOD, VOLUME_MA_PERIOD, ATR_PERIOD) + 10
+    min_start = ZERO_LAG_LENGTH + ZERO_LAG_BAND_LOOKBACK + 10
 
     original_get_market_klines = strategy.get_market_klines
     original_datetime = strategy.datetime
     entry_tf_minutes = _TF_MINUTES.get(ENTRY_TF, 5)
-    trend_tf_minutes = _TF_MINUTES.get(TREND_TF, 15)
+    pullback_tf_minutes = _TF_MINUTES.get(PULLBACK_TF, 15)
+    trend_tf_minutes = _TF_MINUTES.get(TREND_TF, 60)
+    macro_tf_minutes = _TF_MINUTES.get(MACRO_TF, 240)
+
     pending_setup: dict | None = None
     in_trade_until_idx = -1
 
@@ -250,24 +267,24 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
 
             as_of_entry = _with_forming_row(df_entry_full, i, ENTRY_KLINE_COUNT)
             ts = df_entry_full.index[i]
-            # A trend candle is only "closed" by the time this entry bar
-            # closes if trend_open + trend_tf_minutes <= entry_close_time
-            # (= ts + entry_tf_minutes) -- i.e. trend_open <= ts +
-            # entry_tf_minutes - trend_tf_minutes. Filtering by `<= ts`
-            # (the entry bar's own open time) let up to one still-forming
-            # trend candle leak its real historical close/high/low into
-            # detect_pending_setup's trend gate on most bars.
-            trend_cutoff = ts + timedelta(minutes=entry_tf_minutes) - timedelta(minutes=trend_tf_minutes)
-            as_of_trend = df_trend_full[df_trend_full.index <= trend_cutoff]
-            if as_of_trend.empty:
-                continue
-            as_of_trend = _with_forming_row(as_of_trend, len(as_of_trend) - 1, ENTRY_KLINE_COUNT)
 
-            def _fake(sym: str, interval: str, count: int = 100, _entry=as_of_entry, _trend=as_of_trend):
+            as_of_pullback = _as_of_higher_tf(df_pullback_full, ts, entry_tf_minutes, pullback_tf_minutes, PULLBACK_KLINE_COUNT)
+            as_of_trend = _as_of_higher_tf(df_trend_full, ts, entry_tf_minutes, trend_tf_minutes, TREND_KLINE_COUNT)
+            as_of_macro = _as_of_higher_tf(df_macro_full, ts, entry_tf_minutes, macro_tf_minutes, MACRO_KLINE_COUNT)
+
+            if as_of_pullback.empty or as_of_trend.empty or as_of_macro.empty:
+                continue
+
+            def _fake(sym, interval, count=100,
+                      _entry=as_of_entry, _pullback=as_of_pullback, _trend=as_of_trend, _macro=as_of_macro):
                 if interval == ENTRY_TF:
                     return _entry
+                if interval == PULLBACK_TF:
+                    return _pullback
                 if interval == TREND_TF:
                     return _trend
+                if interval == MACRO_TF:
+                    return _macro
                 return pd.DataFrame()
 
             strategy.get_market_klines = _fake
@@ -279,34 +296,32 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
             strategy.datetime = _SimulatedDatetime
 
             if pending_setup is not None:
-                status, fill_price = strategy.check_setup_confirmation(pending_setup)
-                if status in ("expired", "invalidated"):
+                status, fill_price, extra = strategy.check_setup_confirmation(pending_setup)
+
+                if status in ("expired", "missed"):
                     pending_setup = None
                     continue
                 if status == "waiting":
                     continue
+                if status == "armed_breakout":
+                    pending_setup.update(extra)
+                    pending_setup["status"] = "pending_breakout"
+                    continue
 
                 # confirmed
-                entry_candle_cutoff = df_entry_full.index[i]
                 direction = pending_setup["direction"]
-                breakeven_trigger_price = (
-                    fill_price * (1 + BREAKEVEN_TRIGGER_PRICE_PCT) if direction == "LONG"
-                    else fill_price * (1 - BREAKEVEN_TRIGGER_PRICE_PCT)
-                )
-                result = check_tp_sl_with_breakeven(
-                    direction, fill_price, pending_setup["sl_price"], pending_setup["tp_price"],
-                    breakeven_trigger_price, df_entry_full, entry_candle_cutoff,
-                )
+                tp_price, sl_price = strategy.build_trade_prices(direction, fill_price)
+                entry_candle_cutoff = df_entry_full.index[i]
+
+                result = check_tp_sl(direction, fill_price, sl_price, tp_price, df_entry_full, entry_candle_cutoff)
                 bars_held = 1
                 if result is None:
                     outcome = "expired"
                     gross_roi_pct = 0.0
-                    breakeven_triggered = False
                     closed_at_str = str(df_entry_full.index[i])
                 else:
                     outcome = result["status"]
                     gross_roi_pct = result["pnl_roi_pct"]
-                    breakeven_triggered = result["breakeven_triggered_at"] is not None
                     closed_idx = df_entry_full.index.get_loc(result["closed_at"])
                     bars_held = max(1, closed_idx - i)
                     closed_at_str = str(result["closed_at"])
@@ -317,10 +332,9 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
 
                 trades.append(Trade(
                     symbol=symbol, direction=direction, entry_price=fill_price,
-                    tp_price=pending_setup["tp_price"], sl_price=pending_setup["sl_price"],
-                    rr=pending_setup["rr"], outcome=outcome,
+                    tp_price=tp_price, sl_price=sl_price,
+                    rr=round(TP_ROI_PCT / SL_ROI_PCT, 2), outcome=outcome,
                     gross_roi_pct=round(gross_roi, 3), net_roi_pct=round(net_roi, 3),
-                    breakeven_triggered=breakeven_triggered,
                     closed_at=closed_at_str,
                 ))
                 in_trade_until_idx = i + bars_held
@@ -329,7 +343,8 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
 
             setup = strategy.detect_pending_setup(symbol)
             if setup is not None:
-                setup["created_at"] = df_entry_full.index[i].isoformat()
+                setup["setup_time"] = df_entry_full.index[i].isoformat()
+                setup["status"] = "pending_pullback"
                 pending_setup = setup
     finally:
         strategy.get_market_klines = original_get_market_klines
@@ -339,7 +354,7 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Backtest Precision Pullback Scalper v1")
+    parser = argparse.ArgumentParser(description="Backtest Zero-Lag MTF Pullback v1")
     parser.add_argument("--symbols", nargs="+", required=True, help="e.g. XRP_USDT DOGE_USDT")
     parser.add_argument("--days", type=int, default=30, help="requested lookback in days (best-effort, paginated via start/end)")
     parser.add_argument("--workers", type=int, default=6, help="parallel worker processes, one symbol each")
