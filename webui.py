@@ -335,7 +335,7 @@ HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Precision Pullback Scalper Dashboard</title>
+<title>Zero-Lag MTF Pullback Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -734,8 +734,8 @@ tr:hover td {
 <header class="header">
   <div class="header-inner">
     <div>
-      <div class="logo"><span>📡</span> Precision Pullback Scalper Bot</div>
-      <div class="logo-sub">15m EMA200 Trend + 5m EMA20/50 Pullback + RSI Reset</div>
+      <div class="logo"><span>📡</span> Zero-Lag MTF Pullback Bot</div>
+      <div class="logo-sub">4H/1H Zero-Lag Trend + 15m Pullback + 5m Crossover Confirmation</div>
     </div>
     <div class="meta">
       <span class="status-pill connecting" id="wsStatus"><span class="status-dot"></span>Connecting</span>
@@ -802,10 +802,10 @@ tr:hover td {
           <tr>
             <th>Symbol</th>
             <th>Dir</th>
+            <th>Status</th>
             <th>Entry</th>
-            <th>SL</th>
-            <th>TP</th>
-            <th>RR</th>
+            <th>Pullback</th>
+            <th>ZLEMA 15m</th>
             <th>Score</th>
             <th>Armed</th>
           </tr>
@@ -1021,10 +1021,10 @@ function renderPendingSetups() {
       <tr>
         <td><strong>${sym}</strong></td>
         <td><span class="badge badge-${dir}">${r.direction}</span></td>
+        <td>${r.status || "—"}</td>
         <td>${fmtNum(r.trigger_price)}</td>
-        <td>${fmtNum(r.sl_price)}</td>
-        <td>${fmtNum(r.tp_price)}</td>
-        <td>${fmtNum(r.rr)}</td>
+        <td>${fmtNum(r.pullback_price)}</td>
+        <td>${fmtNum(r.zlema_15m)}</td>
         <td>${fmtNum(r.score)}</td>
         <td>${r.created_at || "—"}</td>
       </tr>

@@ -302,6 +302,12 @@ def check_setup_confirmation(setup: dict) -> tuple[str, float | None, dict | Non
     if len(closed) < ZERO_LAG_LENGTH + 5:
         return "waiting", None, None
 
+    entry_tf_minutes = _TF_MINUTES.get(ENTRY_TF, 5)
+    candle_close_time = closed.index[-1].to_pydatetime() + timedelta(minutes=entry_tf_minutes)
+    candle_age = (datetime.utcnow() - candle_close_time).total_seconds()
+    if candle_age < MIN_CANDLE_SETTLE_SECONDS:
+        return "waiting", None, None
+
     if status == "pending_pullback":
         zlema = calculate_zlema(closed["close"], ZERO_LAG_LENGTH)
         prev_close, curr_close = float(closed["close"].iloc[-2]), float(closed["close"].iloc[-1])

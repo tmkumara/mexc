@@ -178,6 +178,20 @@ async def monitor_pending_setups(app: Application) -> None:
     if not setups:
         return
 
+    def _confirm_safe(setup):
+        try:
+            return strategy.check_setup_confirmation(setup)
+        except Exception as e:
+            logger.error("[MONITOR] check_setup_confirmation failed for %s: %s", setup["symbol"], e, exc_info=True)
+            return "error", None, None
+
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as executor:
+        results = await loop.run_in_executor(
+            None,
+            lambda: list(executor.map(_confirm_safe, setups)),
+        )
+
     active_signals = db.count_active_signals()
     active_long = db.count_active_signals_by_direction("LONG")
     active_short = db.count_active_signals_by_direction("SHORT")
@@ -185,8 +199,9 @@ async def monitor_pending_setups(app: Application) -> None:
     signals_today = db.count_signals_since(today_start)
     last_sig = db.latest_signal_time()
 
-    for setup in setups:
-        status, fill_price, extra = strategy.check_setup_confirmation(setup)
+    for setup, (status, fill_price, extra) in zip(setups, results):
+        if status == "error":
+            continue
 
         if status == "expired":
             db.mark_pending_setup_expired(setup["id"])
