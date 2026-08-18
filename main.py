@@ -291,6 +291,12 @@ async def monitor_pending_setups(app: Application) -> None:
                 score_pullback=setup["score_pullback"],
                 score_breakout_freshness=extra["score_breakout_freshness"],
                 score_breakout_quality=extra["score_breakout_quality"],
+                candle_body_atr_ratio=extra["candle_body_atr_ratio"],
+                candle_range_atr_ratio=extra["candle_range_atr_ratio"],
+                upper_wick_ratio=extra["upper_wick_ratio"],
+                lower_wick_ratio=extra["lower_wick_ratio"],
+                volume_ratio=extra["volume_ratio"],
+                distance_from_zlema_pct=extra["distance_from_zlema_pct"],
             )
             db.mark_pending_setup_fired(setup["id"], signal_id, final_score=extra["score"])
 
@@ -315,6 +321,13 @@ async def monitor_pending_setups(app: Application) -> None:
                 "breakout_freshness=%.1f breakout_quality=%.1f total=%.1f",
                 signal_id, setup["score_macro"], setup["score_trend_strength"], setup["score_pullback"],
                 extra["score_breakout_freshness"], extra["score_breakout_quality"], sig.score,
+            )
+            logger.info(
+                "[ENTRY_DIAGNOSTICS] #%d body_atr=%.2f range_atr=%.2f upper_wick=%.2f "
+                "lower_wick=%.2f vol_ratio=%.2f dist_zlema_pct=%.4f",
+                signal_id, extra["candle_body_atr_ratio"], extra["candle_range_atr_ratio"],
+                extra["upper_wick_ratio"], extra["lower_wick_ratio"],
+                extra["volume_ratio"], extra["distance_from_zlema_pct"] * 100,
             )
         except Exception as e:
             logger.error("[MONITOR] Failed to confirm setup for %s: %s", setup["symbol"], e, exc_info=True)

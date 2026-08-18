@@ -90,6 +90,12 @@ def init_db():
             ("score_pullback", "REAL"),
             ("score_breakout_freshness", "REAL"),
             ("score_breakout_quality", "REAL"),
+            ("diag_candle_body_atr_ratio", "REAL"),
+            ("diag_candle_range_atr_ratio", "REAL"),
+            ("diag_upper_wick_ratio", "REAL"),
+            ("diag_lower_wick_ratio", "REAL"),
+            ("diag_volume_ratio", "REAL"),
+            ("diag_distance_from_zlema_pct", "REAL"),
         ]:
             try:
                 con.execute(f"ALTER TABLE signals ADD COLUMN {col} {definition}")
@@ -185,6 +191,12 @@ def save_signal(
     score_pullback: float | None = None,
     score_breakout_freshness: float | None = None,
     score_breakout_quality: float | None = None,
+    candle_body_atr_ratio: float | None = None,
+    candle_range_atr_ratio: float | None = None,
+    upper_wick_ratio: float | None = None,
+    lower_wick_ratio: float | None = None,
+    volume_ratio: float | None = None,
+    distance_from_zlema_pct: float | None = None,
 ) -> int:
     ts = generated_at.isoformat()
     with _conn() as con:
@@ -195,14 +207,20 @@ def save_signal(
                strategy_name, score, rr, entry_timeframe, trend_timeframe, setup_reason,
                tp2_price, tp3_price, position_size,
                score_macro, score_trend_strength, score_pullback,
-               score_breakout_freshness, score_breakout_quality)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               score_breakout_freshness, score_breakout_quality,
+               diag_candle_body_atr_ratio, diag_candle_range_atr_ratio,
+               diag_upper_wick_ratio, diag_lower_wick_ratio,
+               diag_volume_ratio, diag_distance_from_zlema_pct)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             symbol, direction, entry_price, tp_price, sl_price, leverage, ts, ts,
             strategy_name, score, rr, entry_timeframe, trend_timeframe, setup_reason,
             tp2_price, tp3_price, position_size,
             score_macro, score_trend_strength, score_pullback,
             score_breakout_freshness, score_breakout_quality,
+            candle_body_atr_ratio, candle_range_atr_ratio,
+            upper_wick_ratio, lower_wick_ratio,
+            volume_ratio, distance_from_zlema_pct,
         ))
         return cur.lastrowid
 
