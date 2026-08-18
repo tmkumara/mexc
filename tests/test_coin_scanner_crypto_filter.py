@@ -21,6 +21,14 @@ def test_tsla_ticker_variant_is_blocked(monkeypatch):
     assert coin_scanner._is_crypto_symbol("TSLA_USDT") is False
 
 
+def test_nvidia_full_name_listing_is_blocked(monkeypatch):
+    # MEXC lists this tokenized stock under the full company name, not
+    # the NVDA ticker -- caught live in the 2026-08-19 backtest run's
+    # coin pool (46 coins, NVIDIA_USDT among them) before this fix.
+    monkeypatch.setattr(coin_scanner, "CRYPTO_FUTURES_ONLY", True)
+    assert coin_scanner._is_crypto_symbol("NVIDIA_USDT") is False
+
+
 def test_legitimate_coin_with_similar_prefix_not_blocked(monkeypatch):
     # exact base-coin match must not false-positive on a real coin whose
     # symbol merely starts with a blocked ticker's letters

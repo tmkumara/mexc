@@ -132,11 +132,18 @@ _NON_CRYPTO_KEYWORDS = (
 # the whole symbol would false-positive on real coins that merely contain
 # those letters. This list is a known-incomplete blocklist: MEXC adds new
 # tokenized-stock listings periodically, and each one needs adding here.
+# Confirmed empirically that MEXC sometimes lists these under the full
+# company name rather than the ticker (TESLA_USDT, not TSLA_USDT;
+# NVIDIA_USDT, not NVDA_USDT -- caught live in the 2026-08-19 backtest
+# run's coin pool) -- both spellings are included below for every entry
+# where that's plausible, not just the ones already observed live.
 _NON_CRYPTO_BASE_COINS = frozenset({
-    "TESLA", "TSLA", "SOXL", "SOXS", "NVDA", "AAPL", "AMZN", "GOOGL",
-    "GOOG", "META", "MSFT", "AMD", "COIN", "MSTR", "PLTR", "HOOD",
-    "NFLX", "DIS", "BA", "SPY", "QQQ", "TQQQ", "SQQQ", "GME", "AMC",
-    "CRCL", "IBIT",
+    "TESLA", "TSLA", "SOXL", "SOXS", "NVDA", "NVIDIA", "AAPL", "APPLE",
+    "AMZN", "AMAZON", "GOOGL", "GOOG", "GOOGLE", "META", "MSFT",
+    "MICROSOFT", "AMD", "COIN", "COINBASE", "MSTR", "MICROSTRATEGY",
+    "PLTR", "PALANTIR", "HOOD", "ROBINHOOD", "NFLX", "NETFLIX", "DIS",
+    "DISNEY", "BA", "BOEING", "SPY", "QQQ", "TQQQ", "SQQQ", "GME",
+    "GAMESTOP", "AMC", "CRCL", "CIRCLE", "IBIT",
 })
 
 
