@@ -286,6 +286,11 @@ async def monitor_pending_setups(app: Application) -> None:
                 entry_timeframe=ENTRY_TF,
                 trend_timeframe=TREND_TF,
                 setup_reason=sig.timeframe_summary,
+                score_macro=setup["score_macro"],
+                score_trend_strength=setup["score_trend_strength"],
+                score_pullback=setup["score_pullback"],
+                score_breakout_freshness=extra["score_breakout_freshness"],
+                score_breakout_quality=extra["score_breakout_quality"],
             )
             db.mark_pending_setup_fired(setup["id"], signal_id, final_score=extra["score"])
 
@@ -304,6 +309,12 @@ async def monitor_pending_setups(app: Application) -> None:
                 "[SIGNAL] Confirmed #%d %s %s score=%.1f entry=%.6g tp=%.6g sl=%.6g",
                 signal_id, sig.symbol, sig.direction, sig.score,
                 sig.entry_price, sig.tp_price, sig.sl_price,
+            )
+            logger.info(
+                "[SIGNAL_SCORE] #%d macro=%.1f trend_strength=%.1f pullback=%.1f "
+                "breakout_freshness=%.1f breakout_quality=%.1f total=%.1f",
+                signal_id, setup["score_macro"], setup["score_trend_strength"], setup["score_pullback"],
+                extra["score_breakout_freshness"], extra["score_breakout_quality"], sig.score,
             )
         except Exception as e:
             logger.error("[MONITOR] Failed to confirm setup for %s: %s", setup["symbol"], e, exc_info=True)
