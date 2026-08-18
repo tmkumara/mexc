@@ -116,6 +116,9 @@ class Trade:
     gross_roi_pct: float
     net_roi_pct: float
     closed_at: str = ""
+    score: float = 0.0
+    entry_time: str = ""
+    hold_minutes: float = 0.0
 
 
 @dataclass
@@ -125,23 +128,25 @@ class BacktestStats:
     def add(self, trade: Trade) -> None:
         self.trades.append(trade)
 
-    def print_report(self) -> None:
+    def compute_metrics(self) -> dict:
         n = len(self.trades)
-        print(f"Total trades:        {n}")
         if n == 0:
-            print("No trades generated -- nothing further to report.")
-            return
+            return {"total_trades": 0}
 
         wins = [t for t in self.trades if t.outcome == "win"]
         losses = [t for t in self.trades if t.outcome == "loss"]
         expired = [t for t in self.trades if t.outcome == "expired"]
-
         closed_for_rate = len(wins) + len(losses)
-        win_rate = (len(wins) / closed_for_rate * 100.0) if closed_for_rate else 0.0
-        gross_roi = sum(t.gross_roi_pct for t in self.trades)
-        total_fees = sum(t.gross_roi_pct - t.net_roi_pct for t in self.trades)
+
+        gross_wins = sum(t.net_roi_pct for t in wins)
+        gross_losses = abs(sum(t.net_roi_pct for t in losses))
+        profit_factor = (gross_wins / gross_losses) if gross_losses > 1e-9 else None
+
+        avg_winner = (gross_wins / len(wins)) if wins else 0.0
+        avg_loser = (-gross_losses / len(losses)) if losses else 0.0
+
         net_roi = sum(t.net_roi_pct for t in self.trades)
-        avg_roi = net_roi / n
+        expectancy_pct = net_roi / n
 
         consecutive = max_consecutive = 0
         running = peak = 0.0
@@ -156,49 +161,131 @@ class BacktestStats:
             peak = max(peak, running)
             max_drawdown = min(max_drawdown, running - peak)
 
-        avg_rr = sum(t.rr for t in self.trades) / n
+        def _bucket_metrics(bucket: list[Trade]) -> dict:
+            bwins = [t for t in bucket if t.outcome == "win"]
+            blosses = [t for t in bucket if t.outcome == "loss"]
+            bclosed = len(bwins) + len(blosses)
+            return {
+                "trades": len(bucket),
+                "win_rate": (len(bwins) / bclosed * 100.0) if bclosed else 0.0,
+                "expectancy_pct": (sum(t.net_roi_pct for t in bucket) / len(bucket)) if bucket else 0.0,
+                "net_roi_pct": sum(t.net_roi_pct for t in bucket),
+            }
 
         longs = [t for t in self.trades if t.direction == "LONG"]
         shorts = [t for t in self.trades if t.direction == "SHORT"]
 
-        print(f"Wins:                {len(wins)}")
-        print(f"Losses:              {len(losses)}")
-        print(f"Expired trades:      {len(expired)}")
-        print(f"Win rate (win/loss): {win_rate:.1f}%")
-        print(f"Gross ROI:           {gross_roi:+.1f}%")
-        print(f"Estimated fees:      {total_fees:.1f}%")
-        print(f"Net ROI:             {net_roi:+.1f}%")
-        print(f"Average ROI/trade:   {avg_roi:+.2f}%")
-        print(f"Max consecutive losses: {max_consecutive}")
-        print(f"Max drawdown:        {max_drawdown:.1f}%")
-        print(f"Average RR:          {avg_rr:.2f}")
+        score_buckets: dict[str, dict] = {}
+        for label, lo, hi in [("80-84.9", 80, 85), ("85-89.9", 85, 90), ("90-100", 90, 100.001)]:
+            bucket = [t for t in self.trades if lo <= t.score < hi]
+            score_buckets[label] = _bucket_metrics(bucket)
 
-        def _bucket_report(label: str, bucket: list[Trade]) -> None:
-            if not bucket:
-                print(f"{label} performance:  no trades")
-                return
-            bwins = sum(1 for t in bucket if t.outcome == "win")
-            print(
-                f"{label} performance:  {len(bucket)} trades, "
-                f"{bwins}/{len(bucket)} wins ({bwins / len(bucket) * 100:.1f}%), "
-                f"net ROI {sum(t.net_roi_pct for t in bucket):+.1f}%"
-            )
+        hour_buckets: dict[int, dict] = {}
+        for hour in range(24):
+            bucket = [
+                t for t in self.trades
+                if t.entry_time and int(t.entry_time[11:13]) == hour
+            ]
+            if bucket:
+                hour_buckets[hour] = _bucket_metrics(bucket)
 
-        _bucket_report("LONG", longs)
-        _bucket_report("SHORT", shorts)
+        hold_minutes_sorted = sorted(t.hold_minutes for t in self.trades if t.outcome != "expired")
+        if hold_minutes_sorted:
+            mid = len(hold_minutes_sorted) // 2
+            if len(hold_minutes_sorted) % 2:
+                median_hold = hold_minutes_sorted[mid]
+            else:
+                median_hold = (hold_minutes_sorted[mid - 1] + hold_minutes_sorted[mid]) / 2
+        else:
+            median_hold = 0.0
+
+        return {
+            "total_trades": n,
+            "wins": len(wins),
+            "losses": len(losses),
+            "expired": len(expired),
+            "win_rate": (len(wins) / closed_for_rate * 100.0) if closed_for_rate else 0.0,
+            "profit_factor": profit_factor,
+            "avg_winner_pct": avg_winner,
+            "avg_loser_pct": avg_loser,
+            "expectancy_pct": expectancy_pct,
+            "net_roi_pct": net_roi,
+            "max_drawdown_pct": max_drawdown,
+            "max_consecutive_losses": max_consecutive,
+            "long_expectancy_pct": _bucket_metrics(longs)["expectancy_pct"],
+            "short_expectancy_pct": _bucket_metrics(shorts)["expectancy_pct"],
+            "long": _bucket_metrics(longs),
+            "short": _bucket_metrics(shorts),
+            "score_buckets": score_buckets,
+            "hour_buckets": hour_buckets,
+            "avg_hold_minutes": (sum(hold_minutes_sorted) / len(hold_minutes_sorted)) if hold_minutes_sorted else 0.0,
+            "median_hold_minutes": median_hold,
+        }
+
+    def _bucket_for_symbol(self, symbol: str) -> dict:
+        bucket = [t for t in self.trades if t.symbol == symbol]
+        bwins = [t for t in bucket if t.outcome == "win"]
+        blosses = [t for t in bucket if t.outcome == "loss"]
+        bclosed = len(bwins) + len(blosses)
+        return {
+            "trades": len(bucket),
+            "win_rate": (len(bwins) / bclosed * 100.0) if bclosed else 0.0,
+            "net_roi_pct": sum(t.net_roi_pct for t in bucket),
+        }
+
+    def print_report(self) -> None:
+        m = self.compute_metrics()
+        n = m["total_trades"]
+        print(f"Total trades:        {n}")
+        if n == 0:
+            print("No trades generated -- nothing further to report.")
+            return
+
+        pf_str = f"{m['profit_factor']:.3f}" if m["profit_factor"] is not None else "inf (no losses)"
+        print(f"Wins:                {m['wins']}")
+        print(f"Losses:              {m['losses']}")
+        print(f"Expired trades:      {m['expired']}")
+        print(f"Win rate (win/loss): {m['win_rate']:.1f}%")
+        print(f"Profit factor:       {pf_str}")
+        print(f"Average winner:      {m['avg_winner_pct']:+.2f}%")
+        print(f"Average loser:       {m['avg_loser_pct']:+.2f}%")
+        print(f"Expectancy/trade:    {m['expectancy_pct']:+.2f}%")
+        print(f"Net ROI:             {m['net_roi_pct']:+.1f}%")
+        print(f"Max drawdown:        {m['max_drawdown_pct']:.1f}%")
+        print(f"Max consecutive losses: {m['max_consecutive_losses']}")
+        print(f"Average hold:        {m['avg_hold_minutes']:.1f} min (median {m['median_hold_minutes']:.1f} min)")
+
+        print(f"\nLONG performance:  {m['long']['trades']} trades, WR {m['long']['win_rate']:.1f}%, "
+              f"expectancy {m['long']['expectancy_pct']:+.2f}%, net ROI {m['long']['net_roi_pct']:+.1f}%")
+        print(f"SHORT performance: {m['short']['trades']} trades, WR {m['short']['win_rate']:.1f}%, "
+              f"expectancy {m['short']['expectancy_pct']:+.2f}%, net ROI {m['short']['net_roi_pct']:+.1f}%")
+
+        print("\nBy score range:")
+        for label, bucket in m["score_buckets"].items():
+            print(f"  {label}: {bucket['trades']} trades, WR {bucket['win_rate']:.1f}%, "
+                  f"expectancy {bucket['expectancy_pct']:+.2f}%")
+
+        print("\nBy entry hour (UTC):")
+        for hour in sorted(m["hour_buckets"]):
+            bucket = m["hour_buckets"][hour]
+            print(f"  {hour:02d}:00: {bucket['trades']} trades, WR {bucket['win_rate']:.1f}%, "
+                  f"expectancy {bucket['expectancy_pct']:+.2f}%")
 
         print("\nPerformance by symbol:")
         for symbol in sorted({t.symbol for t in self.trades}):
-            _bucket_report(f"  {symbol}", [t for t in self.trades if t.symbol == symbol])
+            b = self._bucket_for_symbol(symbol)
+            print(f"  {symbol}: {b['trades']} trades, WR {b['win_rate']:.1f}%, net ROI {b['net_roi_pct']:+.1f}%")
 
         print("\nMonthly performance:")
         by_month: dict[str, list[Trade]] = defaultdict(list)
         for t in self.trades:
             if t.closed_at:
-                month_key = t.closed_at[:7]
-                by_month[month_key].append(t)
+                by_month[t.closed_at[:7]].append(t)
         for month_key in sorted(by_month):
-            _bucket_report(f"  {month_key}", by_month[month_key])
+            bucket = by_month[month_key]
+            bwins = sum(1 for t in bucket if t.outcome == "win")
+            print(f"  {month_key}: {len(bucket)} trades, {bwins}/{len(bucket)} wins, "
+                  f"net ROI {sum(t.net_roi_pct for t in bucket):+.1f}%")
 
 
 def _with_forming_row(df: pd.DataFrame, upto_idx: int, window_count: int) -> pd.DataFrame:
@@ -310,6 +397,8 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
 
                 # confirmed
                 direction = pending_setup["direction"]
+                entry_score = float(extra["score"])
+                entry_time_str = df_entry_full.index[i].isoformat()
                 tp_price, sl_price = strategy.build_trade_prices(direction, fill_price)
                 entry_candle_cutoff = df_entry_full.index[i]
 
@@ -336,6 +425,8 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
                     rr=round(TP_ROI_PCT / SL_ROI_PCT, 2), outcome=outcome,
                     gross_roi_pct=round(gross_roi, 3), net_roi_pct=round(net_roi, 3),
                     closed_at=closed_at_str,
+                    score=entry_score, entry_time=entry_time_str,
+                    hold_minutes=bars_held * entry_tf_minutes,
                 ))
                 in_trade_until_idx = i + bars_held
                 pending_setup = None
