@@ -124,6 +124,21 @@ _NON_CRYPTO_KEYWORDS = (
     "XPD",
 )
 
+# Tokenized single-stock / equity-ETF perpetuals MEXC lists alongside real
+# crypto pairs. These carry no shared substring with real coin tickers, so
+# they're matched by EXACT base-coin equality (symbol minus the quote
+# suffix), not the substring search _NON_CRYPTO_KEYWORDS uses above --
+# substring matching a bare 3-5 letter ticker like "META" or "AMD" against
+# the whole symbol would false-positive on real coins that merely contain
+# those letters. This list is a known-incomplete blocklist: MEXC adds new
+# tokenized-stock listings periodically, and each one needs adding here.
+_NON_CRYPTO_BASE_COINS = frozenset({
+    "TESLA", "TSLA", "SOXL", "SOXS", "NVDA", "AAPL", "AMZN", "GOOGL",
+    "GOOG", "META", "MSFT", "AMD", "COIN", "MSTR", "PLTR", "HOOD",
+    "NFLX", "DIS", "BA", "SPY", "QQQ", "TQQQ", "SQQQ", "GME", "AMC",
+    "CRCL", "IBIT",
+})
+
 
 def _is_crypto_symbol(symbol: str) -> bool:
     """
@@ -134,6 +149,9 @@ def _is_crypto_symbol(symbol: str) -> bool:
         return True
 
     upper = symbol.upper()
+    base_coin = upper.rsplit("_", 1)[0]
+    if base_coin in _NON_CRYPTO_BASE_COINS:
+        return False
     return not any(keyword in upper for keyword in _NON_CRYPTO_KEYWORDS)
 
 
