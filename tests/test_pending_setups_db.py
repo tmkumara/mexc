@@ -23,7 +23,8 @@ def _setup_dict(symbol="XRP_USDT", direction="LONG"):
         "macro_trend": 1, "trend_state": 1,
         "zlema_1h": 100.0, "zlema_15m": 100.5,
         "pullback_price": 100.4, "pullback_time": now.isoformat(),
-        "score": 65.0, "setup_time": now.isoformat(),
+        "score": 65.0, "score_macro": 30.0, "score_trend_strength": 15.0, "score_pullback": 20.0,
+        "setup_time": now.isoformat(),
         "expires_at": (now + timedelta(minutes=30)).isoformat(),
         "created_at": now.isoformat(),
     }

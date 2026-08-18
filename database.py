@@ -85,6 +85,11 @@ def init_db():
             ("tp3_price", "REAL"),
             ("tp2_hit_at", "TEXT"),
             ("position_size", "REAL"),
+            ("score_macro", "REAL"),
+            ("score_trend_strength", "REAL"),
+            ("score_pullback", "REAL"),
+            ("score_breakout_freshness", "REAL"),
+            ("score_breakout_quality", "REAL"),
         ]:
             try:
                 con.execute(f"ALTER TABLE signals ADD COLUMN {col} {definition}")
@@ -141,6 +146,18 @@ def init_db():
             ON pending_setups (symbol, status)
         """)
 
+        for col, definition in [
+            ("score_macro", "REAL"),
+            ("score_trend_strength", "REAL"),
+            ("score_pullback", "REAL"),
+            ("score_breakout_freshness", "REAL"),
+            ("score_breakout_quality", "REAL"),
+        ]:
+            try:
+                con.execute(f"ALTER TABLE pending_setups ADD COLUMN {col} {definition}")
+            except Exception:
+                pass
+
     logger.info("Database initialised")
 
 
@@ -163,6 +180,11 @@ def save_signal(
     tp2_price: float | None = None,
     tp3_price: float | None = None,
     position_size: float | None = None,
+    score_macro: float | None = None,
+    score_trend_strength: float | None = None,
+    score_pullback: float | None = None,
+    score_breakout_freshness: float | None = None,
+    score_breakout_quality: float | None = None,
 ) -> int:
     ts = generated_at.isoformat()
     with _conn() as con:
@@ -171,12 +193,16 @@ def save_signal(
               (symbol, direction, entry_price, tp_price, sl_price,
                leverage, status, placed, generated_at, placed_at,
                strategy_name, score, rr, entry_timeframe, trend_timeframe, setup_reason,
-               tp2_price, tp3_price, position_size)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               tp2_price, tp3_price, position_size,
+               score_macro, score_trend_strength, score_pullback,
+               score_breakout_freshness, score_breakout_quality)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             symbol, direction, entry_price, tp_price, sl_price, leverage, ts, ts,
             strategy_name, score, rr, entry_timeframe, trend_timeframe, setup_reason,
             tp2_price, tp3_price, position_size,
+            score_macro, score_trend_strength, score_pullback,
+            score_breakout_freshness, score_breakout_quality,
         ))
         return cur.lastrowid
 
@@ -308,15 +334,17 @@ def save_pending_setup(setup: dict) -> int | None:
                 macro_trend, trend_state,
                 zlema_1h, zlema_15m,
                 pullback_price, pullback_time,
-                score, setup_time, expires_at, created_at, updated_at
-            ) VALUES (?, ?, 'pending_pullback', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                score, score_macro, score_trend_strength, score_pullback,
+                setup_time, expires_at, created_at, updated_at
+            ) VALUES (?, ?, 'pending_pullback', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             setup["symbol"], setup["direction"],
             setup["macro_tf"], setup["trend_tf"], setup["pullback_tf"], setup["entry_tf"],
             setup["macro_trend"], setup["trend_state"],
             setup["zlema_1h"], setup["zlema_15m"],
             setup["pullback_price"], setup["pullback_time"],
-            setup["score"], setup["setup_time"], setup["expires_at"], setup["created_at"], now,
+            setup["score"], setup["score_macro"], setup["score_trend_strength"], setup["score_pullback"],
+            setup["setup_time"], setup["expires_at"], setup["created_at"], now,
         ))
         return cur.lastrowid
 
