@@ -300,6 +300,47 @@ def _breakout_stage_score(
     return total, components
 
 
+def _entry_quality_diagnostics(closed: pd.DataFrame, direction: str, fill_price: float) -> dict[str, float]:
+    """Observational only -- computed at the exact entry candle
+    (check_setup_confirmation's pending_breakout branch) so live and
+    backtest runs measure the identical candle. Not used for any gate;
+    see docs/superpowers/plans/2026-08-18-entry-quality-diagnostics.md."""
+    atr = calculate_atr(closed, ATR_PERIOD)
+    last_atr = float(atr.iloc[-1]) if len(atr) else 0.0
+    last_atr = last_atr if last_atr > 1e-12 else 1e-12
+
+    last = closed.iloc[-1]
+    o, h, l, c = float(last["open"]), float(last["high"]), float(last["low"]), float(last["close"])
+    candle_range = max(h - l, 1e-12)
+
+    body_atr_ratio = abs(c - o) / last_atr
+    range_atr_ratio = candle_range / last_atr
+
+    upper_wick_ratio = (h - max(o, c)) / candle_range
+    lower_wick_ratio = (min(o, c) - l) / candle_range
+
+    volume_lookback = closed["volume"].iloc[-21:-1]  # trailing 20 bars, excludes the entry candle itself
+    avg_volume = float(volume_lookback.mean()) if len(volume_lookback) else 0.0
+    last_volume = float(closed["volume"].iloc[-1])
+    volume_ratio = (last_volume / avg_volume) if avg_volume > 1e-12 else 0.0
+
+    zlema = calculate_zlema(closed["close"], ZERO_LAG_LENGTH)
+    zlema_last = float(zlema.iloc[-1])
+    if direction == "LONG":
+        distance_from_zlema_pct = (fill_price - zlema_last) / zlema_last if zlema_last else 0.0
+    else:
+        distance_from_zlema_pct = (zlema_last - fill_price) / zlema_last if zlema_last else 0.0
+
+    return {
+        "candle_body_atr_ratio": round(body_atr_ratio, 4),
+        "candle_range_atr_ratio": round(range_atr_ratio, 4),
+        "upper_wick_ratio": round(upper_wick_ratio, 4),
+        "lower_wick_ratio": round(lower_wick_ratio, 4),
+        "volume_ratio": round(volume_ratio, 4),
+        "distance_from_zlema_pct": round(distance_from_zlema_pct, 6),
+    }
+
+
 def check_setup_confirmation(setup: dict) -> tuple[str, float | None, dict | None]:
     symbol = setup["symbol"]
     direction = setup["direction"]
@@ -378,11 +419,13 @@ def check_setup_confirmation(setup: dict) -> tuple[str, float | None, dict | Non
         direction, float(setup["confirmation_high"]), float(setup["confirmation_low"]),
         float(setup["confirmation_close"]), candles_to_break,
     )
+    diagnostics = _entry_quality_diagnostics(closed, direction, trigger_price)
     final_score = round(min(100.0, float(setup["score"]) + breakout_score), 1)
     extra = {
         "score": final_score,
         "score_breakout_freshness": breakout_components["breakout_freshness"],
         "score_breakout_quality": breakout_components["breakout_quality"],
+        **diagnostics,
     }
     if final_score < MIN_SIGNAL_SCORE:
         return "missed", None, extra
