@@ -125,12 +125,15 @@ def calculate_zlema_trend_state(
     return pd.Series(state, index=df.index)
 
 
-def _pullback_stage_score(direction: str, zlema_trend: pd.Series, distance_pct: float) -> float:
+def _pullback_stage_score(
+    direction: str, zlema_trend: pd.Series, distance_pct: float,
+) -> tuple[float, dict[str, float]]:
     """0-70: 30 flat (4H/1H agreement, already gated -- no pending setup
     exists to score without it) + up to 20 (1H ZLEMA slope strength) + up
     to 20 (15m pullback quality: full marks at half the max pullback
-    distance, linear decay to 0 at the full distance)."""
-    score = 30.0
+    distance, linear decay to 0 at the full distance). Returns (total,
+    components) so callers can persist the breakdown, not just the sum."""
+    macro = 30.0
 
     last = float(zlema_trend.iloc[-1])
     prev = (
@@ -138,17 +141,23 @@ def _pullback_stage_score(direction: str, zlema_trend: pd.Series, distance_pct: 
         if len(zlema_trend) > ZERO_LAG_SLOPE_LOOKBACK else last
     )
     slope_move_pct = abs(last - prev) / last if last else 0.0
-    score += 20.0 * min(1.0, slope_move_pct / 0.01)
+    trend_strength = 20.0 * min(1.0, slope_move_pct / 0.01)
 
     half = PULLBACK_DISTANCE_PCT / 2.0
     if distance_pct <= half:
-        pullback_score = 1.0
+        pullback_quality = 1.0
     else:
         span = max(PULLBACK_DISTANCE_PCT - half, 1e-9)
-        pullback_score = max(0.0, 1.0 - (distance_pct - half) / span)
-    score += 20.0 * pullback_score
+        pullback_quality = max(0.0, 1.0 - (distance_pct - half) / span)
+    pullback = 20.0 * pullback_quality
 
-    return round(score, 1)
+    total = round(macro + trend_strength + pullback, 1)
+    components = {
+        "macro": round(macro, 1),
+        "trend_strength": round(trend_strength, 1),
+        "pullback": round(pullback, 1),
+    }
+    return total, components
 
 
 def detect_pending_setup(symbol: str, reject_sink: dict | None = None) -> dict | None:
@@ -229,7 +238,7 @@ def detect_pending_setup(symbol: str, reject_sink: dict | None = None) -> dict |
             return None
         distance_pct = abs(raw_distance_pct)
 
-        partial_score = _pullback_stage_score(direction, zlema_trend, distance_pct)
+        partial_score, score_components = _pullback_stage_score(direction, zlema_trend, distance_pct)
         if partial_score + 30.0 < MIN_SIGNAL_SCORE:
             # Even a perfect breakout stage (max 30 more points) couldn't
             # clear the bar -- cheap early exit, avoids arming a setup that
@@ -252,6 +261,9 @@ def detect_pending_setup(symbol: str, reject_sink: dict | None = None) -> dict |
             "pullback_price": pullback_close,
             "pullback_time": closed_pullback.index[-1].isoformat(),
             "score": partial_score,
+            "score_macro": score_components["macro"],
+            "score_trend_strength": score_components["trend_strength"],
+            "score_pullback": score_components["pullback"],
             "setup_time": now.isoformat(),
             "created_at": now.isoformat(),
             "expires_at": (now + timedelta(minutes=PENDING_EXPIRY_CANDLES * CANDLE_MINUTES)).isoformat(),
@@ -265,12 +277,12 @@ def detect_pending_setup(symbol: str, reject_sink: dict | None = None) -> dict |
 def _breakout_stage_score(
     direction: str, confirmation_high: float, confirmation_low: float,
     confirmation_close: float, candles_to_break: int,
-) -> float:
+) -> tuple[float, dict[str, float]]:
     """0-30: up to 20 ('fresh' crossover -- loses 5 points per extra
     candle it took to break the trigger price beyond the first one,
     floored at 0) + up to 10 (confirmation candle's close position within
     its own high-low range -- how cleanly it closed near its high for
-    LONG / low for SHORT)."""
+    LONG / low for SHORT). Returns (total, components)."""
     freshness = max(0.0, 20.0 - 5.0 * max(0, candles_to_break - 1))
 
     candle_range = max(confirmation_high - confirmation_low, 1e-9)
@@ -280,7 +292,12 @@ def _breakout_stage_score(
         clearance = (confirmation_high - confirmation_close) / candle_range
     quality = 10.0 * min(1.0, max(0.0, clearance))
 
-    return round(freshness + quality, 1)
+    total = round(freshness + quality, 1)
+    components = {
+        "breakout_freshness": round(freshness, 1),
+        "breakout_quality": round(quality, 1),
+    }
+    return total, components
 
 
 def check_setup_confirmation(setup: dict) -> tuple[str, float | None, dict | None]:
@@ -357,15 +374,20 @@ def check_setup_confirmation(setup: dict) -> tuple[str, float | None, dict | Non
         candle_ts = candle_ts.replace(tzinfo=timezone.utc)
     candles_to_break = max(1, round((candle_ts - confirmation_time).total_seconds() / 60.0 / CANDLE_MINUTES))
 
-    breakout_score = _breakout_stage_score(
+    breakout_score, breakout_components = _breakout_stage_score(
         direction, float(setup["confirmation_high"]), float(setup["confirmation_low"]),
         float(setup["confirmation_close"]), candles_to_break,
     )
     final_score = round(min(100.0, float(setup["score"]) + breakout_score), 1)
+    extra = {
+        "score": final_score,
+        "score_breakout_freshness": breakout_components["breakout_freshness"],
+        "score_breakout_quality": breakout_components["breakout_quality"],
+    }
     if final_score < MIN_SIGNAL_SCORE:
-        return "missed", None, {"score": final_score}
+        return "missed", None, extra
 
-    return "confirmed", trigger_price, {"score": final_score}
+    return "confirmed", trigger_price, extra
 
 
 def build_trade_prices(direction: str, entry: float) -> tuple[float, float]:
