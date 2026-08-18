@@ -60,10 +60,12 @@ So the roadmap runs in two phases.
 
 | # | Plan | Priority | Status |
 |---|---|---|---|
-| 1 | [`2026-08-18-crypto-only-classification-fix.md`](2026-08-18-crypto-only-classification-fix.md) | 8 | Ready to execute |
-| 2 | [`2026-08-18-score-component-instrumentation.md`](2026-08-18-score-component-instrumentation.md) | 3 | Ready to execute |
-| 3 | [`2026-08-18-entry-quality-diagnostics.md`](2026-08-18-entry-quality-diagnostics.md) | 7 (diagnostics half) | Ready to execute |
-| 4 | [`2026-08-18-walkforward-backtest-and-report.md`](2026-08-18-walkforward-backtest-and-report.md) | 9 | Ready to execute |
+| 1 | [`2026-08-18-crypto-only-classification-fix.md`](2026-08-18-crypto-only-classification-fix.md) | 8 | **Done** — implemented, tested, committed (`36ed398`) |
+| 2 | [`2026-08-18-score-component-instrumentation.md`](2026-08-18-score-component-instrumentation.md) | 3 | **Done** — implemented, tested, committed (`19cb99c`, `4ac449b`, `031842b`) |
+| 3 | [`2026-08-18-entry-quality-diagnostics.md`](2026-08-18-entry-quality-diagnostics.md) | 7 (diagnostics half) | **Done** — implemented, tested, committed (`20b2a2d`, `733ec3f`) |
+| 4 | [`2026-08-18-walkforward-backtest-and-report.md`](2026-08-18-walkforward-backtest-and-report.md) | 9 | Tasks 1-4 **done** (dead-code removal, metrics, windows, coin-pool flag — `9b4baeb`, `9185d07`, `cc25f03`). **Task 5 (actually running the 6-9mo backtest) still pending** — needs execution on the production server, this sandbox has no MEXC network access. |
+
+All Phase 1 code is on `main`, `python -m pytest -v` is green (93 tests), `py_compile` clean across every touched file. The only remaining Phase 1 work is running Plan 4's Task 5 on the server and recording the report — see that plan's Task 5 for the exact commands.
 
 Plans 1-3 are mechanical/instrumentation — they change what gets
 measured and logged, not the strategy's actual decisions, so they carry
