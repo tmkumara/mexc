@@ -446,10 +446,24 @@ def backtest_symbol(symbol: str, days: int) -> list[Trade]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backtest Zero-Lag MTF Pullback v1")
-    parser.add_argument("--symbols", nargs="+", required=True, help="e.g. XRP_USDT DOGE_USDT")
+    parser.add_argument("--symbols", nargs="+", default=None, help="e.g. XRP_USDT DOGE_USDT")
+    parser.add_argument("--from-coin-pool", type=int, default=0,
+                         help="ignore --symbols; use the top-N current coin-pool ranking instead")
     parser.add_argument("--days", type=int, default=30, help="requested lookback in days (best-effort, paginated via start/end)")
     parser.add_argument("--workers", type=int, default=6, help="parallel worker processes, one symbol each")
     args = parser.parse_args()
+
+    if args.from_coin_pool > 0:
+        if args.symbols:
+            print("--from-coin-pool given alongside --symbols -- ignoring --symbols", flush=True)
+        import coin_scanner
+        ranked = coin_scanner.refresh_coin_list()
+        symbols = ranked[: args.from_coin_pool]
+        print(f"Using top {len(symbols)} coin-pool symbols: {symbols}", flush=True)
+    elif args.symbols:
+        symbols = args.symbols
+    else:
+        parser.error("either --symbols or --from-coin-pool is required")
 
     print(f"Requested lookback: {args.days} days (best-effort -- paginated via MEXC start/end)")
 
@@ -457,7 +471,7 @@ def main() -> None:
     with ProcessPoolExecutor(max_workers=args.workers) as executor:
         futures = {
             executor.submit(backtest_symbol, symbol, args.days): symbol
-            for symbol in args.symbols
+            for symbol in symbols
         }
         for future in as_completed(futures):
             symbol = futures[future]
