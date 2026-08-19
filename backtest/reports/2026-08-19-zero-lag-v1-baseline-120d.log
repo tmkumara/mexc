@@ -1,0 +1,133 @@
+Using top 40 coin-pool symbols: ['KORU_USDT', 'AKE_USDT', 'CYS_USDT', 'DRAM_USDT', 'HYPE_USDT', 'ACE_USDT', 'OPN_USDT', 'VELVET_USDT', 'BEAT_USDT', 'GPS_USDT', 'WLD_USDT', 'KOSPI_USDT', 'SNXX_USDT', '1000RATS_USDT', 'SKYAI_USDT', 'TUT_USDT', 'VVV_USDT', 'UNITREE_USDT', 'EWY_USDT', 'LINK_USDT', 'TRIA_USDT', 'MUU_USDT', 'SUI_USDT', 'POL_USDT', 'PUMPFUN_USDT', 'INJ_USDT', 'ZEC_USDT', 'DOT_USDT', 'HBAR_USDT', 'FARTCOIN_USDT', 'ENA_USDT', 'FILECOIN_USDT', 'ADA_USDT', 'ONDO_USDT', 'UNI_USDT', 'NEAR_USDT', 'PENGU_USDT', 'TAO_USDT', 'AAVE_USDT', 'AVAX_USDT']
+[SNXX_USDT] achieved history: 10004x5m, 3409x15m, 859x1h, 216x4h bars
+[KORU_USDT] achieved history: 9551x5m, 3251x15m, 819x1h, 206x4h bars
+[UNITREE_USDT] achieved history: 5285x5m, 1807x15m, 453x1h, 114x4h bars
+[KOSPI_USDT] achieved history: 4469x5m, 1535x15m, 385x1h, 97x4h bars
+[WLD_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[HYPE_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[MUU_USDT] achieved history: 9486x5m, 3229x15m, 814x1h, 205x4h bars
+[CYS_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[AKE_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[EWY_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[BEAT_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[GPS_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[VELVET_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[DRAM_USDT] achieved history: 28665x5m, 9776x15m, 2461x1h, 618x4h bars
+[LINK_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[TUT_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[TRIA_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[SKYAI_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[VVV_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[PUMPFUN_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[OPN_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[POL_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[1000RATS_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[ACE_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[INJ_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[SUI_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[ZEC_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[DOT_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[HBAR_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[FARTCOIN_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[ENA_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[FILECOIN_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[ADA_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[ONDO_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[UNI_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[NEAR_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[PENGU_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[TAO_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[AAVE_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+[AVAX_USDT] achieved history: 33504x5m, 11410x15m, 2874x1h, 720x4h bars
+Requested lookback: 120 days (best-effort -- paginated via MEXC start/end)
+
+============================================================
+Total trades:        1136
+Wins:                663
+Losses:              471
+Expired trades:      2
+Win rate (win/loss): 58.5%
+Profit factor:       0.768
+Average winner:      +6.00%
+Average loser:       -11.00%
+Expectancy/trade:    -1.06%
+Net ROI:             -1202.9%
+Max drawdown:        -1233.9%
+Max consecutive losses: 11
+Average hold:        26.2 min (median 10.0 min)
+
+LONG performance:  594 trades, WR 60.2%, expectancy -0.76%, net ROI -454.0%
+SHORT performance: 542 trades, WR 56.6%, expectancy -1.38%, net ROI -749.0%
+
+By score range:
+  80-84.9: 703 trades, WR 59.9%, expectancy -0.82%
+  85-89.9: 201 trades, WR 60.0%, expectancy -0.80%
+  90-100: 232 trades, WR 52.8%, expectancy -2.01%
+
+By entry hour (UTC):
+  00:00: 64 trades, WR 58.7%, expectancy -1.00%
+  01:00: 54 trades, WR 59.3%, expectancy -0.93%
+  02:00: 47 trades, WR 66.0%, expectancy +0.21%
+  03:00: 46 trades, WR 60.0%, expectancy -0.78%
+  04:00: 47 trades, WR 57.4%, expectancy -1.23%
+  05:00: 42 trades, WR 57.1%, expectancy -1.29%
+  06:00: 45 trades, WR 46.7%, expectancy -3.07%
+  07:00: 40 trades, WR 62.5%, expectancy -0.37%
+  08:00: 50 trades, WR 60.0%, expectancy -0.80%
+  09:00: 49 trades, WR 67.3%, expectancy +0.45%
+  10:00: 53 trades, WR 50.9%, expectancy -2.34%
+  11:00: 43 trades, WR 55.8%, expectancy -1.51%
+  12:00: 54 trades, WR 66.7%, expectancy +0.33%
+  13:00: 47 trades, WR 51.1%, expectancy -2.32%
+  14:00: 41 trades, WR 58.5%, expectancy -1.05%
+  15:00: 49 trades, WR 51.0%, expectancy -2.33%
+  16:00: 50 trades, WR 78.0%, expectancy +2.26%
+  17:00: 35 trades, WR 54.3%, expectancy -1.77%
+  18:00: 54 trades, WR 57.4%, expectancy -1.24%
+  19:00: 47 trades, WR 61.7%, expectancy -0.51%
+  20:00: 43 trades, WR 46.5%, expectancy -3.09%
+  21:00: 50 trades, WR 72.0%, expectancy +1.24%
+  22:00: 51 trades, WR 54.9%, expectancy -1.67%
+  23:00: 35 trades, WR 40.0%, expectancy -4.20%
+
+Performance by symbol:
+  1000RATS_USDT: 41 trades, WR 51.2%, net ROI -94.0%
+  AAVE_USDT: 30 trades, WR 63.3%, net ROI -7.0%
+  ACE_USDT: 39 trades, WR 59.0%, net ROI -38.0%
+  ADA_USDT: 40 trades, WR 57.5%, net ROI -49.0%
+  AKE_USDT: 28 trades, WR 57.1%, net ROI -35.9%
+  AVAX_USDT: 22 trades, WR 50.0%, net ROI -55.0%
+  BEAT_USDT: 17 trades, WR 47.1%, net ROI -51.0%
+  CYS_USDT: 36 trades, WR 50.0%, net ROI -90.0%
+  DOT_USDT: 28 trades, WR 46.4%, net ROI -87.0%
+  DRAM_USDT: 26 trades, WR 65.4%, net ROI +3.0%
+  ENA_USDT: 35 trades, WR 54.3%, net ROI -62.0%
+  EWY_USDT: 35 trades, WR 57.1%, net ROI -45.0%
+  FARTCOIN_USDT: 37 trades, WR 67.6%, net ROI +18.0%
+  FILECOIN_USDT: 32 trades, WR 46.9%, net ROI -97.0%
+  GPS_USDT: 29 trades, WR 79.3%, net ROI +72.0%
+  HBAR_USDT: 26 trades, WR 56.0%, net ROI -37.0%
+  HYPE_USDT: 46 trades, WR 52.2%, net ROI -98.0%
+  INJ_USDT: 23 trades, WR 78.3%, net ROI +53.0%
+  LINK_USDT: 22 trades, WR 68.2%, net ROI +13.0%
+  NEAR_USDT: 38 trades, WR 55.3%, net ROI -61.0%
+  ONDO_USDT: 33 trades, WR 72.7%, net ROI +45.0%
+  OPN_USDT: 23 trades, WR 52.2%, net ROI -49.0%
+  PENGU_USDT: 33 trades, WR 63.6%, net ROI -6.0%
+  POL_USDT: 39 trades, WR 61.5%, net ROI -21.0%
+  PUMPFUN_USDT: 53 trades, WR 52.8%, net ROI -107.0%
+  SKYAI_USDT: 24 trades, WR 62.5%, net ROI -9.0%
+  SUI_USDT: 26 trades, WR 46.2%, net ROI -82.0%
+  TAO_USDT: 29 trades, WR 64.3%, net ROI -2.0%
+  TRIA_USDT: 38 trades, WR 63.2%, net ROI -10.0%
+  TUT_USDT: 43 trades, WR 55.8%, net ROI -65.0%
+  UNI_USDT: 43 trades, WR 60.5%, net ROI -31.0%
+  VELVET_USDT: 24 trades, WR 66.7%, net ROI +8.0%
+  VVV_USDT: 44 trades, WR 61.4%, net ROI -25.0%
+  WLD_USDT: 29 trades, WR 55.2%, net ROI -47.0%
+  ZEC_USDT: 25 trades, WR 52.0%, net ROI -54.0%
+
+Monthly performance:
+  2026-06: 337 trades, 202/337 wins, net ROI -273.0%
+  2026-07: 537 trades, 311/537 wins, net ROI -619.9%
+  2026-08: 262 trades, 150/262 wins, net ROI -310.0%
