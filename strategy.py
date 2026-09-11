@@ -1,33 +1,25 @@
 """
-Zero-Lag MTF Pullback v1.
+SMC Structure + Squeeze Momentum v1.
 
-Four-timeframe pipeline: MACRO_TF (4h) and TREND_TF (1h) zero-lag EMA
-(ZLEMA) trend state must agree -- a stateful walk that flips only on a
-close crossing the ZLEMA +/- ATR-derived band, not a plain
-close-vs-ZLEMA comparison, and otherwise holds its previous state.
-PULLBACK_TF (15m) price must then have pulled back to within
-PULLBACK_DISTANCE_PCT of its own ZLEMA. A passing candidate arms a
-pending_pullback setup (persisted via database.pending_setups), scored
-0-70 on 4H/1H agreement, 1H ZLEMA slope, and pullback quality.
+Single-pass confluence model (no pending-setup state machine, unlike the
+retired Zero-Lag MTF Pullback v1 -- see backup/zero-lag-mtf-pullback-v1).
 
-The armed setup then waits for an ENTRY_TF (5m) ZLEMA crossover plus a
-directional confirmation candle, which records a breakout trigger price
-(the confirmation candle's high/low + ENTRY_BUFFER_PCT) and transitions
-the setup to pending_breakout. Once price actually breaks that trigger,
-the setup fires: SL/TP are FIXED ROI-%-at-LEVERAGE distances
-(TP_ROI_PCT / SL_ROI_PCT) -- not structural or ATR-derived -- and the
-final 0-100 score (the pullback-stage score plus up to 30 more for
-breakout freshness/quality) must clear MIN_SIGNAL_SCORE. No breakeven
-step in this strategy version -- outcome_check.check_tp_sl walks the
-trade to a plain single TP/SL.
+detect_signal(symbol) evaluates ENTRY_TF (30m) market structure (fractal
+swing pivots -> BOS/CHoCH break detection, modeled on the LuxAlgo "Smart
+Money Concepts" indicator) together with Squeeze Momentum (LazyBear
+SQZMOM_LB -- BB vs KC compression/release, rolling linreg momentum). A
+signal only fires when a structure break and the squeeze-momentum
+direction agree, scored 0-10 on break quality, squeeze-fire freshness,
+momentum strength, TREND_TF (1h) EMA50 alignment, and volume. Stop-loss
+anchors to the swing point behind the break (+ a small buffer); risk is
+floored/capped (MIN_RISK_PCT..MAX_RISK_PCT) so every signal guarantees
+>= MIN_WIN_ROI_PCT return on a win at LEVERAGE, and take-profit is always
+exactly RISK_REWARD_RATIO x the risk distance (fixed 1:2 RR).
 
-The setup expires PENDING_EXPIRY_CANDLES after arming if it never
-reaches a fired breakout. LONG signals can be disabled via
-ENABLE_LONG_SIGNALS (true by default). The last closed candle on every
-timeframe must be at least MIN_CANDLE_SETTLE_SECONDS old before it's
-used -- MEXC's kline REST data for a just-closed candle can still get
-revised shortly after close. Only completed candles are ever used
-anywhere in this pipeline.
+Only completed candles are ever used -- the last (still-forming) bar is
+always dropped via iloc[:-1], and the last closed ENTRY_TF candle must be
+at least MIN_CANDLE_SETTLE_SECONDS old before it's used (MEXC's kline REST
+data for a just-closed candle can still get revised shortly after close).
 """
 
 from __future__ import annotations
@@ -38,6 +30,16 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
+
+from market_data import get_market_klines
+from config import (
+    ENTRY_TF, TREND_TF, ENTRY_KLINE_COUNT, TREND_KLINE_COUNT,
+    _TF_MINUTES, MIN_CANDLE_SETTLE_SECONDS,
+    SQZ_BB_LENGTH, SQZ_BB_MULT, SQZ_KC_LENGTH, SQZ_KC_MULT, SQZ_LOOKBACK_BARS,
+    STRUCTURE_LEFT, STRUCTURE_RIGHT, STRUCTURE_LOOKBACK_BARS,
+    SIGNAL_SCORE_THRESHOLD, RISK_REWARD_RATIO, MIN_RISK_PCT, MAX_RISK_PCT,
+    SL_BUFFER_PCT, LEVERAGE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,397 +67,121 @@ class Signal:
 
 # ── indicators ──────────────────────────────────────────────────────
 
-def calculate_atr(df: pd.DataFrame, period: int) -> pd.Series:
-    high, low, close = df["high"], df["low"], df["close"]
-    prev_close = close.shift(1)
-    tr = pd.concat([
-        high - low,
-        (high - prev_close).abs(),
-        (low - prev_close).abs(),
+def true_range(df: pd.DataFrame) -> pd.Series:
+    prev_close = df["close"].shift(1)
+    return pd.concat([
+        df["high"] - df["low"],
+        (df["high"] - prev_close).abs(),
+        (df["low"] - prev_close).abs(),
     ], axis=1).max(axis=1)
-    return tr.ewm(alpha=1.0 / period, min_periods=1, adjust=False).mean()
 
 
-def calculate_zlema(series: pd.Series, length: int) -> pd.Series:
-    """Zero-lag EMA per architecture.txt: lag = floor((length-1)/2);
-    adjusted_price = 2*close - close.shift(lag); ZLEMA = EMA(adjusted, length)."""
-    lag = (length - 1) // 2
-    adjusted = 2.0 * series - series.shift(lag)
-    return adjusted.ewm(span=length, adjust=False).mean()
+def calculate_ema(series: pd.Series, period: int) -> pd.Series:
+    return series.ewm(span=period, adjust=False).mean()
 
 
-def calculate_zlema_band(
-    df: pd.DataFrame, zlema: pd.Series, atr_period: int, atr_lookback: int, multiplier: float,
-) -> tuple[pd.Series, pd.Series]:
-    """upper/lower = zlema +/- volatility, where volatility is the highest
-    ATR(atr_period) over the last atr_lookback candles, times multiplier
-    (architecture.txt's AlgoAlpha-derived band calculation)."""
-    atr = calculate_atr(df, atr_period)
-    volatility = atr.rolling(window=atr_lookback, min_periods=1).max() * multiplier
-    return zlema + volatility, zlema - volatility
+def _linreg_last(values: np.ndarray) -> float:
+    """Value of the linear-regression line at the last point of the window."""
+    n = len(values)
+    x = np.arange(n)
+    slope, intercept = np.polyfit(x, values, 1)
+    return slope * (n - 1) + intercept
 
 
-def calculate_zlema_trend_state(
-    df: pd.DataFrame, zlema: pd.Series, upper: pd.Series, lower: pd.Series,
-) -> pd.Series:
-    """Stateful trend per architecture.txt: NOT close-vs-zlema. Flips to +1
-    only when close is beyond the upper band, to -1 only when close is
-    beyond the lower band, and otherwise HOLDS the previous state (starts
-    neutral/0 until the first cross). Setting state=+1 every bar close
-    stays above upper is equivalent to 'cross above' detection (it
-    re-asserts the same value), and holding via the else branch is exactly
-    the persistence architecture.txt describes -- a stateful walk (each
-    bar's state depends on the previous bar's, not vectorizable as a
-    comparison)."""
-    close = df["close"].to_numpy()
-    upper_v = upper.to_numpy()
-    lower_v = lower.to_numpy()
+def squeeze_momentum(
+    df: pd.DataFrame,
+    bb_length: int = SQZ_BB_LENGTH,
+    bb_mult: float = SQZ_BB_MULT,
+    kc_length: int = SQZ_KC_LENGTH,
+    kc_mult: float = SQZ_KC_MULT,
+) -> pd.DataFrame:
+    """LazyBear's Squeeze Momentum Indicator (SQZMOM_LB), matching the
+    20/2/20/1.5 settings used on the live TradingView chart. Adds columns:
+    sqz_on (BB inside KC -- compression), sqz_off (squeeze just released
+    this bar), sqz_mom (rolling linreg momentum value)."""
+    close, high, low = df["close"], df["high"], df["low"]
+
+    basis = close.rolling(bb_length).mean()
+    dev = bb_mult * close.rolling(bb_length).std()
+    bb_upper, bb_lower = basis + dev, basis - dev
+
+    kc_ma = close.rolling(kc_length).mean()
+    rng_ma = true_range(df).rolling(kc_length).mean()
+    kc_upper, kc_lower = kc_ma + rng_ma * kc_mult, kc_ma - rng_ma * kc_mult
+
+    sqz_on = (bb_lower > kc_lower) & (bb_upper < kc_upper)
+    sqz_on_prev = sqz_on.shift(1, fill_value=False)
+    sqz_off = sqz_on_prev & (~sqz_on)
+
+    highest_high = high.rolling(kc_length).max()
+    lowest_low = low.rolling(kc_length).min()
+    donchian_mid = ((highest_high + lowest_low) / 2 + kc_ma) / 2
+    delta = close - donchian_mid
+
+    mom = delta.rolling(kc_length).apply(lambda w: _linreg_last(w.to_numpy()), raw=False)
+
+    df = df.copy()
+    df["sqz_on"], df["sqz_off"], df["sqz_mom"] = sqz_on, sqz_off, mom
+    return df
+
+
+def pivot_points(df: pd.DataFrame, left: int = STRUCTURE_LEFT, right: int = STRUCTURE_RIGHT):
+    """Return (pivot_high_idx, pivot_low_idx) -- lists of confirmed fractal indices."""
+    highs, lows = df["high"].to_numpy(), df["low"].to_numpy()
     n = len(df)
-    state = np.zeros(n, dtype=int)
+    pivot_high_idx, pivot_low_idx = [], []
+    for i in range(left, n - right):
+        window_h = highs[i - left: i + right + 1]
+        if highs[i] == window_h.max() and np.sum(window_h == highs[i]) == 1:
+            pivot_high_idx.append(i)
+        window_l = lows[i - left: i + right + 1]
+        if lows[i] == window_l.min() and np.sum(window_l == lows[i]) == 1:
+            pivot_low_idx.append(i)
+    return pivot_high_idx, pivot_low_idx
+
+
+def market_structure(df: pd.DataFrame, left: int = STRUCTURE_LEFT, right: int = STRUCTURE_RIGHT):
+    """Smart-Money-Concepts style market structure: Break of Structure (BOS,
+    trend continuation) and Change of Character (CHoCH, trend reversal) from
+    confirmed fractal swing points. Returns a list of events, each
+    (bar_index, event_type, broken_level, opposite_level) where event_type
+    is one of BOS_UP/CHOCH_UP/BOS_DOWN/CHOCH_DOWN, broken_level is the swing
+    price that was broken, and opposite_level is the most recent swing on
+    the *other* side at that moment (used for stop-loss placement)."""
+    closes, highs, lows = df["close"].to_numpy(), df["high"].to_numpy(), df["low"].to_numpy()
+    n = len(df)
+
+    pivot_high_idx, pivot_low_idx = pivot_points(df, left, right)
+
+    events = []
+    trend = None
+    last_high = last_low = None
+    ph_ptr = pl_ptr = 0
 
     for i in range(n):
-        if close[i] > upper_v[i]:
-            state[i] = 1
-        elif close[i] < lower_v[i]:
-            state[i] = -1
-        elif i > 0:
-            state[i] = state[i - 1]
-        # else: i == 0 and price is inside the band -> stays 0 (neutral)
+        while ph_ptr < len(pivot_high_idx) and pivot_high_idx[ph_ptr] + right == i:
+            last_high = highs[pivot_high_idx[ph_ptr]]
+            ph_ptr += 1
+        while pl_ptr < len(pivot_low_idx) and pivot_low_idx[pl_ptr] + right == i:
+            last_low = lows[pivot_low_idx[pl_ptr]]
+            pl_ptr += 1
 
-    return pd.Series(state, index=df.index)
+        if last_high is not None and closes[i] > last_high:
+            event_type = "CHOCH_UP" if trend in (None, "down") else "BOS_UP"
+            events.append((i, event_type, last_high, last_low))
+            trend = "up"
+            last_high = None
 
+        if last_low is not None and closes[i] < last_low:
+            event_type = "CHOCH_DOWN" if trend in (None, "up") else "BOS_DOWN"
+            events.append((i, event_type, last_low, last_high))
+            trend = "down"
+            last_low = None
 
-def _pullback_stage_score(
-    direction: str, zlema_trend: pd.Series, distance_pct: float,
-) -> tuple[float, dict[str, float]]:
-    """0-70: 30 flat (4H/1H agreement, already gated -- no pending setup
-    exists to score without it) + up to 20 (1H ZLEMA slope strength) + up
-    to 20 (15m pullback quality: full marks at half the max pullback
-    distance, linear decay to 0 at the full distance). Returns (total,
-    components) so callers can persist the breakdown, not just the sum."""
-    macro = 30.0
-
-    last = float(zlema_trend.iloc[-1])
-    prev = (
-        float(zlema_trend.iloc[-1 - ZERO_LAG_SLOPE_LOOKBACK])
-        if len(zlema_trend) > ZERO_LAG_SLOPE_LOOKBACK else last
-    )
-    slope_move_pct = abs(last - prev) / last if last else 0.0
-    trend_strength = 20.0 * min(1.0, slope_move_pct / 0.01)
-
-    half = PULLBACK_DISTANCE_PCT / 2.0
-    if distance_pct <= half:
-        pullback_quality = 1.0
-    else:
-        span = max(PULLBACK_DISTANCE_PCT - half, 1e-9)
-        pullback_quality = max(0.0, 1.0 - (distance_pct - half) / span)
-    pullback = 20.0 * pullback_quality
-
-    total = round(macro + trend_strength + pullback, 1)
-    components = {
-        "macro": round(macro, 1),
-        "trend_strength": round(trend_strength, 1),
-        "pullback": round(pullback, 1),
-    }
-    return total, components
-
-
-def detect_pending_setup(symbol: str, reject_sink: dict | None = None) -> dict | None:
-    try:
-        raw_macro = get_market_klines(symbol, MACRO_TF, count=MACRO_KLINE_COUNT)
-        if raw_macro is None or raw_macro.empty:
-            _bump(reject_sink, "missing_data")
-            return None
-        closed_macro = raw_macro.iloc[:-1].copy()
-
-        raw_trend = get_market_klines(symbol, TREND_TF, count=TREND_KLINE_COUNT)
-        if raw_trend is None or raw_trend.empty:
-            _bump(reject_sink, "missing_data")
-            return None
-        closed_trend = raw_trend.iloc[:-1].copy()
-
-        raw_pullback = get_market_klines(symbol, PULLBACK_TF, count=PULLBACK_KLINE_COUNT)
-        if raw_pullback is None or raw_pullback.empty:
-            _bump(reject_sink, "missing_data")
-            return None
-        closed_pullback = raw_pullback.iloc[:-1].copy()
-
-        min_mtf_history = ZERO_LAG_LENGTH + ZERO_LAG_BAND_LOOKBACK + 10
-        min_pullback_history = ZERO_LAG_LENGTH + 10
-        if (
-            len(closed_macro) < min_mtf_history
-            or len(closed_trend) < min_mtf_history
-            or len(closed_pullback) < min_pullback_history
-        ):
-            _bump(reject_sink, "insufficient_history")
-            return None
-
-        pullback_tf_minutes = _TF_MINUTES.get(PULLBACK_TF, 15)
-        candle_close_time = closed_pullback.index[-1].to_pydatetime() + timedelta(minutes=pullback_tf_minutes)
-        candle_age = (datetime.utcnow() - candle_close_time).total_seconds()
-        if candle_age < MIN_CANDLE_SETTLE_SECONDS:
-            _bump(reject_sink, "candle_not_settled")
-            return None
-
-        zlema_macro = calculate_zlema(closed_macro["close"], ZERO_LAG_LENGTH)
-        upper_macro, lower_macro = calculate_zlema_band(
-            closed_macro, zlema_macro, ATR_PERIOD, ZERO_LAG_BAND_LOOKBACK, ZERO_LAG_MULTIPLIER,
-        )
-        macro_state = calculate_zlema_trend_state(closed_macro, zlema_macro, upper_macro, lower_macro)
-        macro_trend = int(macro_state.iloc[-1])
-        if macro_trend == 0:
-            _bump(reject_sink, "no_macro_trend")
-            return None
-
-        zlema_trend = calculate_zlema(closed_trend["close"], ZERO_LAG_LENGTH)
-        upper_trend, lower_trend = calculate_zlema_band(
-            closed_trend, zlema_trend, ATR_PERIOD, ZERO_LAG_BAND_LOOKBACK, ZERO_LAG_MULTIPLIER,
-        )
-        trend_state_series = calculate_zlema_trend_state(closed_trend, zlema_trend, upper_trend, lower_trend)
-        trend_state = int(trend_state_series.iloc[-1])
-        if trend_state != macro_trend:
-            _bump(reject_sink, "no_trend_agreement")
-            return None
-
-        direction = "LONG" if macro_trend == 1 else "SHORT"
-        if direction == "LONG" and not ENABLE_LONG_SIGNALS:
-            _bump(reject_sink, "long_disabled")
-            return None
-
-        zlema_pullback = calculate_zlema(closed_pullback["close"], ZERO_LAG_LENGTH)
-        pullback_close = float(closed_pullback["close"].iloc[-1])
-        zlema_15m_last = float(zlema_pullback.iloc[-1])
-
-        if direction == "LONG":
-            in_pullback = pullback_close <= zlema_15m_last * (1 + PULLBACK_DISTANCE_PCT)
-            raw_distance_pct = (pullback_close - zlema_15m_last) / zlema_15m_last
-        else:
-            in_pullback = pullback_close >= zlema_15m_last * (1 - PULLBACK_DISTANCE_PCT)
-            raw_distance_pct = (zlema_15m_last - pullback_close) / zlema_15m_last
-
-        if not in_pullback:
-            _bump(reject_sink, "no_pullback")
-            return None
-        distance_pct = abs(raw_distance_pct)
-
-        partial_score, score_components = _pullback_stage_score(direction, zlema_trend, distance_pct)
-        if partial_score + 30.0 < MIN_SIGNAL_SCORE:
-            # Even a perfect breakout stage (max 30 more points) couldn't
-            # clear the bar -- cheap early exit, avoids arming a setup that
-            # would only get discarded later at the pending_breakout gate.
-            _bump(reject_sink, "score_below_min")
-            return None
-
-        now = datetime.now(timezone.utc)
-        return {
-            "symbol": symbol,
-            "direction": direction,
-            "macro_tf": MACRO_TF,
-            "trend_tf": TREND_TF,
-            "pullback_tf": PULLBACK_TF,
-            "entry_tf": ENTRY_TF,
-            "macro_trend": macro_trend,
-            "trend_state": trend_state,
-            "zlema_1h": float(zlema_trend.iloc[-1]),
-            "zlema_15m": zlema_15m_last,
-            "pullback_price": pullback_close,
-            "pullback_time": closed_pullback.index[-1].isoformat(),
-            "score": partial_score,
-            "score_macro": score_components["macro"],
-            "score_trend_strength": score_components["trend_strength"],
-            "score_pullback": score_components["pullback"],
-            "setup_time": now.isoformat(),
-            "created_at": now.isoformat(),
-            "expires_at": (now + timedelta(minutes=PENDING_EXPIRY_CANDLES * CANDLE_MINUTES)).isoformat(),
-        }
-    except Exception as e:
-        logger.error("[ZERO-LAG-DETECT-ERROR] %s: %s", symbol, e, exc_info=True)
-        _bump(reject_sink, "error")
-        return None
-
-
-def _breakout_stage_score(
-    direction: str, confirmation_high: float, confirmation_low: float,
-    confirmation_close: float, candles_to_break: int,
-) -> tuple[float, dict[str, float]]:
-    """0-30: up to 20 ('fresh' crossover -- loses 5 points per extra
-    candle it took to break the trigger price beyond the first one,
-    floored at 0) + up to 10 (confirmation candle's close position within
-    its own high-low range -- how cleanly it closed near its high for
-    LONG / low for SHORT). Returns (total, components)."""
-    freshness = max(0.0, 20.0 - 5.0 * max(0, candles_to_break - 1))
-
-    candle_range = max(confirmation_high - confirmation_low, 1e-9)
-    if direction == "LONG":
-        clearance = (confirmation_close - confirmation_low) / candle_range
-    else:
-        clearance = (confirmation_high - confirmation_close) / candle_range
-    quality = 10.0 * min(1.0, max(0.0, clearance))
-
-    total = round(freshness + quality, 1)
-    components = {
-        "breakout_freshness": round(freshness, 1),
-        "breakout_quality": round(quality, 1),
-    }
-    return total, components
-
-
-def _entry_quality_diagnostics(closed: pd.DataFrame, direction: str, fill_price: float) -> dict[str, float]:
-    """Observational only -- computed at the exact entry candle
-    (check_setup_confirmation's pending_breakout branch) so live and
-    backtest runs measure the identical candle. Not used for any gate;
-    see docs/superpowers/plans/2026-08-18-entry-quality-diagnostics.md."""
-    atr = calculate_atr(closed, ATR_PERIOD)
-    last_atr = float(atr.iloc[-1]) if len(atr) else 0.0
-    last_atr = last_atr if last_atr > 1e-12 else 1e-12
-
-    last = closed.iloc[-1]
-    o, h, l, c = float(last["open"]), float(last["high"]), float(last["low"]), float(last["close"])
-    candle_range = max(h - l, 1e-12)
-
-    body_atr_ratio = abs(c - o) / last_atr
-    range_atr_ratio = candle_range / last_atr
-
-    upper_wick_ratio = (h - max(o, c)) / candle_range
-    lower_wick_ratio = (min(o, c) - l) / candle_range
-
-    volume_lookback = closed["volume"].iloc[-21:-1]  # trailing 20 bars, excludes the entry candle itself
-    avg_volume = float(volume_lookback.mean()) if len(volume_lookback) else 0.0
-    last_volume = float(closed["volume"].iloc[-1])
-    volume_ratio = (last_volume / avg_volume) if avg_volume > 1e-12 else 0.0
-
-    zlema = calculate_zlema(closed["close"], ZERO_LAG_LENGTH)
-    zlema_last = float(zlema.iloc[-1])
-    if direction == "LONG":
-        distance_from_zlema_pct = (fill_price - zlema_last) / zlema_last if zlema_last else 0.0
-    else:
-        distance_from_zlema_pct = (zlema_last - fill_price) / zlema_last if zlema_last else 0.0
-
-    return {
-        "candle_body_atr_ratio": round(body_atr_ratio, 4),
-        "candle_range_atr_ratio": round(range_atr_ratio, 4),
-        "upper_wick_ratio": round(upper_wick_ratio, 4),
-        "lower_wick_ratio": round(lower_wick_ratio, 4),
-        "volume_ratio": round(volume_ratio, 4),
-        "distance_from_zlema_pct": round(distance_from_zlema_pct, 6),
-    }
-
-
-def check_setup_confirmation(setup: dict) -> tuple[str, float | None, dict | None]:
-    symbol = setup["symbol"]
-    direction = setup["direction"]
-    status = setup["status"]
-
-    setup_time = datetime.fromisoformat(setup["setup_time"])
-    if setup_time.tzinfo is None:
-        setup_time = setup_time.replace(tzinfo=timezone.utc)
-    age_minutes = (datetime.now(timezone.utc) - setup_time).total_seconds() / 60.0
-    if age_minutes > PENDING_EXPIRY_CANDLES * CANDLE_MINUTES:
-        return "expired", None, None
-
-    raw = get_market_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
-    if raw is None or raw.empty:
-        return "waiting", None, None
-    closed = raw.iloc[:-1].copy()
-    if len(closed) < ZERO_LAG_LENGTH + 5:
-        return "waiting", None, None
-
-    entry_tf_minutes = _TF_MINUTES.get(ENTRY_TF, 5)
-    candle_close_time = closed.index[-1].to_pydatetime() + timedelta(minutes=entry_tf_minutes)
-    candle_age = (datetime.utcnow() - candle_close_time).total_seconds()
-    if candle_age < MIN_CANDLE_SETTLE_SECONDS:
-        return "waiting", None, None
-
-    if status == "pending_pullback":
-        zlema = calculate_zlema(closed["close"], ZERO_LAG_LENGTH)
-        prev_close, curr_close = float(closed["close"].iloc[-2]), float(closed["close"].iloc[-1])
-        prev_zlema, curr_zlema = float(zlema.iloc[-2]), float(zlema.iloc[-1])
-        curr_open = float(closed["open"].iloc[-1])
-
-        if direction == "LONG":
-            crossed = prev_close <= prev_zlema and curr_close > curr_zlema
-            candle_ok = curr_close > curr_open
-        else:
-            crossed = prev_close >= prev_zlema and curr_close < curr_zlema
-            candle_ok = curr_close < curr_open
-
-        if not (crossed and candle_ok):
-            return "waiting", None, None
-
-        last = closed.iloc[-1]
-        confirmation_high, confirmation_low = float(last["high"]), float(last["low"])
-        confirmation_close = float(last["close"])
-        if direction == "LONG":
-            trigger_price = confirmation_high * (1 + ENTRY_BUFFER_PCT)
-        else:
-            trigger_price = confirmation_low * (1 - ENTRY_BUFFER_PCT)
-
-        return "armed_breakout", None, {
-            "confirmation_high": confirmation_high,
-            "confirmation_low": confirmation_low,
-            "confirmation_close": confirmation_close,
-            "confirmation_time": closed.index[-1].isoformat(),
-            "trigger_price": trigger_price,
-        }
-
-    # status == "pending_breakout"
-    last = closed.iloc[-1]
-    high, low = float(last["high"]), float(last["low"])
-    trigger_price = float(setup["trigger_price"])
-
-    entry_hit = (high > trigger_price) if direction == "LONG" else (low < trigger_price)
-    if not entry_hit:
-        return "waiting", None, None
-
-    confirmation_time = datetime.fromisoformat(setup["confirmation_time"])
-    if confirmation_time.tzinfo is None:
-        confirmation_time = confirmation_time.replace(tzinfo=timezone.utc)
-    candle_ts = closed.index[-1].to_pydatetime()
-    if candle_ts.tzinfo is None:
-        candle_ts = candle_ts.replace(tzinfo=timezone.utc)
-    candles_to_break = max(1, round((candle_ts - confirmation_time).total_seconds() / 60.0 / CANDLE_MINUTES))
-
-    breakout_score, breakout_components = _breakout_stage_score(
-        direction, float(setup["confirmation_high"]), float(setup["confirmation_low"]),
-        float(setup["confirmation_close"]), candles_to_break,
-    )
-    diagnostics = _entry_quality_diagnostics(closed, direction, trigger_price)
-    final_score = round(min(100.0, float(setup["score"]) + breakout_score), 1)
-    extra = {
-        "score": final_score,
-        "score_breakout_freshness": breakout_components["breakout_freshness"],
-        "score_breakout_quality": breakout_components["breakout_quality"],
-        **diagnostics,
-    }
-    if final_score < MIN_SIGNAL_SCORE:
-        return "missed", None, extra
-
-    return "confirmed", trigger_price, extra
-
-
-def build_trade_prices(direction: str, entry: float) -> tuple[float, float]:
-    if direction == "LONG":
-        sl = entry * (1 - SL_PRICE_PCT)
-        tp = entry * (1 + TP_PRICE_PCT)
-    else:
-        sl = entry * (1 + SL_PRICE_PCT)
-        tp = entry * (1 - TP_PRICE_PCT)
-    return round(tp, 8), round(sl, 8)
+    return events, trend, last_high, last_low
 
 
 # ── evaluate_symbol pipeline ─────────────────────────────────────────
-
-from market_data import get_market_klines
-from config import (
-    MACRO_TF, TREND_TF, PULLBACK_TF, ENTRY_TF,
-    MACRO_KLINE_COUNT, TREND_KLINE_COUNT, PULLBACK_KLINE_COUNT, ENTRY_KLINE_COUNT,
-    CANDLE_MINUTES, _TF_MINUTES,
-    ZERO_LAG_LENGTH, ZERO_LAG_BAND_LOOKBACK, ZERO_LAG_MULTIPLIER, ZERO_LAG_SLOPE_LOOKBACK,
-    ATR_PERIOD, PULLBACK_DISTANCE_PCT, MIN_SIGNAL_SCORE,
-    MIN_CANDLE_SETTLE_SECONDS, LEVERAGE, SL_PRICE_PCT, SL_ROI_PCT, TP_PRICE_PCT, TP_ROI_PCT,
-    ENABLE_LONG_SIGNALS, ENTRY_BUFFER_PCT, PENDING_EXPIRY_CANDLES,
-)
-
 
 def valid_trade_geometry(direction: str, entry: float, tp: float, sl: float) -> bool:
     if entry <= 0 or tp <= 0 or sl <= 0:
@@ -475,22 +201,168 @@ def direction_slot_available(direction: str, active_long: int, active_short: int
     return active_short < MAX_ACTIVE_SHORT_SIGNALS
 
 
-def _calc_rr(direction: str, entry: float, tp: float, sl: float) -> float:
-    reward = abs(tp - entry)
-    risk = abs(entry - sl)
-    return reward / risk if risk > 0 else 0.0
-
-
-def _roi_pct(direction: str, entry: float, tp: float, sl: float) -> tuple[float, float]:
-    if direction == "LONG":
-        tp_roi = (tp - entry) / entry * 100.0 * LEVERAGE
-        sl_roi = (entry - sl) / entry * 100.0 * LEVERAGE
-    else:
-        tp_roi = (entry - tp) / entry * 100.0 * LEVERAGE
-        sl_roi = (sl - entry) / entry * 100.0 * LEVERAGE
-    return round(tp_roi, 2), round(sl_roi, 2)
-
-
 def _bump(reject_sink: dict | None, key: str) -> None:
     if reject_sink is not None:
         reject_sink[key] = reject_sink.get(key, 0) + 1
+
+
+def detect_signal(symbol: str, reject_sink: dict | None = None) -> Signal | None:
+    try:
+        raw_entry = get_market_klines(symbol, ENTRY_TF, count=ENTRY_KLINE_COUNT)
+        if raw_entry is None or raw_entry.empty:
+            _bump(reject_sink, "missing_data")
+            return None
+        closed = raw_entry.iloc[:-1].copy()
+
+        raw_trend = get_market_klines(symbol, TREND_TF, count=TREND_KLINE_COUNT)
+        if raw_trend is None or raw_trend.empty:
+            _bump(reject_sink, "missing_data")
+            return None
+        closed_trend = raw_trend.iloc[:-1].copy()
+
+        min_entry_history = max(SQZ_BB_LENGTH, SQZ_KC_LENGTH) + STRUCTURE_LEFT + STRUCTURE_RIGHT + 10
+        if len(closed) < min_entry_history or len(closed_trend) < 55:
+            _bump(reject_sink, "insufficient_history")
+            return None
+
+        entry_tf_minutes = _TF_MINUTES.get(ENTRY_TF, 30)
+        candle_close_time = closed.index[-1].to_pydatetime() + timedelta(minutes=entry_tf_minutes)
+        candle_age = (datetime.utcnow() - candle_close_time).total_seconds()
+        if candle_age < MIN_CANDLE_SETTLE_SECONDS:
+            _bump(reject_sink, "candle_not_settled")
+            return None
+
+        df = squeeze_momentum(closed)
+        last = df.iloc[-1]
+        if pd.isna(last["sqz_mom"]):
+            _bump(reject_sink, "insufficient_history")
+            return None
+
+        events, _trend, _pending_high, _pending_low = market_structure(df)
+        if not events:
+            _bump(reject_sink, "no_structure_break")
+            return None
+
+        last_idx = len(df) - 1
+        ev_idx, ev_type, broken_level, opp_level = events[-1]
+        if last_idx - ev_idx > STRUCTURE_LOOKBACK_BARS:
+            _bump(reject_sink, "structure_break_stale")
+            return None
+        if opp_level is None:
+            _bump(reject_sink, "no_stop_reference")
+            return None
+
+        price = float(last["close"])
+        mom = float(last["sqz_mom"])
+        prev_mom = float(df["sqz_mom"].iloc[-2])
+
+        bullish_break = ev_type in ("BOS_UP", "CHOCH_UP")
+        bearish_break = ev_type in ("BOS_DOWN", "CHOCH_DOWN")
+
+        if bullish_break and mom > 0:
+            direction = "LONG"
+            sl_ref = opp_level
+        elif bearish_break and mom < 0:
+            direction = "SHORT"
+            sl_ref = opp_level
+        else:
+            _bump(reject_sink, "momentum_disagrees")
+            return None
+
+        score = 0.0
+        reasons: list[str] = []
+
+        is_choch = ev_type in ("CHOCH_UP", "CHOCH_DOWN")
+        if is_choch:
+            score += 3.0
+            reasons.append(f"CHoCH {direction.lower()}")
+        else:
+            score += 2.0
+            reasons.append(f"BOS {direction.lower()}")
+
+        if bool(df["sqz_off"].iloc[-1]):
+            score += 3.0
+            reasons.append("squeeze fired this candle")
+        elif bool(df["sqz_off"].iloc[-(SQZ_LOOKBACK_BARS + 1):].any()):
+            score += 1.5
+            reasons.append(f"squeeze fired within {SQZ_LOOKBACK_BARS} candles")
+
+        if direction == "LONG" and mom > prev_mom:
+            score += 2.0
+            reasons.append("momentum rising")
+        elif direction == "SHORT" and mom < prev_mom:
+            score += 2.0
+            reasons.append("momentum falling")
+
+        trend_ema50 = calculate_ema(closed_trend["close"], 50)
+        trend_ema_val = float(trend_ema50.iloc[-1])
+        if not pd.isna(trend_ema_val):
+            trend_up = float(closed_trend["close"].iloc[-1]) > trend_ema_val
+            if (direction == "LONG" and trend_up) or (direction == "SHORT" and not trend_up):
+                score += 1.0
+                reasons.append("1h trend aligned")
+
+        vol_ma20 = df["volume"].rolling(20).mean()
+        vol_ratio = float(df["volume"].iloc[-1] / (vol_ma20.iloc[-1] + 1e-10))
+        if not pd.isna(vol_ratio) and vol_ratio >= 1.3:
+            score += 1.0
+            reasons.append(f"volume {vol_ratio:.1f}x avg")
+
+        if score < SIGNAL_SCORE_THRESHOLD:
+            _bump(reject_sink, "score_below_min")
+            return None
+
+        buffer = price * SL_BUFFER_PCT
+        if direction == "LONG":
+            structure_sl = sl_ref - buffer
+            structure_risk = price - structure_sl
+        else:
+            structure_sl = sl_ref + buffer
+            structure_risk = structure_sl - price
+
+        if structure_risk <= 0:
+            _bump(reject_sink, "invalid_structure_risk")
+            return None
+
+        structure_risk_pct = structure_risk / price
+        if structure_risk_pct > MAX_RISK_PCT:
+            _bump(reject_sink, "risk_too_wide")
+            return None
+        risk_pct = max(structure_risk_pct, MIN_RISK_PCT)
+        risk = price * risk_pct
+        reward = risk * RISK_REWARD_RATIO
+
+        if direction == "LONG":
+            sl = round(price - risk, 8)
+            tp = round(price + reward, 8)
+        else:
+            sl = round(price + risk, 8)
+            tp = round(price - reward, 8)
+
+        if not valid_trade_geometry(direction, price, tp, sl):
+            _bump(reject_sink, "invalid_geometry")
+            return None
+
+        tp_roi = risk_pct * RISK_REWARD_RATIO * LEVERAGE * 100.0
+        sl_roi = risk_pct * LEVERAGE * 100.0
+
+        return Signal(
+            symbol=symbol,
+            direction=direction,
+            entry_price=price,
+            tp_price=tp,
+            sl_price=sl,
+            leverage=LEVERAGE,
+            tp_roi_pct=round(tp_roi, 2),
+            sl_roi_pct=round(sl_roi, 2),
+            timeframe_summary=f"30m:{ev_type} 1h:Trend | {', '.join(reasons)}",
+            generated_at=datetime.now(timezone.utc),
+            rr=RISK_REWARD_RATIO,
+            score=round(score, 1),
+            entry_low=price,
+            entry_high=price,
+        )
+    except Exception as e:
+        logger.error("[SMC-SQZ-DETECT-ERROR] %s: %s", symbol, e, exc_info=True)
+        _bump(reject_sink, "error")
+        return None

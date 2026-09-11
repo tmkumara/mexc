@@ -54,34 +54,41 @@ MIN_24H_VOLUME_USD: float            = float(os.getenv("MIN_24H_VOLUME_USD", str
 MAX_SPREAD_PCT: float                = float(os.getenv("MAX_SPREAD_PCT", "0.35"))
 MIN_PRICE_CHANGE_24H_PCT: float      = float(os.getenv("MIN_PRICE_CHANGE_24H_PCT", "0.0"))
 
-# ── Strategy: Zero-Lag MTF Pullback v1 ──────────────────────────────
+# ── Strategy: SMC Structure + Squeeze Momentum v1 ───────────────────
+# Retired (Zero-Lag MTF Pullback v1) config below is intentionally left
+# defined but unused -- see backup/zero-lag-mtf-pullback-v1 for that
+# strategy. New vars below use distinct names rather than repurposing
+# MIN_SIGNAL_SCORE (0-100 there vs 0-10 here), ATR_PERIOD, MACRO_TF,
+# PULLBACK_TF, ZERO_LAG_*, TP_ROI_PCT/SL_ROI_PCT (fixed-% there vs
+# structure-derived + floored/capped here) -- CLAUDE.md documents this
+# repo has been bitten by exactly that kind of silent collision before.
 STRATEGY_NAME: str = os.getenv(
     "STRATEGY_NAME",
-    "Zero-Lag MTF Pullback v1",
+    "SMC Structure + Squeeze Momentum v1",
 )
 
-MACRO_TF: str    = os.getenv("MACRO_TF", "4h")
-TREND_TF: str    = os.getenv("TREND_TF", "1h")
-PULLBACK_TF: str = os.getenv("PULLBACK_TF", "15m")
-ENTRY_TF: str    = os.getenv("ENTRY_TF", "5m")
+MACRO_TF: str    = os.getenv("MACRO_TF", "4h")     # unused by this strategy
+TREND_TF: str    = os.getenv("TREND_TF", "1h")     # 1h EMA50 trend bias
+PULLBACK_TF: str = os.getenv("PULLBACK_TF", "15m") # unused by this strategy
+ENTRY_TF: str    = os.getenv("ENTRY_TF", "30m")    # structure + squeeze evaluated here
 
-MACRO_KLINE_COUNT: int    = int(os.getenv("MACRO_KLINE_COUNT", "300"))
-TREND_KLINE_COUNT: int    = int(os.getenv("TREND_KLINE_COUNT", "300"))
-PULLBACK_KLINE_COUNT: int = int(os.getenv("PULLBACK_KLINE_COUNT", "250"))
-ENTRY_KLINE_COUNT: int    = int(os.getenv("ENTRY_KLINE_COUNT", "250"))
+MACRO_KLINE_COUNT: int    = int(os.getenv("MACRO_KLINE_COUNT", "300"))   # unused by this strategy
+TREND_KLINE_COUNT: int    = int(os.getenv("TREND_KLINE_COUNT", "100"))
+PULLBACK_KLINE_COUNT: int = int(os.getenv("PULLBACK_KLINE_COUNT", "250"))   # unused by this strategy
+ENTRY_KLINE_COUNT: int    = int(os.getenv("ENTRY_KLINE_COUNT", "150"))
 
-ZERO_LAG_LENGTH: int         = int(os.getenv("ZERO_LAG_LENGTH", "70"))
-ZERO_LAG_BAND_LOOKBACK: int  = int(os.getenv("ZERO_LAG_BAND_LOOKBACK", "210"))
-ZERO_LAG_MULTIPLIER: float   = float(os.getenv("ZERO_LAG_MULTIPLIER", "1.2"))
-ZERO_LAG_SLOPE_LOOKBACK: int = int(os.getenv("ZERO_LAG_SLOPE_LOOKBACK", "5"))
+ZERO_LAG_LENGTH: int         = int(os.getenv("ZERO_LAG_LENGTH", "70"))          # unused by this strategy
+ZERO_LAG_BAND_LOOKBACK: int  = int(os.getenv("ZERO_LAG_BAND_LOOKBACK", "210"))  # unused by this strategy
+ZERO_LAG_MULTIPLIER: float   = float(os.getenv("ZERO_LAG_MULTIPLIER", "1.2"))   # unused by this strategy
+ZERO_LAG_SLOPE_LOOKBACK: int = int(os.getenv("ZERO_LAG_SLOPE_LOOKBACK", "5"))   # unused by this strategy
 
-ENTRY_BUFFER_PCT: float = float(os.getenv("ENTRY_BUFFER_PCT", "0.0002"))   # 0.02%, unchanged value/name
-PULLBACK_DISTANCE_PCT: float = float(os.getenv("PULLBACK_DISTANCE_PCT", "0.10")) / 100.0
-PENDING_EXPIRY_CANDLES: int = int(os.getenv("PENDING_EXPIRY_CANDLES", "6"))   # 6 x 5m = 30 min
+ENTRY_BUFFER_PCT: float = float(os.getenv("ENTRY_BUFFER_PCT", "0.0002"))   # unused by this strategy
+PULLBACK_DISTANCE_PCT: float = float(os.getenv("PULLBACK_DISTANCE_PCT", "0.10")) / 100.0   # unused by this strategy
+PENDING_EXPIRY_CANDLES: int = int(os.getenv("PENDING_EXPIRY_CANDLES", "6"))   # unused by this strategy
 
-ATR_PERIOD: int = int(os.getenv("ATR_PERIOD", "70"))   # feeds the zero-lag band, not a separate filter -- no ATR_MIN/MAX_PCT gate in this strategy
+ATR_PERIOD: int = int(os.getenv("ATR_PERIOD", "70"))   # unused by this strategy
 
-MIN_SIGNAL_SCORE: float = float(os.getenv("MIN_SIGNAL_SCORE", "80"))
+MIN_SIGNAL_SCORE: float = float(os.getenv("MIN_SIGNAL_SCORE", "80"))   # unused by this strategy -- see SIGNAL_SCORE_THRESHOLD (0-10 scale)
 
 # Minimum age (seconds) the last CLOSED candle must have before a signal
 # can fire on it. MEXC's kline REST data for a just-closed candle can still
@@ -90,13 +97,51 @@ MIN_CANDLE_SETTLE_SECONDS: int = int(os.getenv("MIN_CANDLE_SETTLE_SECONDS", "90"
 
 ENABLE_LONG_SIGNALS: bool = os.getenv("ENABLE_LONG_SIGNALS", "true").lower() == "true"
 
-LEVERAGE: int = int(os.getenv("LEVERAGE", "20"))   # unchanged
-TP_ROI_PCT: float = float(os.getenv("TP_ROI_PCT", "7.0"))   # unchanged default
-SL_ROI_PCT: float = float(os.getenv("SL_ROI_PCT", "10.0"))   # renamed from MAX_SL_ROI_PCT -- fixed, not a ceiling (no breakeven step in this strategy)
-TP_PRICE_PCT: float = TP_ROI_PCT / 100.0 / LEVERAGE
-SL_PRICE_PCT: float = SL_ROI_PCT / 100.0 / LEVERAGE
+LEVERAGE: int = int(os.getenv("LEVERAGE", "20"))
+TP_ROI_PCT: float = float(os.getenv("TP_ROI_PCT", "7.0"))    # unused by this strategy
+SL_ROI_PCT: float = float(os.getenv("SL_ROI_PCT", "10.0"))   # unused by this strategy
+TP_PRICE_PCT: float = TP_ROI_PCT / 100.0 / LEVERAGE   # unused by this strategy
+SL_PRICE_PCT: float = SL_ROI_PCT / 100.0 / LEVERAGE   # unused by this strategy
 
-SCAN_INTERVAL_MINUTES: int = int(os.getenv("SCAN_INTERVAL_MINUTES", "5"))
+# Hardcoded coin universe -- only these 5 (base coin, resolved to live
+# _USDT contracts by coin_scanner.get_whitelisted_pairs()). BTC/ETH stay
+# excluded via EXCLUDE_COINS above regardless.
+WHITELISTED_COINS: list[str] = [
+    c.strip().upper()
+    for c in os.getenv("WHITELISTED_COINS", "SOL,BNB,XRP,DOGE,ADA").split(",")
+    if c.strip()
+]
+
+RISK_REWARD_RATIO: float = float(os.getenv("RISK_REWARD_RATIO", "2.0"))   # fixed 1:2 on every signal
+
+# Every winning trade must return at least this much ROI on capital at
+# LEVERAGE, given RISK_REWARD_RATIO -- derived risk floor:
+#   risk_pct >= MIN_WIN_ROI_PCT / (LEVERAGE * RISK_REWARD_RATIO)
+MIN_WIN_ROI_PCT: float = float(os.getenv("MIN_WIN_ROI_PCT", "30.0"))
+MIN_RISK_PCT: float = MIN_WIN_ROI_PCT / 100.0 / (LEVERAGE * RISK_REWARD_RATIO)
+
+# Cap how much a losing trade can cost (ROI on capital at LEVERAGE)
+MAX_LOSS_ROI_PCT: float = float(os.getenv("MAX_LOSS_ROI_PCT", "40.0"))
+MAX_RISK_PCT: float = MAX_LOSS_ROI_PCT / 100.0 / LEVERAGE
+
+SL_BUFFER_PCT: float = float(os.getenv("SL_BUFFER_PCT", "0.15")) / 100.0   # small buffer beyond the swing point used for SL
+
+# Market structure (fractal swing pivots): bars required on each side to confirm a pivot
+STRUCTURE_LEFT: int = int(os.getenv("STRUCTURE_LEFT", "2"))
+STRUCTURE_RIGHT: int = int(os.getenv("STRUCTURE_RIGHT", "2"))
+STRUCTURE_LOOKBACK_BARS: int = int(os.getenv("STRUCTURE_LOOKBACK_BARS", "2"))   # BOS/CHoCH must be within the last N closed bars
+
+# Squeeze momentum (LazyBear SQZMOM, matches the live TradingView chart's
+# SQZMOM_LB settings 20/2/20/1.5)
+SQZ_BB_LENGTH: int = int(os.getenv("SQZ_BB_LENGTH", "20"))
+SQZ_BB_MULT: float = float(os.getenv("SQZ_BB_MULT", "2.0"))
+SQZ_KC_LENGTH: int = int(os.getenv("SQZ_KC_LENGTH", "20"))
+SQZ_KC_MULT: float = float(os.getenv("SQZ_KC_MULT", "1.5"))
+SQZ_LOOKBACK_BARS: int = int(os.getenv("SQZ_LOOKBACK_BARS", "4"))   # squeeze must have fired within the last N closed bars
+
+SIGNAL_SCORE_THRESHOLD: float = float(os.getenv("SIGNAL_SCORE_THRESHOLD", "7.0"))   # 0-10 scale
+
+SCAN_INTERVAL_MINUTES: int = int(os.getenv("SCAN_INTERVAL_MINUTES", "15"))
 
 MAX_DAILY_SIGNALS: int = int(os.getenv("MAX_DAILY_SIGNALS", "12"))
 MIN_DAILY_SIGNAL_GAP_MINUTES: int = int(os.getenv("MIN_DAILY_SIGNAL_GAP_MINUTES", "60"))

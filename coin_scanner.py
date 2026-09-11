@@ -41,6 +41,7 @@ from config import (
     COIN_RANK_LOW_ACTIVITY_PENALTY,
     QUOTE_CURRENCY,
     CRYPTO_FUTURES_ONLY,
+    WHITELISTED_COINS,
 )
 
 logger = logging.getLogger(__name__)
@@ -708,3 +709,62 @@ def get_last_refresh_at() -> datetime | None:
 
 def get_cached_valid_futures() -> set[str]:
     return set(_cached_valid_futures)
+
+
+def _is_whitelist_contract_active(contract: dict) -> bool:
+    """Active-state check for whitelisted contracts, deliberately NOT
+    reusing _is_contract_active -- that also applies EXCLUDE_COINS (which
+    by default includes SOL_USDT, excluded there for the ranked-pool
+    strategy but explicitly wanted here) and _is_crypto_symbol (irrelevant
+    -- the whitelist is already an explicit, curated inclusion list)."""
+    symbol = str(contract.get("symbol") or "").upper().strip()
+    if not symbol or not symbol.endswith(f"_{QUOTE_CURRENCY}"):
+        return False
+
+    state = contract.get("state")
+    if state is not None:
+        try:
+            if int(state) != 0:
+                return False
+        except Exception:
+            if str(state).lower().strip() not in ("0", "online", "enabled", "normal", "trading"):
+                return False
+
+    status = contract.get("status")
+    if status is not None and str(status).lower().strip() in {
+        "offline", "delisted", "suspend", "suspended", "disabled", "false",
+    }:
+        return False
+
+    return True
+
+
+def get_whitelisted_pairs() -> list[str]:
+    """Resolve config.WHITELISTED_COINS to live, active _USDT contracts.
+    Bypasses smart ranking / volume-based pool selection entirely -- used
+    by strategies that trade a fixed, hardcoded coin universe instead of
+    the ranked pool."""
+    try:
+        contracts = get_all_contracts()
+    except Exception as e:
+        logger.error("[WHITELIST] failed to fetch futures contracts: %s", e)
+        return []
+
+    by_base: dict[str, str] = {}
+    for contract in contracts:
+        symbol = str(contract.get("symbol") or "").upper().strip()
+        if not _is_whitelist_contract_active(contract):
+            continue
+        base = symbol.rsplit("_", 1)[0]
+        by_base[base] = symbol
+
+    pairs = []
+    for coin in WHITELISTED_COINS:
+        symbol = by_base.get(coin.upper())
+        if symbol:
+            pairs.append(symbol)
+        else:
+            logger.warning("[WHITELIST] %s not found/active on MEXC futures -- skipping", coin)
+
+    logger.info("[WHITELIST] Resolved pairs: %s", pairs)
+    return pairs
