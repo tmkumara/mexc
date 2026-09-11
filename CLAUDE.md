@@ -93,10 +93,10 @@ Runs every `OUTCOME_CHECK_MINUTES` (default 1). For each `pending` DB signal, fe
 | `MAX_LOSS_ROI_PCT` | 40.0 | Caps how much a losing trade can cost; derives `MAX_RISK_PCT = MAX_LOSS_ROI_PCT / LEVERAGE` — signals whose structure-derived stop is wider than this are rejected (`risk_too_wide`), not clamped |
 | `SL_BUFFER_PCT` | 0.15% | Small buffer added beyond the swing point used for SL, so price doesn't get stopped exactly at the wick |
 | `STRUCTURE_LEFT` / `STRUCTURE_RIGHT` | 2 / 2 | Bars required on each side to confirm a fractal swing pivot |
-| `STRUCTURE_LOOKBACK_BARS` | 2 | A BOS/CHoCH break must have occurred within the last N closed bars to still count as fresh |
+| `STRUCTURE_LOOKBACK_BARS` | 6 | A BOS/CHoCH break must have occurred within the last N closed bars to still count as fresh (~3h at 30m entries; widened from an initial 2 after live logs showed real breaks on the whitelist commonly sitting 4-13 bars old, missing the original 1h window entirely) |
 | `SQZ_BB_LENGTH` / `SQZ_BB_MULT` | 20 / 2.0 | Bollinger Band params for squeeze detection — matches the live TradingView SQZMOM_LB chart settings |
 | `SQZ_KC_LENGTH` / `SQZ_KC_MULT` | 20 / 1.5 | Keltner Channel params for squeeze detection — same chart settings |
-| `SQZ_LOOKBACK_BARS` | 4 | The squeeze must have fired (released) within the last N closed bars |
+| `SQZ_LOOKBACK_BARS` | 8 | The squeeze must have fired (released) within the last N closed bars (~4h at 30m entries; widened alongside `STRUCTURE_LOOKBACK_BARS`) |
 | `SIGNAL_SCORE_THRESHOLD` | 7.0 | 0–10 composite score gate (break quality + squeeze freshness + momentum strength + 1h trend + volume) — **unvalidated against real data**, deliberately distinct from the retired `MIN_SIGNAL_SCORE` (0–100 scale, different strategy) |
 | `LEVERAGE` | 20 | Bot's own position leverage |
 | `MIN_CANDLE_SETTLE_SECONDS` | 90 | Last closed `ENTRY_TF` candle must be at least this old before it's used — MEXC's kline data for a just-closed candle can still get revised shortly after close. Unlike the prior strategy, `scan_and_fire_signals` runs on a plain `IntervalTrigger` with no cron settle-offset trick — at 30m entries with a 15m scan cadence there's enough headroom that this simple gate inside `detect_signal` suffices |
