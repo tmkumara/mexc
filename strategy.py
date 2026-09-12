@@ -252,6 +252,15 @@ def detect_signal(symbol: str, reject_sink: dict | None = None) -> Signal | None
             _bump(reject_sink, "no_stop_reference")
             return None
 
+        # Hard freshness gate -- a squeeze release is the actual volatility
+        # -expansion trigger; requiring one within the window (not just
+        # scoring it as a bonus) avoids entering after the move has already
+        # played out and price is just drifting into expiry.
+        sqz_fired_recently = bool(df["sqz_off"].iloc[-(SQZ_LOOKBACK_BARS + 1):].any())
+        if not sqz_fired_recently:
+            _bump(reject_sink, "squeeze_not_fresh")
+            return None
+
         price = float(last["close"])
         mom = float(last["sqz_mom"])
         prev_mom = float(df["sqz_mom"].iloc[-2])
@@ -283,7 +292,7 @@ def detect_signal(symbol: str, reject_sink: dict | None = None) -> Signal | None
         if bool(df["sqz_off"].iloc[-1]):
             score += 3.0
             reasons.append("squeeze fired this candle")
-        elif bool(df["sqz_off"].iloc[-(SQZ_LOOKBACK_BARS + 1):].any()):
+        else:
             score += 1.5
             reasons.append(f"squeeze fired within {SQZ_LOOKBACK_BARS} candles")
 

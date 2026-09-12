@@ -129,7 +129,7 @@ SL_BUFFER_PCT: float = float(os.getenv("SL_BUFFER_PCT", "0.15")) / 100.0   # sma
 # Market structure (fractal swing pivots): bars required on each side to confirm a pivot
 STRUCTURE_LEFT: int = int(os.getenv("STRUCTURE_LEFT", "2"))
 STRUCTURE_RIGHT: int = int(os.getenv("STRUCTURE_RIGHT", "2"))
-STRUCTURE_LOOKBACK_BARS: int = int(os.getenv("STRUCTURE_LOOKBACK_BARS", "6"))   # BOS/CHoCH must be within the last N closed bars (~3h at 30m; widened from 2 after live logs showed real breaks commonly 4-13 bars old, missing the original 1h window)
+STRUCTURE_LOOKBACK_BARS: int = int(os.getenv("STRUCTURE_LOOKBACK_BARS", "3"))   # BOS/CHoCH must be within the last N closed bars (~1.5h at 30m). Was widened 2->6 to fix zero-signal droughts, then pulled back to 3 after the first 3 fired signals all expired (6h, no TP/SL) -- 6-bar-old confluence was stale, catching the tail of a move rather than its start
 
 # Squeeze momentum (LazyBear SQZMOM, matches the live TradingView chart's
 # SQZMOM_LB settings 20/2/20/1.5)
@@ -137,7 +137,7 @@ SQZ_BB_LENGTH: int = int(os.getenv("SQZ_BB_LENGTH", "20"))
 SQZ_BB_MULT: float = float(os.getenv("SQZ_BB_MULT", "2.0"))
 SQZ_KC_LENGTH: int = int(os.getenv("SQZ_KC_LENGTH", "20"))
 SQZ_KC_MULT: float = float(os.getenv("SQZ_KC_MULT", "1.5"))
-SQZ_LOOKBACK_BARS: int = int(os.getenv("SQZ_LOOKBACK_BARS", "8"))   # squeeze must have fired within the last N closed bars (~4h at 30m; widened alongside STRUCTURE_LOOKBACK_BARS)
+SQZ_LOOKBACK_BARS: int = int(os.getenv("SQZ_LOOKBACK_BARS", "4"))   # squeeze must have fired within the last N closed bars (~2h at 30m) -- now a HARD gate in detect_signal (was scoring-only), not just a bonus, since a stale squeeze release means the volatility-expansion trigger has likely already played out
 
 SIGNAL_SCORE_THRESHOLD: float = float(os.getenv("SIGNAL_SCORE_THRESHOLD", "7.0"))   # 0-10 scale
 
