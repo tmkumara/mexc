@@ -200,7 +200,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Monitor:     {_code(f'every {MONITOR_INTERVAL_MINUTES} min')}",
         f"Outcome chk: {_code(f'every {OUTCOME_CHECK_MINUTES} min')}",
         f"Cooldown:    {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
-        f"Expire:      {_code(f'{SIGNAL_EXPIRE_HOURS}h')}",
+        f"Timeout:     {_code(f'{SIGNAL_EXPIRE_HOURS}h')}",
         f"Daily cap:   {_code(f'{signals_today}/{MAX_DAILY_SIGNALS}  (min gap {MIN_DAILY_SIGNAL_GAP_MINUTES} min)')}",
         f"Active:      {_code(f'{active_long}/{MAX_ACTIVE_LONG_SIGNALS} LONG, {active_short}/{MAX_ACTIVE_SHORT_SIGNALS} SHORT')}",
         "━━━━━━━━━━━━━━━━━━━━",

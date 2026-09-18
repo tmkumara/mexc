@@ -14,6 +14,7 @@ def _stats(signals: list[dict]) -> dict:
     breakevens = [s for s in signals if s["status"] == "breakeven"]
     pending    = [s for s in signals if s["status"] == "pending"]
     expired    = [s for s in signals if s["status"] == "expired"]
+    timeouts   = [s for s in signals if s["status"] == "timeout"]
 
     win_count  = len(wins)
     loss_count = len(losses)
@@ -31,7 +32,7 @@ def _stats(signals: list[dict]) -> dict:
     return {
         "total": total,
         "wins": win_count, "losses": loss_count, "breakevens": len(breakevens),
-        "pending": len(pending), "expired": len(expired),
+        "pending": len(pending), "expired": len(expired), "timeouts": len(timeouts),
         "win_rate": win_rate, "net_roi": net_roi,
         "best": best, "worst": worst,
         "longs": len(longs), "shorts": len(shorts),
@@ -61,6 +62,7 @@ def _format_report(title: str, signals: list[dict]) -> str:
         f"⚖️ Breakeven:      `{s['breakevens']}`",
         f"⏳ Pending:        `{s['pending']}`",
         f"💤 Expired:        `{s['expired']}`",
+        f"⏱️ Timeouts:       `{s['timeouts']}`",
         "",
         f"🎯 Win rate:  `{s['win_rate']:.1f}%`  {_bar(s['win_rate'])}",
         f"{emoji} Net ROI:   `{sign}{s['net_roi']:.1f}%`",

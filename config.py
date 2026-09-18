@@ -154,7 +154,9 @@ MAX_ACTIVE_SHORT_SIGNALS: int = int(os.getenv("MAX_ACTIVE_SHORT_SIGNALS", "2"))
 SIGNALS_PER_SCAN: int = int(os.getenv("SIGNALS_PER_SCAN", "1"))
 SIGNAL_COOLDOWN_MINUTES: int = int(os.getenv("SIGNAL_COOLDOWN_MINUTES", "240"))
 
-SIGNAL_EXPIRE_HOURS: int = int(os.getenv("SIGNAL_EXPIRE_HOURS", "6"))
+# Keep a 30m setup open long enough for the expected expansion to complete.
+# The previous 6h window classified many later TP/SL outcomes as "expired".
+SIGNAL_EXPIRE_HOURS: int = int(os.getenv("SIGNAL_EXPIRE_HOURS", "24"))
 
 SCAN_WORKERS: int = int(os.getenv("SCAN_WORKERS", "4"))
 

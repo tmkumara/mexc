@@ -243,11 +243,14 @@ async def check_outcomes(app: Application) -> None:
             generated = generated.replace(tzinfo=timezone.utc)
 
         if (now - generated).total_seconds() > SIGNAL_EXPIRE_HOURS * 3600:
-            db.update_signal_outcome(sig["id"], "expired", 0.0)
-            logger.info("Signal %s expired (%s)", sig["id"], symbol)
+            # A live signal that never touched TP/SL within the observation
+            # window is a timeout, not an expired setup. Keep this separate so
+            # reports do not mistake an untested trade for a neutral outcome.
+            db.update_signal_outcome(sig["id"], "timeout", 0.0)
+            logger.info("Signal %s timed out (%s)", sig["id"], symbol)
             if not DRY_RUN:
                 try:
-                    await tg.notify_outcome(app, {**sig, "status": "expired", "pnl_roi": 0.0})
+                    await tg.notify_outcome(app, {**sig, "status": "timeout", "pnl_roi": 0.0})
                 except Exception as e:
                     logger.error("Failed to notify expiry for %s: %s", symbol, e)
             continue
