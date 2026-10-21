@@ -1,0 +1,62 @@
+2026-07-18 18:15:00,911 | INFO | Fetching 12 months of 5m klines for: ['BTC_USDT', 'ETH_USDT', 'SOL_USDT']
+2026-07-18 18:15:00,912 | INFO | [BTC_USDT] fetching 360 windows (12 months, 5m interval, 1440m chunks)
+2026-07-18 18:15:11,605 | INFO | [BTC_USDT] progress 20/360 windows, 5780 bars so far
+2026-07-18 18:15:22,412 | INFO | [BTC_USDT] progress 40/360 windows, 11560 bars so far
+2026-07-18 18:15:33,218 | INFO | [BTC_USDT] progress 60/360 windows, 17340 bars so far
+2026-07-18 18:15:44,026 | INFO | [BTC_USDT] progress 80/360 windows, 23120 bars so far
+2026-07-18 18:15:54,834 | INFO | [BTC_USDT] progress 100/360 windows, 28900 bars so far
+2026-07-18 18:16:05,676 | INFO | [BTC_USDT] progress 120/360 windows, 34680 bars so far
+2026-07-18 18:16:16,388 | INFO | [BTC_USDT] progress 140/360 windows, 40460 bars so far
+2026-07-18 18:16:27,362 | INFO | [BTC_USDT] progress 160/360 windows, 46240 bars so far
+2026-07-18 18:16:38,147 | INFO | [BTC_USDT] progress 180/360 windows, 52020 bars so far
+2026-07-18 18:16:48,930 | INFO | [BTC_USDT] progress 200/360 windows, 57800 bars so far
+2026-07-18 18:16:59,769 | INFO | [BTC_USDT] progress 220/360 windows, 63580 bars so far
+2026-07-18 18:17:10,623 | INFO | [BTC_USDT] progress 240/360 windows, 69360 bars so far
+2026-07-18 18:17:21,442 | INFO | [BTC_USDT] progress 260/360 windows, 75140 bars so far
+2026-07-18 18:17:32,146 | INFO | [BTC_USDT] progress 280/360 windows, 80920 bars so far
+2026-07-18 18:17:42,987 | INFO | [BTC_USDT] progress 300/360 windows, 86700 bars so far
+2026-07-18 18:17:53,693 | INFO | [BTC_USDT] progress 320/360 windows, 92480 bars so far
+2026-07-18 18:18:04,430 | INFO | [BTC_USDT] progress 340/360 windows, 98260 bars so far
+2026-07-18 18:18:15,137 | INFO | [BTC_USDT] progress 360/360 windows, 104040 bars so far
+2026-07-18 18:18:15,932 | INFO | [BTC_USDT] no gaps -- 103681 consecutive 5m bars
+2026-07-18 18:18:15,933 | INFO | [ETH_USDT] fetching 360 windows (12 months, 5m interval, 1440m chunks)
+2026-07-18 18:18:26,325 | INFO | [ETH_USDT] progress 20/360 windows, 5760 bars so far
+2026-07-18 18:18:37,028 | INFO | [ETH_USDT] progress 40/360 windows, 11520 bars so far
+2026-07-18 18:18:47,665 | INFO | [ETH_USDT] progress 60/360 windows, 17280 bars so far
+2026-07-18 18:18:58,526 | INFO | [ETH_USDT] progress 80/360 windows, 23040 bars so far
+2026-07-18 18:19:09,220 | INFO | [ETH_USDT] progress 100/360 windows, 28800 bars so far
+2026-07-18 18:19:19,967 | INFO | [ETH_USDT] progress 120/360 windows, 34560 bars so far
+2026-07-18 18:19:31,002 | INFO | [ETH_USDT] progress 140/360 windows, 40320 bars so far
+2026-07-18 18:19:41,731 | INFO | [ETH_USDT] progress 160/360 windows, 46080 bars so far
+2026-07-18 18:19:52,460 | INFO | [ETH_USDT] progress 180/360 windows, 51840 bars so far
+2026-07-18 18:20:03,113 | INFO | [ETH_USDT] progress 200/360 windows, 57600 bars so far
+2026-07-18 18:20:17,474 | INFO | [ETH_USDT] progress 220/360 windows, 63360 bars so far
+2026-07-18 18:20:28,182 | INFO | [ETH_USDT] progress 240/360 windows, 69120 bars so far
+2026-07-18 18:20:38,915 | INFO | [ETH_USDT] progress 260/360 windows, 74880 bars so far
+2026-07-18 18:20:49,701 | INFO | [ETH_USDT] progress 280/360 windows, 80640 bars so far
+2026-07-18 18:21:00,556 | INFO | [ETH_USDT] progress 300/360 windows, 86400 bars so far
+2026-07-18 18:21:11,281 | INFO | [ETH_USDT] progress 320/360 windows, 92160 bars so far
+2026-07-18 18:21:22,057 | INFO | [ETH_USDT] progress 340/360 windows, 97920 bars so far
+2026-07-18 18:21:32,790 | INFO | [ETH_USDT] progress 360/360 windows, 103680 bars so far
+2026-07-18 18:21:33,631 | INFO | [ETH_USDT] no gaps -- 103680 consecutive 5m bars
+2026-07-18 18:21:33,632 | INFO | [SOL_USDT] fetching 360 windows (12 months, 5m interval, 1440m chunks)
+2026-07-18 18:21:44,002 | INFO | [SOL_USDT] progress 20/360 windows, 5760 bars so far
+2026-07-18 18:21:54,723 | INFO | [SOL_USDT] progress 40/360 windows, 11520 bars so far
+2026-07-18 18:22:05,588 | INFO | [SOL_USDT] progress 60/360 windows, 17280 bars so far
+2026-07-18 18:22:16,316 | INFO | [SOL_USDT] progress 80/360 windows, 23040 bars so far
+2026-07-18 18:22:27,051 | INFO | [SOL_USDT] progress 100/360 windows, 28800 bars so far
+2026-07-18 18:22:37,674 | INFO | [SOL_USDT] progress 120/360 windows, 34560 bars so far
+2026-07-18 18:22:48,317 | INFO | [SOL_USDT] progress 140/360 windows, 40320 bars so far
+2026-07-18 18:22:58,998 | INFO | [SOL_USDT] progress 160/360 windows, 46080 bars so far
+2026-07-18 18:23:09,784 | INFO | [SOL_USDT] progress 180/360 windows, 51840 bars so far
+2026-07-18 18:23:20,607 | INFO | [SOL_USDT] progress 200/360 windows, 57600 bars so far
+2026-07-18 18:23:31,452 | INFO | [SOL_USDT] progress 220/360 windows, 63360 bars so far
+2026-07-18 18:23:42,173 | INFO | [SOL_USDT] progress 240/360 windows, 69120 bars so far
+2026-07-18 18:23:52,942 | INFO | [SOL_USDT] progress 260/360 windows, 74880 bars so far
+2026-07-18 18:24:03,901 | INFO | [SOL_USDT] progress 280/360 windows, 80640 bars so far
+2026-07-18 18:24:14,625 | INFO | [SOL_USDT] progress 300/360 windows, 86400 bars so far
+2026-07-18 18:24:25,365 | INFO | [SOL_USDT] progress 320/360 windows, 92160 bars so far
+2026-07-18 18:24:36,173 | INFO | [SOL_USDT] progress 340/360 windows, 97920 bars so far
+2026-07-18 18:24:47,199 | INFO | [SOL_USDT] progress 360/360 windows, 103680 bars so far
+2026-07-18 18:24:47,959 | INFO | [SOL_USDT] no gaps -- 103680 consecutive 5m bars
+2026-07-18 18:24:47,961 | INFO | Done. Report: /opt/signals/backtest/data/fetch_report.json

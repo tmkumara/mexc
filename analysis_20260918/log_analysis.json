@@ -1,0 +1,5213 @@
+{
+  "archive_inventory": [
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112739.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:27:25",
+      "last": "2026-06-22 11:27:27",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113607.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:35:53",
+      "last": "2026-06-22 11:35:55",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114350.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:43:36",
+      "last": "2026-06-22 11:43:39",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115604.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:55:50",
+      "last": "2026-06-22 11:55:53",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113156.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:31:42",
+      "last": "2026-06-22 11:31:44",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260725_214434.log",
+      "bytes": 20901,
+      "lines": 243,
+      "first": "2026-07-25 13:48:35",
+      "last": "2026-07-25 21:40:10",
+      "errors": [
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          1
+        ],
+        [
+          "Exception happened while polling for updates.",
+          1
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260721_065801.log",
+      "bytes": 71507,
+      "lines": 698,
+      "first": "2026-07-19 15:50:46",
+      "last": "2026-07-21 06:55:22",
+      "errors": [
+        [
+          "Error while getting Updates: Bad Gateway",
+          4
+        ],
+        [
+          "Exception happened while polling for updates.",
+          4
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121828.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:18:14",
+      "last": "2026-06-22 12:18:16",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260610_222903.log",
+      "bytes": 3537,
+      "lines": 39,
+      "first": "2026-06-10 22:28:40",
+      "last": "2026-06-10 22:28:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110828.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:08:14",
+      "last": "2026-06-22 11:08:16",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110249.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:02:35",
+      "last": "2026-06-22 11:02:37",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110911.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:08:57",
+      "last": "2026-06-22 11:09:00",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112643.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:26:29",
+      "last": "2026-06-22 11:26:31",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114621.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:46:06",
+      "last": "2026-06-22 11:46:09",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115714.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:57:00",
+      "last": "2026-06-22 11:57:02",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260704_024920.log",
+      "bytes": 1766,
+      "lines": 16,
+      "first": "2026-07-04 02:37:37",
+      "last": "2026-07-04 02:37:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114804.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:47:46",
+      "last": "2026-06-22 11:47:52",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121300.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:12:46",
+      "last": "2026-06-22 12:12:48",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115759.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:57:46",
+      "last": "2026-06-22 11:57:48",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120558.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:05:40",
+      "last": "2026-06-22 12:05:47",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110615.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:05:57",
+      "last": "2026-06-22 11:06:03",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260607_104357.log",
+      "bytes": 13147327,
+      "lines": 101543,
+      "first": "2026-06-06 01:49:51",
+      "last": "2026-06-07 10:43:55",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ],
+        [
+          "Failed to broadcast CHIP_USDT: Timed out",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115632.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:56:18",
+      "last": "2026-06-22 11:56:20",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113519.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:35:05",
+      "last": "2026-06-22 11:35:07",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110235.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:02:21",
+      "last": "2026-06-22 11:02:23",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115855.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:58:41",
+      "last": "2026-06-22 11:58:44",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260725_134835.log",
+      "bytes": 2204,
+      "lines": 22,
+      "first": "2026-07-25 13:46:55",
+      "last": "2026-07-25 13:47:03",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260726_115207.log",
+      "bytes": 54935,
+      "lines": 724,
+      "first": "2026-07-25 21:44:34",
+      "last": "2026-07-26 11:50:19",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          7
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          4
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          3
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120612.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:05:58",
+      "last": "2026-06-22 12:06:01",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_153930.log",
+      "bytes": 16681,
+      "lines": 177,
+      "first": "2026-06-05 15:34:17",
+      "last": "2026-06-05 15:38:18",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115950.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:59:37",
+      "last": "2026-06-22 11:59:39",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260801_064537.log",
+      "bytes": 136812,
+      "lines": 1039,
+      "first": "2026-07-31 00:26:14",
+      "last": "2026-08-01 06:45:14",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          10
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          7
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          3
+        ]
+      ],
+      "strategies": {
+        "Binocular Pending-Breakout v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111237.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:12:22",
+      "last": "2026-06-22 11:12:25",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111014.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:09:59",
+      "last": "2026-06-22 11:10:02",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121800.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:17:46",
+      "last": "2026-06-22 12:17:48",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111558.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:15:44",
+      "last": "2026-06-22 11:15:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121544.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:15:30",
+      "last": "2026-06-22 12:15:33",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_153343.log",
+      "bytes": 61795656,
+      "lines": 581791,
+      "first": "2026-04-06 12:12:45",
+      "last": "2026-06-05 15:33:11",
+      "errors": [
+        [
+          "[WS] Connection closed",
+          2882
+        ],
+        [
+          "Exception happened while polling for updates.",
+          149
+        ],
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          133
+        ],
+        [
+          "Error while getting Updates: httpx.ConnectError: [Errno -2] Name or service not known",
+          72
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          37
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          30
+        ],
+        [
+          "Failed to send signal for PENGU_USDT: Timed out",
+          10
+        ],
+        [
+          "Error analyzing SILVER_USDT: Unsupported interval: 3m",
+          7
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114026.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:40:12",
+      "last": "2026-06-22 11:40:14",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114520.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:45:02",
+      "last": "2026-06-22 11:45:09",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112347.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:23:33",
+      "last": "2026-06-22 11:23:35",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110730.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:07:12",
+      "last": "2026-06-22 11:07:18",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115242.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:52:28",
+      "last": "2026-06-22 11:52:31",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111222.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:12:08",
+      "last": "2026-06-22 11:12:11",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_225254.log",
+      "bytes": 79975,
+      "lines": 639,
+      "first": "2026-06-05 22:39:50",
+      "last": "2026-06-05 22:52:52",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260918_060151.log",
+      "bytes": 651060,
+      "lines": 6419,
+      "first": "2026-09-12 20:25:44",
+      "last": "2026-09-18 06:00:46",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          35
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          29
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          6
+        ]
+      ],
+      "strategies": {
+        "SMC Structure + Squeeze Momentum v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260911_123051.log",
+      "bytes": 3692,
+      "lines": 32,
+      "first": "2026-09-11 11:31:46",
+      "last": "2026-09-11 12:26:48",
+      "errors": [],
+      "strategies": {
+        "SMC Structure + Squeeze Momentum v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113901.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:38:47",
+      "last": "2026-06-22 11:38:49",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112827.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:28:12",
+      "last": "2026-06-22 11:28:15",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260912_064010.log",
+      "bytes": 95028,
+      "lines": 966,
+      "first": "2026-09-11 12:30:51",
+      "last": "2026-09-12 06:35:53",
+      "errors": [
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          5
+        ],
+        [
+          "Exception happened while polling for updates.",
+          5
+        ]
+      ],
+      "strategies": {
+        "SMC Structure + Squeeze Momentum v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112028.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:20:09",
+      "last": "2026-06-22 11:20:16",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120409.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:03:54",
+      "last": "2026-06-22 12:03:57",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_172859.log",
+      "bytes": 73082,
+      "lines": 824,
+      "first": "2026-06-05 17:23:24",
+      "last": "2026-06-05 17:28:26",
+      "errors": [
+        [
+          "Error evaluating pending setup 3: name '_atr_status' is not defined",
+          3
+        ],
+        [
+          "Error evaluating pending setup 2: name '_atr_status' is not defined",
+          3
+        ],
+        [
+          "Error evaluating pending setup 1: name '_atr_status' is not defined",
+          3
+        ],
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115000.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:49:46",
+      "last": "2026-06-22 11:49:49",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112116.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:21:02",
+      "last": "2026-06-22 11:21:04",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115439.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:54:25",
+      "last": "2026-06-22 11:54:28",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111854.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:18:40",
+      "last": "2026-06-22 11:18:42",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121246.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:12:32",
+      "last": "2026-06-22 12:12:34",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121342.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:13:28",
+      "last": "2026-06-22 12:13:30",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115019.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:50:00",
+      "last": "2026-06-22 11:50:07",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120712.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:06:58",
+      "last": "2026-06-22 12:07:00",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120441.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:04:23",
+      "last": "2026-06-22 12:04:29",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111251.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:12:37",
+      "last": "2026-06-22 11:12:39",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111954.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:19:40",
+      "last": "2026-06-22 11:19:43",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260716_010033.log",
+      "bytes": 31729,
+      "lines": 343,
+      "first": "2026-07-15 17:32:32",
+      "last": "2026-07-16 01:00:05",
+      "errors": [
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          2
+        ],
+        [
+          "Exception happened while polling for updates.",
+          2
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120753.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:07:40",
+      "last": "2026-06-22 12:07:42",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114404.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:43:50",
+      "last": "2026-06-22 11:43:53",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115200.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:51:45",
+      "last": "2026-06-22 11:51:48",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114919.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:49:01",
+      "last": "2026-06-22 11:49:07",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260618_151313.log",
+      "bytes": 77428240,
+      "lines": 792320,
+      "first": "2026-06-11 21:48:01",
+      "last": "2026-06-18 15:13:07",
+      "errors": [
+        [
+          "[ENTRY-REJECT] RIF_USDT LONG invalid geometry entry=0.10128 tp=0.1004116 sl=0.0975442",
+          45
+        ],
+        [
+          "[ENTRY-REJECT] ESPORTS_USDT SHORT invalid geometry entry=0.06234 tp=0.0628059 sl=0.06483705",
+          45
+        ],
+        [
+          "[ENTRY-REJECT] ESPORTS_USDT SHORT invalid geometry entry=0.06236 tp=0.0628059 sl=0.06483705",
+          38
+        ],
+        [
+          "[WS] Connection closed code=1006 reason=",
+          26
+        ],
+        [
+          "[ENTRY-REJECT] LAB_USDT LONG invalid geometry entry=13.872 tp=13.864001 sl=13.3615",
+          25
+        ],
+        [
+          "[ENTRY-REJECT] NEAR_USDT LONG invalid geometry entry=2.487 tp=2.4817742 sl=2.4341129",
+          20
+        ],
+        [
+          "[ENTRY-REJECT] LAB_USDT LONG invalid geometry entry=13.538 tp=13.496905 sl=13.056048",
+          20
+        ],
+        [
+          "[ENTRY-REJECT] LAB_USDT LONG invalid geometry entry=14.3 tp=14.244661 sl=13.92267",
+          20
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260718_221620.log",
+      "bytes": 2412,
+      "lines": 23,
+      "first": "2026-07-18 22:13:51",
+      "last": "2026-07-18 22:15:26",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_122020.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:20:05",
+      "last": "2026-06-22 12:20:08",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114703.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:46:49",
+      "last": "2026-06-22 11:46:51",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260610_221409.log",
+      "bytes": 4072,
+      "lines": 44,
+      "first": "2026-06-10 22:13:38",
+      "last": "2026-06-10 22:13:47",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113915.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:39:01",
+      "last": "2026-06-22 11:39:04",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115034.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:50:19",
+      "last": "2026-06-22 11:50:22",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121218.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:12:04",
+      "last": "2026-06-22 12:12:06",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120857.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:08:39",
+      "last": "2026-06-22 12:08:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121447.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:14:29",
+      "last": "2026-06-22 12:14:36",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120912.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:08:57",
+      "last": "2026-06-22 12:08:59",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260607_104618.log",
+      "bytes": 229,
+      "lines": 3,
+      "first": "2026-06-07 10:43:57",
+      "last": "2026-06-07 10:43:57",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110515.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:05:01",
+      "last": "2026-06-22 11:05:03",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114040.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:40:26",
+      "last": "2026-06-22 11:40:29",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260809_113535.log",
+      "bytes": 708116,
+      "lines": 4042,
+      "first": "2026-08-01 06:45:37",
+      "last": "2026-08-09 11:35:09",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          23
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          19
+        ],
+        [
+          "Error while getting Updates: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running",
+          3
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          1
+        ]
+      ],
+      "strategies": {
+        "Binocular Pending-Breakout v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120033.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:00:19",
+      "last": "2026-06-22 12:00:21",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_223529.log",
+      "bytes": 4812331,
+      "lines": 59234,
+      "first": "2026-06-05 17:28:59",
+      "last": "2026-06-05 22:35:27",
+      "errors": [
+        [
+          "Error evaluating pending setup 6: name '_atr_status' is not defined",
+          120
+        ],
+        [
+          "Error evaluating pending setup 5: name '_atr_status' is not defined",
+          120
+        ],
+        [
+          "Error evaluating pending setup 9: name '_atr_status' is not defined",
+          120
+        ],
+        [
+          "Error evaluating pending setup 8: name '_atr_status' is not defined",
+          120
+        ],
+        [
+          "Error evaluating pending setup 7: name '_atr_status' is not defined",
+          120
+        ],
+        [
+          "Error evaluating pending setup 10: name '_atr_status' is not defined",
+          120
+        ],
+        [
+          "Error evaluating pending setup 12: name '_atr_status' is not defined",
+          120
+        ],
+        [
+          "Error evaluating pending setup 11: name '_atr_status' is not defined",
+          120
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_214543.log",
+      "bytes": 5742016,
+      "lines": 58107,
+      "first": "2026-06-09 10:50:50",
+      "last": "2026-06-09 21:45:38",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 10:53:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 10:55:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 10:57:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 10:59:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 11:01:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 11:03:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 11:05:00 +0530)\" skipped: maximum number of running ",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111908.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:18:54",
+      "last": "2026-06-22 11:18:57",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260610_222840.log",
+      "bytes": 131761,
+      "lines": 1341,
+      "first": "2026-06-10 22:14:09",
+      "last": "2026-06-10 22:28:29",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:16:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:18:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:20:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:22:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:24:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:26:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:28:00 +0530)\" skipped: maximum number of running ",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115813.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:57:59",
+      "last": "2026-06-22 11:58:02",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115412.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:53:57",
+      "last": "2026-06-22 11:54:00",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112812.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:27:57",
+      "last": "2026-06-22 11:28:00",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121856.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:18:42",
+      "last": "2026-06-22 12:18:44",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113621.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:36:07",
+      "last": "2026-06-22 11:36:10",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110712.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:06:58",
+      "last": "2026-06-22 11:07:00",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_222324.log",
+      "bytes": 400759,
+      "lines": 4300,
+      "first": "2026-06-09 21:46:47",
+      "last": "2026-06-09 22:23:23",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ],
+        [
+          "Run time of job \"check_outcomes (trigger: interval[0:01:00], next run at: 2026-06-09 22:07:08 +0530)\" was missed by 0:00:36.393121",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 22:07:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 22:21:00 +0530)\" skipped: maximum number of running ",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111112.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:10:57",
+      "last": "2026-06-22 11:11:00",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_222357.log",
+      "bytes": 4898,
+      "lines": 54,
+      "first": "2026-06-09 22:23:24",
+      "last": "2026-06-09 22:23:34",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260719_092247.log",
+      "bytes": 2054,
+      "lines": 21,
+      "first": "2026-07-19 09:21:41",
+      "last": "2026-07-19 09:21:49",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120526.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:05:08",
+      "last": "2026-06-22 12:05:14",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114746.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:47:31",
+      "last": "2026-06-22 11:47:34",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120454.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:04:41",
+      "last": "2026-06-22 12:04:43",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260630_061619.log",
+      "bytes": 3483223,
+      "lines": 27786,
+      "first": "2026-06-28 19:05:30",
+      "last": "2026-06-30 06:15:21",
+      "errors": [
+        [
+          "Execution of job \"run_trigger_check (trigger: interval[0:00:02], next run at: 2026-06-29 04:00:17 +0530)\" skipped: maximum number of running",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115425.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:54:12",
+      "last": "2026-06-22 11:54:14",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260719_154338.log",
+      "bytes": 2047,
+      "lines": 21,
+      "first": "2026-07-19 15:43:00",
+      "last": "2026-07-19 15:43:09",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110417.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:04:03",
+      "last": "2026-06-22 11:04:05",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260704_020752.log",
+      "bytes": 8956,
+      "lines": 75,
+      "first": "2026-07-03 18:36:07",
+      "last": "2026-07-04 02:01:09",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120215.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:02:01",
+      "last": "2026-06-22 12:02:03",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260701_121230.log",
+      "bytes": 1696,
+      "lines": 14,
+      "first": "2026-07-01 12:11:34",
+      "last": "2026-07-01 12:11:48",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121516.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:15:02",
+      "last": "2026-06-22 12:15:05",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260606_014950.log",
+      "bytes": 601330,
+      "lines": 4742,
+      "first": "2026-06-06 00:00:39",
+      "last": "2026-06-06 01:47:43",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260607_111157.log",
+      "bytes": 121806,
+      "lines": 820,
+      "first": "2026-06-07 10:47:16",
+      "last": "2026-06-07 11:11:18",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112102.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:20:42",
+      "last": "2026-06-22 11:20:50",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113505.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:34:51",
+      "last": "2026-06-22 11:34:53",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112531.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:25:16",
+      "last": "2026-06-22 11:25:19",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260607_125036.log",
+      "bytes": 4715,
+      "lines": 28,
+      "first": "2026-06-07 12:50:21",
+      "last": "2026-06-07 12:50:36",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121132.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:11:18",
+      "last": "2026-06-22 12:11:21",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112657.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:26:43",
+      "last": "2026-06-22 11:26:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111420.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:14:02",
+      "last": "2026-06-22 11:14:09",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260809_113823.log",
+      "bytes": 1959,
+      "lines": 19,
+      "first": "2026-08-09 11:37:29",
+      "last": "2026-08-09 11:37:38",
+      "errors": [],
+      "strategies": {
+        "Precision Pullback Scalper v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113044.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:30:25",
+      "last": "2026-06-22 11:30:32",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113011.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:29:57",
+      "last": "2026-06-22 11:29:59",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260711_220035.log",
+      "bytes": 32047,
+      "lines": 299,
+      "first": "2026-07-09 14:32:08",
+      "last": "2026-07-11 08:31:08",
+      "errors": [
+        [
+          "Error while getting Updates: Bad Gateway",
+          2
+        ],
+        [
+          "Exception happened while polling for updates.",
+          2
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260727_232345.log",
+      "bytes": 2316,
+      "lines": 23,
+      "first": "2026-07-27 23:15:22",
+      "last": "2026-07-27 23:20:24",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260731_002155.log",
+      "bytes": 84549,
+      "lines": 962,
+      "first": "2026-07-30 01:07:28",
+      "last": "2026-07-31 00:20:12",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          8
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          5
+        ],
+        [
+          "Error while getting Updates: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running",
+          2
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          1
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113819.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:38:06",
+      "last": "2026-06-22 11:38:08",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110630.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:06:15",
+      "last": "2026-06-22 11:06:18",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113437.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:34:22",
+      "last": "2026-06-22 11:34:25",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110529.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:05:15",
+      "last": "2026-06-22 11:05:17",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110348.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:03:33",
+      "last": "2026-06-22 11:03:36",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112143.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:21:29",
+      "last": "2026-06-22 11:21:32",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260730_010728.log",
+      "bytes": 3548,
+      "lines": 36,
+      "first": "2026-07-30 00:24:38",
+      "last": "2026-07-30 01:05:05",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120312.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:02:58",
+      "last": "2026-06-22 12:03:01",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112615.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:26:00",
+      "last": "2026-06-22 11:26:03",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_212850.log",
+      "bytes": 8809,
+      "lines": 89,
+      "first": "2026-06-22 16:24:56",
+      "last": "2026-06-22 21:15:00",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ],
+        [
+          "[WS-PRICE:0] connection closed code=1006 reason=",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110333.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:03:17",
+      "last": "2026-06-22 11:03:21",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110543.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:05:29",
+      "last": "2026-06-22 11:05:31",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121746.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:17:32",
+      "last": "2026-06-22 12:17:34",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113215.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:31:56",
+      "last": "2026-06-22 11:32:03",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113058.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:30:44",
+      "last": "2026-06-22 11:30:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113313.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:32:59",
+      "last": "2026-06-22 11:33:01",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111711.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:16:56",
+      "last": "2026-06-22 11:16:59",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113707.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:36:49",
+      "last": "2026-06-22 11:36:55",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260718_221100.log",
+      "bytes": 215103,
+      "lines": 1490,
+      "first": "2026-07-16 01:13:31",
+      "last": "2026-07-18 22:10:14",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          7
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          4
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          3
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111154.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:11:40",
+      "last": "2026-06-22 11:11:42",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260611_214801.log",
+      "bytes": 11885253,
+      "lines": 120563,
+      "first": "2026-06-10 22:29:03",
+      "last": "2026-06-11 21:47:57",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:31:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:33:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:35:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:37:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:39:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:41:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-10 22:43:00 +0530)\" skipped: maximum number of running ",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115453.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:54:39",
+      "last": "2026-06-22 11:54:42",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120423.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:04:09",
+      "last": "2026-06-22 12:04:11",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121842.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:18:28",
+      "last": "2026-06-22 12:18:30",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121105.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:10:47",
+      "last": "2026-06-22 12:10:53",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113847.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:38:33",
+      "last": "2026-06-22 11:38:35",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113649.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:36:35",
+      "last": "2026-06-22 11:36:37",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115131.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:51:17",
+      "last": "2026-06-22 11:51:19",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112600.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:25:45",
+      "last": "2026-06-22 11:25:48",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114818.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:48:04",
+      "last": "2026-06-22 11:48:06",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113025.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:30:11",
+      "last": "2026-06-22 11:30:13",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260731_002355.log",
+      "bytes": 2138,
+      "lines": 22,
+      "first": "2026-07-31 00:21:55",
+      "last": "2026-07-31 00:22:00",
+      "errors": [],
+      "strategies": {
+        "Binocular Pending-Breakout v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111614.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:15:58",
+      "last": "2026-06-22 11:16:02",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260715_173232.log",
+      "bytes": 2055,
+      "lines": 21,
+      "first": "2026-07-15 17:27:19",
+      "last": "2026-07-15 17:30:05",
+      "errors": [],
+      "strategies": {
+        "VP-OB Confluence (4H VP + 1H Order Block)": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120244.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:02:29",
+      "last": "2026-06-22 12:02:33",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113127.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:31:13",
+      "last": "2026-06-22 11:31:16",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110303.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:02:49",
+      "last": "2026-06-22 11:02:51",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121947.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:19:29",
+      "last": "2026-06-22 12:19:35",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120326.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:03:12",
+      "last": "2026-06-22 12:03:14",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114635.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:46:21",
+      "last": "2026-06-22 11:46:23",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111126.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:11:12",
+      "last": "2026-06-22 11:11:14",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111448.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:14:34",
+      "last": "2026-06-22 11:14:36",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115215.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:52:00",
+      "last": "2026-06-22 11:52:03",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260628_190530.log",
+      "bytes": 2265,
+      "lines": 21,
+      "first": "2026-06-28 19:02:23",
+      "last": "2026-06-28 19:02:35",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110745.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:07:30",
+      "last": "2026-06-22 11:07:33",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121118.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:11:05",
+      "last": "2026-06-22 12:11:07",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110944.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:09:30",
+      "last": "2026-06-22 11:09:32",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114433.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:44:17",
+      "last": "2026-06-22 11:44:21",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111826.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:18:12",
+      "last": "2026-06-22 11:18:15",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113720.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:37:07",
+      "last": "2026-06-22 11:37:09",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260730_002438.log",
+      "bytes": 70917,
+      "lines": 640,
+      "first": "2026-07-29 06:06:16",
+      "last": "2026-07-30 00:20:15",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          5
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          3
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          2
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121232.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:12:18",
+      "last": "2026-06-22 12:12:20",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_233515.log",
+      "bytes": 82602,
+      "lines": 654,
+      "first": "2026-06-05 23:17:51",
+      "last": "2026-06-05 23:35:15",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_011731.log",
+      "bytes": 108441,
+      "lines": 1228,
+      "first": "2026-06-09 01:13:15",
+      "last": "2026-06-09 01:17:28",
+      "errors": [
+        [
+          "Error evaluating pending setup 2373: name 'MSS_BREAK_BUFFER_PCT' is not defined",
+          3
+        ],
+        [
+          "Error evaluating pending setup 2426: name 'MSS_BREAK_BUFFER_PCT' is not defined",
+          3
+        ],
+        [
+          "Error evaluating pending setup 2397: name 'MSS_BREAK_BUFFER_PCT' is not defined",
+          3
+        ],
+        [
+          "Error evaluating pending setup 2395: name 'MSS_BREAK_BUFFER_PCT' is not defined",
+          3
+        ],
+        [
+          "Error evaluating pending setup 2392: name 'MSS_BREAK_BUFFER_PCT' is not defined",
+          3
+        ],
+        [
+          "Error evaluating pending setup 2389: name 'MSS_BREAK_BUFFER_PCT' is not defined",
+          3
+        ],
+        [
+          "Error evaluating pending setup 2378: name 'MSS_BREAK_BUFFER_PCT' is not defined",
+          3
+        ],
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111434.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:14:20",
+      "last": "2026-06-22 11:14:22",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260725_134655.log",
+      "bytes": 4520,
+      "lines": 47,
+      "first": "2026-07-25 12:17:45",
+      "last": "2026-07-25 13:45:22",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111029.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:10:14",
+      "last": "2026-06-22 11:10:17",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120100.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:00:46",
+      "last": "2026-06-22 12:00:49",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112924.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:29:10",
+      "last": "2026-06-22 11:29:12",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114012.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:39:57",
+      "last": "2026-06-22 11:40:00",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260727_231154.log",
+      "bytes": 109433,
+      "lines": 1313,
+      "first": "2026-07-26 11:52:29",
+      "last": "2026-07-27 23:10:21",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          15
+        ],
+        [
+          "Error while getting Updates: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running",
+          10
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          4
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          1
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111333.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:13:19",
+      "last": "2026-06-22 11:13:21",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120229.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:02:15",
+      "last": "2026-06-22 12:02:17",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121047.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:10:28",
+      "last": "2026-06-22 12:10:35",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111348.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:13:33",
+      "last": "2026-06-22 11:13:36",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111840.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:18:26",
+      "last": "2026-06-22 11:18:28",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110930.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:09:11",
+      "last": "2026-06-22 11:09:19",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120626.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:06:12",
+      "last": "2026-06-22 12:06:15",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260729_060616.log",
+      "bytes": 127206,
+      "lines": 1195,
+      "first": "2026-07-27 23:23:45",
+      "last": "2026-07-29 06:05:16",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          8
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          7
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          1
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114254.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:42:41",
+      "last": "2026-06-22 11:42:43",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114901.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:48:47",
+      "last": "2026-06-22 11:48:49",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_011315.log",
+      "bytes": 2631,
+      "lines": 27,
+      "first": "2026-06-09 01:12:58",
+      "last": "2026-06-09 01:13:04",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115732.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:57:14",
+      "last": "2026-06-22 11:57:20",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115746.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:57:32",
+      "last": "2026-06-22 11:57:34",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111739.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:17:25",
+      "last": "2026-06-22 11:17:27",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112545.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:25:31",
+      "last": "2026-06-22 11:25:33",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111319.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:13:05",
+      "last": "2026-06-22 11:13:07",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112230.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:22:13",
+      "last": "2026-06-22 11:22:19",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110814.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:07:59",
+      "last": "2026-06-22 11:08:02",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114309.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:42:54",
+      "last": "2026-06-22 11:42:57",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115909.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:58:55",
+      "last": "2026-06-22 11:58:57",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_171858.log",
+      "bytes": 930059,
+      "lines": 9918,
+      "first": "2026-06-05 15:39:32",
+      "last": "2026-06-05 17:13:37",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114717.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:47:03",
+      "last": "2026-06-22 11:47:05",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260731_002614.log",
+      "bytes": 2367,
+      "lines": 23,
+      "first": "2026-07-31 00:23:55",
+      "last": "2026-07-31 00:25:09",
+      "errors": [],
+      "strategies": {
+        "Binocular Pending-Breakout v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111812.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:17:53",
+      "last": "2026-06-22 11:18:00",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115357.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:53:43",
+      "last": "2026-06-22 11:53:45",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_010237.log",
+      "bytes": 71814,
+      "lines": 472,
+      "first": "2026-06-09 00:52:58",
+      "last": "2026-06-09 00:55:54",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260721_123742.log",
+      "bytes": 11436,
+      "lines": 106,
+      "first": "2026-07-21 06:58:01",
+      "last": "2026-07-21 12:35:22",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114731.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:47:17",
+      "last": "2026-06-22 11:47:20",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260703_022436.log",
+      "bytes": 120865,
+      "lines": 1185,
+      "first": "2026-07-01 12:12:30",
+      "last": "2026-07-03 02:15:09",
+      "errors": [
+        [
+          "Error while getting Updates: Bad Gateway",
+          3
+        ],
+        [
+          "Exception happened while polling for updates.",
+          3
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_003916.log",
+      "bytes": 13328166,
+      "lines": 92750,
+      "first": "2026-06-07 12:50:36",
+      "last": "2026-06-09 00:39:00",
+      "errors": [
+        [
+          "Error while getting Updates: Bad Gateway",
+          1
+        ],
+        [
+          "Exception happened while polling for updates.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113734.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:37:20",
+      "last": "2026-06-22 11:37:23",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120258.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:02:44",
+      "last": "2026-06-22 12:02:47",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120128.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:01:15",
+      "last": "2026-06-22 12:01:17",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121732.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:17:18",
+      "last": "2026-06-22 12:17:21",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121622.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:16:03",
+      "last": "2026-06-22 12:16:10",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114323.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:43:09",
+      "last": "2026-06-22 11:43:11",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260726_115229.log",
+      "bytes": 2202,
+      "lines": 22,
+      "first": "2026-07-26 11:52:07",
+      "last": "2026-07-26 11:52:15",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111140.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:11:26",
+      "last": "2026-06-22 11:11:28",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115103.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:50:48",
+      "last": "2026-06-22 11:50:51",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260610_221338.log",
+      "bytes": 12140762,
+      "lines": 123794,
+      "first": "2026-06-09 22:23:57",
+      "last": "2026-06-10 22:13:31",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          4
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          2
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          2
+        ],
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 22:26:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 22:28:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 22:30:00 +0530)\" skipped: maximum number of running ",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_setups (trigger: cron[minute='*/1'], next run at: 2026-06-09 22:32:00 +0530)\" skipped: maximum number of running ",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120726.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:07:12",
+      "last": "2026-06-22 12:07:14",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111628.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:16:14",
+      "last": "2026-06-22 11:16:17",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113957.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:39:43",
+      "last": "2026-06-22 11:39:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_011258.log",
+      "bytes": 134675,
+      "lines": 1638,
+      "first": "2026-06-09 01:08:30",
+      "last": "2026-06-09 01:12:52",
+      "errors": [
+        [
+          "Error evaluating pending setup 2322: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2334: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2347: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2356: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2372: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2373: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2378: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2383: name '_atr_status' is not defined",
+          4
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121704.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:16:50",
+      "last": "2026-06-22 12:16:52",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112009.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:19:54",
+      "last": "2026-06-22 11:19:57",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_230223.log",
+      "bytes": 23855,
+      "lines": 188,
+      "first": "2026-06-05 22:58:26",
+      "last": "2026-06-05 23:01:30",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121814.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:18:00",
+      "last": "2026-06-22 12:18:03",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121603.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:15:44",
+      "last": "2026-06-22 12:15:52",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115618.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:56:04",
+      "last": "2026-06-22 11:56:07",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121204.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:11:46",
+      "last": "2026-06-22 12:11:52",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113244.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:32:29",
+      "last": "2026-06-22 11:32:32",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114109.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:40:55",
+      "last": "2026-06-22 11:40:57",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112943.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:29:24",
+      "last": "2026-06-22 11:29:31",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_231440.log",
+      "bytes": 62624,
+      "lines": 492,
+      "first": "2026-06-05 23:02:23",
+      "last": "2026-06-05 23:14:26",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115117.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:51:03",
+      "last": "2026-06-22 11:51:05",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120354.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:03:40",
+      "last": "2026-06-22 12:03:42",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114447.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:44:33",
+      "last": "2026-06-22 11:44:36",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112430.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:24:15",
+      "last": "2026-06-22 11:24:18",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260714_210828.log",
+      "bytes": 590727,
+      "lines": 6253,
+      "first": "2026-07-11 22:35:56",
+      "last": "2026-07-14 20:07:04",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          16
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          9
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          7
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_234535.log",
+      "bytes": 49664,
+      "lines": 397,
+      "first": "2026-06-05 23:35:17",
+      "last": "2026-06-05 23:45:34",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_172324.log",
+      "bytes": 76168,
+      "lines": 844,
+      "first": "2026-06-05 17:18:58",
+      "last": "2026-06-05 17:23:00",
+      "errors": [
+        [
+          "Error evaluating pending setup 2: name '_atr_status' is not defined",
+          3
+        ],
+        [
+          "Error evaluating pending setup 1: name '_atr_status' is not defined",
+          3
+        ],
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260701_121134.log",
+      "bytes": 1696,
+      "lines": 14,
+      "first": "2026-07-01 12:04:47",
+      "last": "2026-07-01 12:04:57",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_005258.log",
+      "bytes": 277573,
+      "lines": 1814,
+      "first": "2026-06-09 00:39:16",
+      "last": "2026-06-09 00:52:04",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115827.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:58:13",
+      "last": "2026-06-22 11:58:15",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113534.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:35:19",
+      "last": "2026-06-22 11:35:22",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_105050.log",
+      "bytes": 30157650,
+      "lines": 329865,
+      "first": "2026-06-09 01:17:31",
+      "last": "2026-06-09 10:50:35",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ],
+        [
+          "[WS] Connection closed code=1006 reason=",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120201.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:01:43",
+      "last": "2026-06-22 12:01:49",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120822.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:08:08",
+      "last": "2026-06-22 12:08:10",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115343.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:53:29",
+      "last": "2026-06-22 11:53:31",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121028.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:10:13",
+      "last": "2026-06-22 12:10:17",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115048.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:50:34",
+      "last": "2026-06-22 11:50:37",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110959.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:09:44",
+      "last": "2026-06-22 11:09:47",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114055.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:40:40",
+      "last": "2026-06-22 11:40:43",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121530.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:15:16",
+      "last": "2026-06-22 12:15:19",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113752.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:37:34",
+      "last": "2026-06-22 11:37:41",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121328.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:13:14",
+      "last": "2026-06-22 12:13:16",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112246.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:22:30",
+      "last": "2026-06-22 11:22:34",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112301.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:22:46",
+      "last": "2026-06-22 11:22:49",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114241.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:42:22",
+      "last": "2026-06-22 11:42:29",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120115.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:01:00",
+      "last": "2026-06-22 12:01:03",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115550.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:55:35",
+      "last": "2026-06-22 11:55:39",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260718_221351.log",
+      "bytes": 1968,
+      "lines": 20,
+      "first": "2026-07-18 22:11:00",
+      "last": "2026-07-18 22:11:08",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120019.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:59:50",
+      "last": "2026-06-22 12:00:08",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120340.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:03:26",
+      "last": "2026-06-22 12:03:28",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260704_023737.log",
+      "bytes": 1771,
+      "lines": 16,
+      "first": "2026-07-04 02:07:52",
+      "last": "2026-07-04 02:08:01",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113229.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:32:15",
+      "last": "2026-06-22 11:32:18",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112711.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:26:57",
+      "last": "2026-06-22 11:26:59",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260707_061826.log",
+      "bytes": 81012,
+      "lines": 847,
+      "first": "2026-07-04 02:49:20",
+      "last": "2026-07-07 06:00:08",
+      "errors": [
+        [
+          "Error while getting Updates: Bad Gateway",
+          11
+        ],
+        [
+          "Exception happened while polling for updates.",
+          11
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260703_101014.log",
+      "bytes": 4086,
+      "lines": 35,
+      "first": "2026-07-03 09:48:36",
+      "last": "2026-07-03 10:01:14",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_122035.log",
+      "bytes": 1213,
+      "lines": 13,
+      "first": "2026-06-22 12:20:20",
+      "last": "2026-06-22 12:20:22",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121915.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:18:56",
+      "last": "2026-06-22 12:19:03",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120143.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:01:28",
+      "last": "2026-06-22 12:01:32",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113142.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:31:27",
+      "last": "2026-06-22 11:31:30",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120944.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:09:30",
+      "last": "2026-06-22 12:09:32",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113943.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:39:28",
+      "last": "2026-06-22 11:39:32",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112910.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:28:56",
+      "last": "2026-06-22 11:28:59",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112213.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:21:58",
+      "last": "2026-06-22 11:22:01",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260703_094836.log",
+      "bytes": 1765,
+      "lines": 16,
+      "first": "2026-07-03 09:29:51",
+      "last": "2026-07-03 09:30:01",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_214647.log",
+      "bytes": 15704,
+      "lines": 181,
+      "first": "2026-06-09 21:45:43",
+      "last": "2026-06-09 21:46:13",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113350.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:33:31",
+      "last": "2026-06-22 11:33:38",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260628_190150.log",
+      "bytes": 18169810,
+      "lines": 149210,
+      "first": "2026-06-22 21:28:50",
+      "last": "2026-06-28 19:00:10",
+      "errors": [
+        [
+          "Error while getting Updates: Bad Gateway",
+          8
+        ],
+        [
+          "Exception happened while polling for updates.",
+          8
+        ],
+        [
+          "[WS-PRICE:0] connection closed code=1006 reason=",
+          6
+        ],
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ],
+        [
+          "Execution of job \"run_trigger_check (trigger: interval[0:00:02], next run at: 2026-06-23 00:00:15 +0530)\" skipped: maximum number of running",
+          1
+        ],
+        [
+          "Execution of job \"run_trigger_check (trigger: interval[0:00:02], next run at: 2026-06-23 00:00:17 +0530)\" skipped: maximum number of running",
+          1
+        ],
+        [
+          "Execution of job \"run_trigger_check (trigger: interval[0:00:02], next run at: 2026-06-23 00:00:19 +0530)\" skipped: maximum number of running",
+          1
+        ],
+        [
+          "Execution of job \"run_trigger_check (trigger: interval[0:00:02], next run at: 2026-06-23 00:00:21 +0530)\" skipped: maximum number of running",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121650.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:16:36",
+      "last": "2026-06-22 12:16:38",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112516.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:25:02",
+      "last": "2026-06-22 11:25:04",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112319.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:23:01",
+      "last": "2026-06-22 11:23:08",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111725.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:17:11",
+      "last": "2026-06-22 11:17:13",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110857.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:08:43",
+      "last": "2026-06-22 11:08:45",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112842.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:28:27",
+      "last": "2026-06-22 11:28:30",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114832.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:48:18",
+      "last": "2026-06-22 11:48:21",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115937.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:59:23",
+      "last": "2026-06-22 11:59:25",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112333.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:23:19",
+      "last": "2026-06-22 11:23:22",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114933.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:49:19",
+      "last": "2026-06-22 11:49:21",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113553.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:35:34",
+      "last": "2026-06-22 11:35:41",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260709_134513.log",
+      "bytes": 67587,
+      "lines": 710,
+      "first": "2026-07-07 06:18:26",
+      "last": "2026-07-09 13:31:09",
+      "errors": [
+        [
+          "Error while getting Updates: Bad Gateway",
+          9
+        ],
+        [
+          "Exception happened while polling for updates.",
+          9
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112158.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:21:43",
+      "last": "2026-06-22 11:21:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111656.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:16:42",
+      "last": "2026-06-22 11:16:44",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260714_232622.log",
+      "bytes": 1803,
+      "lines": 16,
+      "first": "2026-07-14 23:25:22",
+      "last": "2026-07-14 23:25:31",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113451.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:34:37",
+      "last": "2026-06-22 11:34:39",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121718.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:17:04",
+      "last": "2026-06-22 12:17:07",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115507.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:54:53",
+      "last": "2026-06-22 11:54:55",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120740.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:07:26",
+      "last": "2026-06-22 12:07:28",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260607_104716.log",
+      "bytes": 1408,
+      "lines": 11,
+      "first": "2026-06-07 10:46:18",
+      "last": "2026-06-07 10:46:19",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260709_143208.log",
+      "bytes": 2516,
+      "lines": 23,
+      "first": "2026-07-09 13:45:13",
+      "last": "2026-07-09 14:31:08",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121929.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:19:15",
+      "last": "2026-06-22 12:19:18",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115257.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:52:42",
+      "last": "2026-06-22 11:52:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260703_092951.log",
+      "bytes": 24148,
+      "lines": 251,
+      "first": "2026-07-03 02:31:51",
+      "last": "2026-07-03 09:01:10",
+      "errors": [
+        [
+          "Error while getting Updates: Bad Gateway",
+          3
+        ],
+        [
+          "Exception happened while polling for updates.",
+          3
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121356.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:13:42",
+      "last": "2026-06-22 12:13:44",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_122005.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:19:47",
+      "last": "2026-06-22 12:19:53",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111926.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:19:08",
+      "last": "2026-06-22 11:19:14",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111642.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:16:28",
+      "last": "2026-06-22 11:16:31",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260714_232522.log",
+      "bytes": 1907,
+      "lines": 17,
+      "first": "2026-07-14 23:23:55",
+      "last": "2026-07-14 23:25:03",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112444.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:24:30",
+      "last": "2026-06-22 11:24:32",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111305.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:12:51",
+      "last": "2026-06-22 11:12:53",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_225826.log",
+      "bytes": 27860,
+      "lines": 227,
+      "first": "2026-06-05 22:52:54",
+      "last": "2026-06-05 22:57:56",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115521.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:55:07",
+      "last": "2026-06-22 11:55:10",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120930.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:09:12",
+      "last": "2026-06-22 12:09:18",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115316.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:52:57",
+      "last": "2026-06-22 11:53:04",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112401.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:23:47",
+      "last": "2026-06-22 11:23:49",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114847.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:48:32",
+      "last": "2026-06-22 11:48:35",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112415.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:24:01",
+      "last": "2026-06-22 11:24:04",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120958.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:09:44",
+      "last": "2026-06-22 12:09:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113259.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:32:44",
+      "last": "2026-06-22 11:32:47",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110759.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:07:45",
+      "last": "2026-06-22 11:07:47",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_153415.log",
+      "bytes": 1407,
+      "lines": 11,
+      "first": "2026-06-05 15:33:43",
+      "last": "2026-06-05 15:33:44",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260912_202544.log",
+      "bytes": 73064,
+      "lines": 738,
+      "first": "2026-09-12 06:40:30",
+      "last": "2026-09-12 20:25:31",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          5
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          3
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          2
+        ]
+      ],
+      "strategies": {
+        "SMC Structure + Squeeze Momentum v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260727_231522.log",
+      "bytes": 2297,
+      "lines": 24,
+      "first": "2026-07-27 23:11:54",
+      "last": "2026-07-27 23:12:07",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115228.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:52:15",
+      "last": "2026-06-22 11:52:17",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260719_154300.log",
+      "bytes": 12420,
+      "lines": 114,
+      "first": "2026-07-19 09:22:47",
+      "last": "2026-07-19 15:40:19",
+      "errors": [
+        [
+          "[V3] Failed to send progress ping for INJ_USDT: Timed out",
+          1
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120641.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:06:26",
+      "last": "2026-06-22 12:06:29",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260719_155046.log",
+      "bytes": 2511,
+      "lines": 26,
+      "first": "2026-07-19 15:43:38",
+      "last": "2026-07-19 15:50:21",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260912_064030.log",
+      "bytes": 869,
+      "lines": 12,
+      "first": "2026-09-12 06:40:10",
+      "last": "2026-09-12 06:40:11",
+      "errors": [],
+      "strategies": {
+        "SMC Structure + Squeeze Momentum v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111753.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:17:39",
+      "last": "2026-06-22 11:17:42",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114502.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:44:47",
+      "last": "2026-06-22 11:44:50",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115923.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:59:09",
+      "last": "2026-06-22 11:59:11",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260812_164339.log",
+      "bytes": 17012,
+      "lines": 256,
+      "first": "2026-08-12 16:19:56",
+      "last": "2026-08-12 16:36:54",
+      "errors": [
+        [
+          "[SCAN] Failed to arm setup for SKYAI_USDT: table pending_setups has no column named pullback_tf",
+          4
+        ],
+        [
+          "[SCAN] Failed to arm setup for BLUAI_USDT: table pending_setups has no column named pullback_tf",
+          4
+        ],
+        [
+          "[SCAN] Failed to arm setup for DOT_USDT: table pending_setups has no column named pullback_tf",
+          4
+        ],
+        [
+          "[SCAN] Failed to arm setup for BTW_USDT: table pending_setups has no column named pullback_tf",
+          2
+        ],
+        [
+          "[SCAN] Failed to arm setup for HBAR_USDT: table pending_setups has no column named pullback_tf",
+          2
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          1
+        ],
+        [
+          "Exception happened while polling for updates.",
+          1
+        ]
+      ],
+      "strategies": {
+        "Zero-Lag MTF Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112042.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:20:28",
+      "last": "2026-06-22 11:20:30",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260711_223556.log",
+      "bytes": 11300,
+      "lines": 99,
+      "first": "2026-07-11 22:00:35",
+      "last": "2026-07-11 22:35:42",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110220.log",
+      "bytes": 42744627,
+      "lines": 431629,
+      "first": "2026-06-18 15:14:34",
+      "last": "2026-06-22 11:02:15",
+      "errors": [
+        [
+          "[ENTRY-REJECT] LAB_USDT LONG invalid geometry entry=13.323 tp=13.253846 sl=12.966077",
+          39
+        ],
+        [
+          "[ENTRY-REJECT] RIF_USDT LONG invalid geometry entry=0.08557 tp=0.08536158 sl=0.08279421",
+          37
+        ],
+        [
+          "[ENTRY-REJECT] MYX_USDT SHORT invalid geometry entry=0.1189 tp=0.11973552 sl=0.12410724",
+          24
+        ],
+        [
+          "[ENTRY-REJECT] UAI_USDT LONG invalid geometry entry=0.3451 tp=0.34401076 sl=0.33709462",
+          24
+        ],
+        [
+          "[ENTRY-REJECT] AGT_USDT LONG invalid geometry entry=0.028653 tp=0.02821106 sl=0.02733572",
+          18
+        ],
+        [
+          "[ENTRY-REJECT] HIGH_USDT SHORT invalid geometry entry=0.04033 tp=0.0403516 sl=0.0413767",
+          14
+        ],
+        [
+          "[ENTRY-REJECT] APT_USDT SHORT invalid geometry entry=0.6415 tp=0.64241198 sl=0.65604401",
+          10
+        ],
+        [
+          "[ENTRY-REJECT] FARTCOIN_USDT SHORT invalid geometry entry=0.12852 tp=0.12864114 sl=0.13121193",
+          10
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114208.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:41:54",
+      "last": "2026-06-22 11:41:56",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120508.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:04:54",
+      "last": "2026-06-22 12:04:57",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114649.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:46:35",
+      "last": "2026-06-22 11:46:37",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260719_092141.log",
+      "bytes": 39517,
+      "lines": 361,
+      "first": "2026-07-18 22:16:20",
+      "last": "2026-07-19 09:20:23",
+      "errors": [
+        [
+          "Error while getting Updates: Bad Gateway",
+          1
+        ],
+        [
+          "Exception happened while polling for updates.",
+          1
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110843.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:08:28",
+      "last": "2026-06-22 11:08:31",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113422.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:34:04",
+      "last": "2026-06-22 11:34:10",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112502.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:24:44",
+      "last": "2026-06-22 11:24:50",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260725_121745.log",
+      "bytes": 127044,
+      "lines": 1234,
+      "first": "2026-07-22 10:41:28",
+      "last": "2026-07-25 12:15:10",
+      "errors": [
+        [
+          "Run time of job \"check_outcomes_v3 (trigger: interval[0:01:00], next run at: 2026-07-22 21:04:36 +0530)\" was missed by 0:00:37.081606",
+          1
+        ],
+        [
+          "Failed to notify win for POL_USDT: Timed out",
+          1
+        ],
+        [
+          "Run time of job \"check_outcomes_v3 (trigger: interval[0:01:00], next run at: 2026-07-23 01:18:36 +0530)\" was missed by 0:00:32.273655",
+          1
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          1
+        ],
+        [
+          "Exception happened while polling for updates.",
+          1
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113404.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:33:50",
+      "last": "2026-06-22 11:33:52",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114535.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:45:20",
+      "last": "2026-06-22 11:45:23",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111208.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:11:54",
+      "last": "2026-06-22 11:11:57",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_223950.log",
+      "bytes": 20737,
+      "lines": 307,
+      "first": "2026-06-05 22:35:29",
+      "last": "2026-06-05 22:39:33",
+      "errors": [
+        [
+          "Error evaluating pending setup 26: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 25: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 27: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 36: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 35: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 34: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 33: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 32: name '_atr_status' is not defined",
+          4
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115145.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:51:31",
+      "last": "2026-06-22 11:51:33",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112957.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:29:43",
+      "last": "2026-06-22 11:29:45",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114946.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:49:33",
+      "last": "2026-06-22 11:49:35",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112725.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:27:11",
+      "last": "2026-06-22 11:27:13",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121636.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:16:22",
+      "last": "2026-06-22 12:16:24",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110557.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:05:43",
+      "last": "2026-06-22 11:05:45",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260606_000038.log",
+      "bytes": 77657,
+      "lines": 607,
+      "first": "2026-06-05 23:45:36",
+      "last": "2026-06-06 00:00:00",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111544.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:15:30",
+      "last": "2026-06-22 11:15:32",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260715_111454.log",
+      "bytes": 90535,
+      "lines": 947,
+      "first": "2026-07-14 23:26:22",
+      "last": "2026-07-15 09:47:27",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          2
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          1
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112757.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:27:39",
+      "last": "2026-06-22 11:27:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114417.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:44:04",
+      "last": "2026-06-22 11:44:06",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260722_104128.log",
+      "bytes": 44826,
+      "lines": 465,
+      "first": "2026-07-21 12:37:42",
+      "last": "2026-07-22 10:40:50",
+      "errors": [
+        [
+          "Error while getting Updates: Bad Gateway",
+          4
+        ],
+        [
+          "Exception happened while polling for updates.",
+          4
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115646.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:56:32",
+      "last": "2026-06-22 11:56:34",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111057.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:10:43",
+      "last": "2026-06-22 11:10:45",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110432.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:04:17",
+      "last": "2026-06-22 11:04:20",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260714_232355.log",
+      "bytes": 21254,
+      "lines": 193,
+      "first": "2026-07-14 21:08:28",
+      "last": "2026-07-14 22:36:37",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111940.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:19:26",
+      "last": "2026-06-22 11:19:28",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260716_011331.log",
+      "bytes": 2135,
+      "lines": 22,
+      "first": "2026-07-16 01:00:33",
+      "last": "2026-07-16 01:10:05",
+      "errors": [],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121415.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:13:56",
+      "last": "2026-06-22 12:14:03",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111516.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:15:02",
+      "last": "2026-06-22 11:15:05",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121146.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:11:32",
+      "last": "2026-06-22 12:11:34",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260628_190223.log",
+      "bytes": 2434,
+      "lines": 22,
+      "first": "2026-06-28 19:01:50",
+      "last": "2026-06-28 19:01:58",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112856.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:28:42",
+      "last": "2026-06-22 11:28:44",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260618_151434.log",
+      "bytes": 18263,
+      "lines": 203,
+      "first": "2026-06-18 15:13:14",
+      "last": "2026-06-18 15:14:09",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120046.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:00:33",
+      "last": "2026-06-22 12:00:35",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115841.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:58:27",
+      "last": "2026-06-22 11:58:30",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260911_113146.log",
+      "bytes": 777,
+      "lines": 10,
+      "first": "2026-09-11 11:30:36",
+      "last": "2026-09-11 11:30:37",
+      "errors": [],
+      "strategies": {
+        "SMC Structure + Squeeze Momentum v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120808.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:07:53",
+      "last": "2026-06-22 12:07:56",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260809_113729.log",
+      "bytes": 2279,
+      "lines": 21,
+      "first": "2026-08-09 11:35:35",
+      "last": "2026-08-09 11:36:48",
+      "errors": [],
+      "strategies": {
+        "Precision Pullback Scalper v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115535.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:55:21",
+      "last": "2026-06-22 11:55:24",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114127.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:41:09",
+      "last": "2026-06-22 11:41:15",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260703_183607.log",
+      "bytes": 15073,
+      "lines": 123,
+      "first": "2026-07-03 10:10:14",
+      "last": "2026-07-03 18:01:09",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121013.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:09:58",
+      "last": "2026-06-22 12:10:01",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114336.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:43:23",
+      "last": "2026-06-22 11:43:25",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114222.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:42:08",
+      "last": "2026-06-22 11:42:10",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113113.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:30:58",
+      "last": "2026-06-22 11:31:01",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121314.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:13:00",
+      "last": "2026-06-22 12:13:02",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113806.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:37:52",
+      "last": "2026-06-22 11:37:55",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110403.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:03:48",
+      "last": "2026-06-22 11:03:51",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260609_010830.log",
+      "bytes": 138327,
+      "lines": 1677,
+      "first": "2026-06-09 01:02:37",
+      "last": "2026-06-09 01:07:33",
+      "errors": [
+        [
+          "Error evaluating pending setup 2322: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2334: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2347: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2356: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2372: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2373: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2378: name '_atr_status' is not defined",
+          4
+        ],
+        [
+          "Error evaluating pending setup 2383: name '_atr_status' is not defined",
+          4
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114606.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:45:48",
+      "last": "2026-06-22 11:45:55",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121502.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:14:47",
+      "last": "2026-06-22 12:14:50",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260812_161956.log",
+      "bytes": 418790,
+      "lines": 3583,
+      "first": "2026-08-09 11:38:23",
+      "last": "2026-08-12 16:16:52",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          33
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          20
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          7
+        ],
+        [
+          "Error while getting Updates: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running",
+          6
+        ]
+      ],
+      "strategies": {
+        "Precision Pullback Scalper v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110501.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:04:46",
+      "last": "2026-06-22 11:04:49",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114548.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:45:35",
+      "last": "2026-06-22 11:45:37",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111530.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:15:16",
+      "last": "2026-06-22 11:15:19",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112629.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:26:15",
+      "last": "2026-06-22 11:26:18",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120658.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:06:41",
+      "last": "2026-06-22 12:06:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110446.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:04:32",
+      "last": "2026-06-22 11:04:34",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110658.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:06:44",
+      "last": "2026-06-22 11:06:46",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111402.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:13:48",
+      "last": "2026-06-22 11:13:50",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114140.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:41:27",
+      "last": "2026-06-22 11:41:29",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113833.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:38:19",
+      "last": "2026-06-22 11:38:22",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115700.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:56:46",
+      "last": "2026-06-22 11:56:48",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111502.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:14:48",
+      "last": "2026-06-22 11:14:50",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260715_112618.log",
+      "bytes": 2410,
+      "lines": 27,
+      "first": "2026-07-15 11:14:54",
+      "last": "2026-07-15 11:25:05",
+      "errors": [],
+      "strategies": {
+        "VP-OB Confluence (4H VP + 1H Order Block)": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260715_172719.log",
+      "bytes": 16612,
+      "lines": 208,
+      "first": "2026-07-15 11:26:18",
+      "last": "2026-07-15 17:25:17",
+      "errors": [
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          1
+        ],
+        [
+          "Exception happened while polling for updates.",
+          1
+        ]
+      ],
+      "strategies": {
+        "Simple Supertrend Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_115329.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:53:16",
+      "last": "2026-06-22 11:53:18",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_111043.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:10:29",
+      "last": "2026-06-22 11:10:31",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_112129.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:21:16",
+      "last": "2026-06-22 11:21:18",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120839.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:08:22",
+      "last": "2026-06-22 12:08:28",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113635.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:36:21",
+      "last": "2026-06-22 11:36:24",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260605_231749.log",
+      "bytes": 24604,
+      "lines": 195,
+      "first": "2026-06-05 23:14:40",
+      "last": "2026-06-05 23:17:41",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260703_023151.log",
+      "bytes": 4861,
+      "lines": 41,
+      "first": "2026-07-03 02:24:36",
+      "last": "2026-07-03 02:30:18",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_120540.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:05:26",
+      "last": "2026-06-22 12:05:28",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_162456.log",
+      "bytes": 6352,
+      "lines": 67,
+      "first": "2026-06-22 12:20:35",
+      "last": "2026-06-22 16:15:01",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260701_120447.log",
+      "bytes": 3427121,
+      "lines": 28121,
+      "first": "2026-06-30 06:16:19",
+      "last": "2026-07-01 12:04:41",
+      "errors": [
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          1
+        ],
+        [
+          "Exception happened while polling for updates.",
+          1
+        ],
+        [
+          "[WS-PRICE:1] connection closed code=1006 reason=",
+          1
+        ],
+        [
+          "Execution of job \"run_trigger_check (trigger: interval[0:00:02], next run at: 2026-07-01 04:45:17 +0530)\" skipped: maximum number of running",
+          1
+        ],
+        [
+          "Execution of job \"run_trigger_check (trigger: interval[0:00:02], next run at: 2026-07-01 04:45:19 +0530)\" skipped: maximum number of running",
+          1
+        ],
+        [
+          "Execution of job \"run_trigger_check (trigger: interval[0:00:02], next run at: 2026-07-01 06:00:25 +0530)\" skipped: maximum number of running",
+          1
+        ],
+        [
+          "Execution of job \"run_trigger_check (trigger: interval[0:00:02], next run at: 2026-07-01 06:00:27 +0530)\" skipped: maximum number of running",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_114154.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:41:40",
+      "last": "2026-06-22 11:41:43",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113928.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:39:15",
+      "last": "2026-06-22 11:39:17",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_121429.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 12:14:15",
+      "last": "2026-06-22 12:14:17",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110644.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:06:30",
+      "last": "2026-06-22 11:06:32",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260607_125021.log",
+      "bytes": 538295,
+      "lines": 3649,
+      "first": "2026-06-07 11:11:57",
+      "last": "2026-06-07 12:50:20",
+      "errors": [
+        [
+          "/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.",
+          1
+        ]
+      ],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260911_113036.log",
+      "bytes": 2362676,
+      "lines": 24925,
+      "first": "2026-08-12 16:43:39",
+      "last": "2026-08-24 21:22:41",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          169
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          131
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          38
+        ],
+        [
+          "[MONITOR] Failed to confirm setup for SUI_USDT: Timed out",
+          1
+        ],
+        [
+          "Run time of job \"monitor_pending_setups (trigger: interval[0:01:00], next run at: 2026-08-24 20:44:47 +0530)\" was missed by 0:00:42.114938",
+          1
+        ],
+        [
+          "Run time of job \"check_outcomes (trigger: interval[0:01:00], next run at: 2026-08-24 20:44:47 +0530)\" was missed by 0:00:42.125070",
+          1
+        ],
+        [
+          "Execution of job \"monitor_pending_setups (trigger: interval[0:01:00], next run at: 2026-08-24 20:45:47 +0530)\" skipped: maximum number of ru",
+          1
+        ],
+        [
+          "Execution of job \"scan_for_new_setups (trigger: cron[minute='1-59/5', second='35'], next run at: 2026-08-24 20:46:35 +0530)\" skipped: maximu",
+          1
+        ]
+      ],
+      "strategies": {
+        "Zero-Lag MTF Pullback v1": 1
+      }
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_113331.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:33:13",
+      "last": "2026-06-22 11:33:19",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/logs/archive/mexc_bot_20260622_110317.log",
+      "bytes": 1121,
+      "lines": 11,
+      "first": "2026-06-22 11:03:03",
+      "last": "2026-06-22 11:03:05",
+      "errors": [],
+      "strategies": {}
+    },
+    {
+      "file": "/opt/signals/mexc_bot.log",
+      "bytes": 78722,
+      "lines": 752,
+      "first": "2026-09-18 06:01:51",
+      "last": "2026-09-18 22:11:52",
+      "errors": [
+        [
+          "Exception happened while polling for updates.",
+          6
+        ],
+        [
+          "Error while getting Updates: Bad Gateway",
+          4
+        ],
+        [
+          "Error while getting Updates: httpx.ReadError:",
+          2
+        ]
+      ],
+      "strategies": {
+        "SMC Structure + Squeeze Momentum v1": 1
+      }
+    }
+  ],
+  "current_journal": {
+    "counts": {
+      "scans": 2142,
+      "pair_evaluations": 9756,
+      "candidate_evaluations": 97
+    },
+    "rejects": {
+      "structure_break_stale": 5099,
+      "score_below_min": 447,
+      "candle_not_settled": 1476,
+      "momentum_disagrees": 255,
+      "risk_too_wide": 284,
+      "squeeze_not_fresh": 2018,
+      "no_stop_reference": 80
+    },
+    "skips": {
+      "XRP_USDT LONG budget/slot unavailable (slots=2 daily_ok=True gap_ok=False direction_ok=True)": 10,
+      "SOL_USDT SHORT budget/slot unavailable (slots=2 daily_ok=True gap_ok=False direction_ok=False)": 1,
+      "SOL_USDT SHORT budget/slot unavailable (slots=2 daily_ok=True gap_ok=True direction_ok=False)": 19,
+      "ADA_USDT SHORT budget/slot unavailable (slots=2 daily_ok=True gap_ok=True direction_ok=False)": 5,
+      "DOGE_USDT SHORT budget/slot unavailable (slots=2 daily_ok=True gap_ok=False direction_ok=False)": 21,
+      "ADA_USDT SHORT budget/slot unavailable (slots=2 daily_ok=True gap_ok=False direction_ok=False)": 10,
+      "DOGE_USDT SHORT budget/slot unavailable (slots=3 daily_ok=True gap_ok=False direction_ok=True)": 5,
+      "DOGE_USDT LONG budget/slot unavailable (slots=3 daily_ok=True gap_ok=False direction_ok=True)": 6
+    },
+    "events": [
+      "2026-09-11 11:30:36,082 | INFO | __main__ | Starting MEXC Signal Bot",
+      "2026-09-11 11:30:36,084 | INFO | __main__ | Strategy: SMC Structure + Squeeze Momentum v1",
+      "2026-09-11 11:31:46,715 | INFO | __main__ | Starting MEXC Signal Bot",
+      "2026-09-11 11:31:46,715 | INFO | __main__ | Strategy: SMC Structure + Squeeze Momentum v1",
+      "2026-09-11 12:30:51,781 | INFO | __main__ | Starting MEXC Signal Bot",
+      "2026-09-11 12:30:51,781 | INFO | __main__ | Strategy: SMC Structure + Squeeze Momentum v1",
+      "2026-09-11 18:35:53,996 | INFO | __main__ | [SIGNAL] Fired #1 BNB_USDT LONG score=7.5 entry=724.7 tp=753.674 sl=710.213 rr=1:2",
+      "2026-09-12 00:36:51,896 | INFO | __main__ | Signal 1 expired (BNB_USDT)",
+      "2026-09-12 06:40:10,663 | INFO | __main__ | Starting MEXC Signal Bot",
+      "2026-09-12 06:40:10,665 | INFO | __main__ | Strategy: SMC Structure + Squeeze Momentum v1",
+      "2026-09-12 06:40:30,594 | INFO | __main__ | Starting MEXC Signal Bot",
+      "2026-09-12 06:40:30,595 | INFO | __main__ | Strategy: SMC Structure + Squeeze Momentum v1",
+      "2026-09-12 11:35:33,091 | INFO | __main__ | [SIGNAL] Fired #2 SOL_USDT SHORT score=7.0 entry=101.6 tp=100.055 sl=102.372 rr=1:2",
+      "2026-09-12 13:35:33,282 | INFO | __main__ | [SIGNAL] Fired #3 DOGE_USDT LONG score=8.0 entry=0.08471 tp=0.0859807 sl=0.0840747 rr=1:2",
+      "2026-09-12 17:05:33,339 | INFO | __main__ | [SIGNAL] Fired #4 SOL_USDT LONG score=7.5 entry=102 tp=103.566 sl=101.217 rr=1:2",
+      "2026-09-12 17:36:30,846 | INFO | __main__ | Signal 2 expired (SOL_USDT)",
+      "2026-09-12 19:36:30,861 | INFO | __main__ | Signal 3 expired (DOGE_USDT)",
+      "2026-09-12 20:25:44,965 | INFO | __main__ | Starting MEXC Signal Bot",
+      "2026-09-12 20:25:44,965 | INFO | __main__ | Strategy: SMC Structure + Squeeze Momentum v1",
+      "2026-09-12 23:05:45,083 | INFO | __main__ | Signal 4 expired (SOL_USDT)",
+      "2026-09-12 23:05:46,579 | INFO | __main__ | [SIGNAL] Fired #5 BNB_USDT SHORT score=8.0 entry=732.2 tp=717.003 sl=739.798 rr=1:2",
+      "2026-09-13 00:35:47,333 | INFO | __main__ | [SIGNAL] Fired #6 XRP_USDT SHORT score=10.0 entry=1.3627 tp=1.33641 sl=1.37584 rr=1:2",
+      "2026-09-13 05:06:45,089 | INFO | __main__ | Signal 5 expired (BNB_USDT)",
+      "2026-09-13 06:36:45,078 | INFO | __main__ | Signal 6 expired (XRP_USDT)",
+      "2026-09-13 12:05:47,438 | INFO | __main__ | [SIGNAL] Fired #7 BNB_USDT SHORT score=10.0 entry=725.5 tp=711.323 sl=732.588 rr=1:2",
+      "2026-09-13 13:35:46,440 | INFO | __main__ | [SIGNAL] Fired #8 XRP_USDT SHORT score=9.0 entry=1.3571 tp=1.33183 sl=1.36974 rr=1:2",
+      "2026-09-13 18:06:45,092 | INFO | __main__ | Signal 7 expired (BNB_USDT)",
+      "2026-09-13 19:00:45,408 | INFO | __main__ | Signal 8 WIN (XRP_USDT) +37.2%",
+      "2026-09-15 00:35:47,985 | INFO | __main__ | [SIGNAL] Fired #9 DOGE_USDT LONG score=10.0 entry=0.08502 tp=0.0882351 sl=0.0834125 rr=1:2",
+      "2026-09-15 06:36:45,085 | INFO | __main__ | Signal 9 expired (DOGE_USDT)",
+      "2026-09-15 21:05:47,523 | INFO | __main__ | [SIGNAL] Fired #10 DOGE_USDT SHORT score=9.0 entry=0.0819 tp=0.0787143 sl=0.0834928 rr=1:2",
+      "2026-09-16 00:30:45,312 | INFO | __main__ | Signal 10 WIN (DOGE_USDT) +77.8%",
+      "2026-09-16 14:05:47,182 | INFO | __main__ | [SIGNAL] Fired #11 BNB_USDT SHORT score=10.0 entry=706.1 tp=679.182 sl=719.559 rr=1:2",
+      "2026-09-16 19:05:47,366 | INFO | __main__ | [SIGNAL] Fired #12 XRP_USDT SHORT score=8.5 entry=1.2765 tp=1.23007 sl=1.29971 rr=1:2",
+      "2026-09-16 20:06:45,078 | INFO | __main__ | Signal 11 expired (BNB_USDT)",
+      "2026-09-16 20:10:46,521 | INFO | __main__ | [SIGNAL] Fired #13 DOGE_USDT SHORT score=7.5 entry=0.07917 tp=0.0765925 sl=0.0804587 rr=1:2",
+      "2026-09-17 00:00:45,640 | INFO | __main__ | Signal 13 LOSS (DOGE_USDT) -32.6%",
+      "2026-09-17 01:06:45,083 | INFO | __main__ | Signal 12 expired (XRP_USDT)",
+      "2026-09-17 12:35:47,774 | INFO | __main__ | [SIGNAL] Fired #14 ADA_USDT LONG score=8.0 entry=0.1977 tp=0.204293 sl=0.194403 rr=1:2",
+      "2026-09-17 18:05:47,207 | INFO | __main__ | [SIGNAL] Fired #15 SOL_USDT LONG score=9.0 entry=101.14 tp=104.683 sl=99.3683 rr=1:2",
+      "2026-09-17 18:36:45,086 | INFO | __main__ | Signal 14 expired (ADA_USDT)",
+      "2026-09-17 20:35:47,206 | INFO | __main__ | [SIGNAL] Fired #16 DOGE_USDT LONG score=7.5 entry=0.08163 tp=0.0840349 sl=0.0804276 rr=1:2",
+      "2026-09-18 00:06:45,086 | INFO | __main__ | Signal 15 expired (SOL_USDT)",
+      "2026-09-18 01:35:47,061 | INFO | __main__ | [SIGNAL] Fired #17 BNB_USDT LONG score=7.5 entry=734.3 tp=747.303 sl=727.799 rr=1:2",
+      "2026-09-18 02:36:45,088 | INFO | __main__ | Signal 16 expired (DOGE_USDT)",
+      "2026-09-18 04:35:46,402 | INFO | __main__ | [SIGNAL] Fired #18 XRP_USDT SHORT score=8.0 entry=1.2951 tp=1.27567 sl=1.30481 rr=1:2",
+      "2026-09-18 06:01:51,278 | INFO | __main__ | Starting MEXC Signal Bot",
+      "2026-09-18 06:01:51,279 | INFO | __main__ | Strategy: SMC Structure + Squeeze Momentum v1",
+      "2026-09-18 07:30:52,154 | INFO | __main__ | Signal 18 LOSS (XRP_USDT) -15.0%",
+      "2026-09-18 07:35:51,519 | INFO | __main__ | Signal 17 expired (BNB_USDT)",
+      "2026-09-18 08:01:53,285 | INFO | __main__ | [SIGNAL] Fired #19 SOL_USDT LONG score=8.0 entry=102.52 tp=106.188 sl=100.686 rr=1:2",
+      "2026-09-18 14:00:51,790 | INFO | __main__ | Signal 19 WIN (SOL_USDT) +71.5%",
+      "2026-09-18 18:31:53,837 | INFO | __main__ | [SIGNAL] Fired #20 BNB_USDT SHORT score=8.0 entry=747.2 tp=725.758 sl=757.921 rr=1:2",
+      "2026-09-18 19:30:51,782 | INFO | __main__ | Signal 20 LOSS (BNB_USDT) -28.7%"
+    ],
+    "errors": [
+      "2026-09-11 17:34:58,534 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-11 17:34:58,562 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-11 19:28:08,512 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-11 19:28:08,513 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-11 19:29:40,569 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-11 19:29:40,570 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-12 03:24:14,683 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-12 03:24:14,686 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-12 05:52:18,445 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-12 05:52:18,449 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-12 06:40:50,612 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-12 06:40:50,612 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-12 06:40:51,707 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-12 06:40:51,707 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-12 13:09:52,363 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-12 13:09:52,365 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-12 18:32:17,265 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-12 18:32:17,265 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-12 18:32:28,599 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-12 18:32:28,599 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-13 02:05:31,551 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-13 02:05:31,553 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-13 02:59:20,239 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-13 02:59:20,240 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-13 06:40:52,928 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-13 06:40:52,928 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-13 06:47:40,047 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-13 06:47:40,047 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-13 09:49:55,217 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-13 09:49:55,220 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-13 11:30:18,987 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-13 11:30:18,988 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-13 11:42:26,321 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-13 11:42:26,322 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-13 13:13:35,238 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-13 13:13:35,239 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-13 22:42:58,889 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-13 22:42:58,891 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-14 06:41:32,741 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-14 06:41:32,742 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-14 06:41:33,821 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-14 06:41:33,821 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-14 06:41:35,403 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-14 06:41:35,404 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-14 06:41:37,734 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-14 06:41:37,735 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-14 09:52:41,593 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-14 09:52:41,594 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-15 07:29:23,429 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-15 07:29:23,430 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-15 07:30:25,122 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-15 07:30:25,122 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-15 07:48:24,908 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-15 07:48:24,908 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-15 15:21:59,966 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-15 15:21:59,967 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-15 15:22:31,457 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-15 15:22:31,458 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-16 00:00:42,875 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-16 00:00:42,877 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-16 01:01:56,885 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-16 01:01:56,887 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-16 01:17:45,965 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-16 01:17:45,965 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-16 01:44:11,772 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-16 01:44:11,773 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-16 09:53:02,763 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-16 09:53:02,764 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-16 12:56:58,229 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-16 12:56:58,229 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-16 13:13:31,294 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-16 13:13:31,295 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-16 16:03:27,779 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-16 16:03:27,780 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-17 03:34:22,037 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-17 03:34:22,039 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-17 05:13:37,100 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-17 05:13:37,101 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-17 05:50:36,289 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-17 05:50:36,291 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-17 06:40:40,158 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-17 06:40:40,159 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-17 08:18:58,968 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-17 08:18:58,970 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-17 12:03:20,210 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-17 12:03:20,210 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-18 01:57:23,284 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-18 01:57:23,285 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-18 05:19:15,920 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-18 05:19:15,922 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-18 06:40:50,765 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-18 06:40:50,766 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-18 06:40:52,328 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-18 06:40:52,329 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-18 06:40:53,918 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-18 06:40:53,918 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-18 06:40:56,251 | ERROR | telegram.ext.Updater | Error while getting Updates: Bad Gateway",
+      "2026-09-18 06:40:56,253 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-18 06:52:47,646 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-18 06:52:47,646 | ERROR | telegram.ext.Updater | Exception happened while polling for updates.",
+      "2026-09-18 19:03:57,959 | ERROR | telegram.ext.Updater | Error while getting Updates: httpx.ReadError:",
+      "2026-09-18 19:03:57,959 | ERROR | telegram.ext.Updater | Exception happened while polling for updates."
+    ]
+  }
+}

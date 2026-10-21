@@ -1,0 +1,56 @@
+nohup: ignoring input
+2026-07-18 13:25:20,434 | INFO | [BTC_USDT] walk-forward optimization starting (grid size=243)
+2026-07-18 14:09:36,933 | INFO | [ETH_USDT] walk-forward optimization starting (grid size=243)
+2026-07-18 14:54:09,878 | INFO | [SOL_USDT] walk-forward optimization starting (grid size=243)
+2026-07-18 15:38:15,633 | INFO | Report written to /opt/signals/backtest/reports/phase4_report.md
+# Super Scalper v3 -- Phase 4 Walk-Forward Optimization Report
+
+Methodology: 4 rolling windows (6w train / 2w test), grid searched on train only (min 30 train trades to qualify, ranked by train profit factor), reported numbers are TEST-window (out-of-sample) only.
+
+## BTC_USDT
+
+Windows: 3/3 accepted (rest rejected for <30 train trades)
+
+| Window | Train | Test | Params | Test trades (flip/pullback) | Test WR% | Test PF | Test maxDD% | Baseline PF | Skipped PF | Confidence |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 2026-01-19→2026-03-02 | 2026-03-02→2026-03-16 | atr_mult=2.0 ez=0.55 adx≥22 chop≤50 str≥2 | 7 (0/7) | 0.0 | 0.0 | -2.49 | 0.702 | 0.702 | LOW (<30 trades) |
+| 2 | 2026-03-02→2026-04-13 | 2026-04-13→2026-04-27 | atr_mult=2.5 ez=0.55 adx≥22 chop≤55 str≥2 | 20 (0/20) | 5.0 | 0.201 | -6.18 | 0.0 | 0.0 | LOW (<30 trades) |
+| 3 | 2026-04-13→2026-05-25 | 2026-05-25→2026-06-08 | atr_mult=2.5 ez=0.45 adx≥18 chop≤50 str≥2 | 10 (0/10) | 20.0 | 0.627 | -3.61 | 0.0 | 0.0 | LOW (<30 trades) |
+
+**Recommended params for BTC_USDT** (from most recent accepted window): `{'atr_mult': 2.5, 'entry_zone': 0.45, 'adx_min': 18, 'chop_max': 50, 'min_strength': 2}`
+
+⚠️ **Window 1: skipped signals (PF=0.702) outperformed accepted signals (PF=0.0) -- the regime filter may be too tight here.**
+
+![BTC_USDT equity curve](BTC_USDT_equity_curve.png)
+
+## ETH_USDT
+
+Windows: 3/3 accepted (rest rejected for <30 train trades)
+
+| Window | Train | Test | Params | Test trades (flip/pullback) | Test WR% | Test PF | Test maxDD% | Baseline PF | Skipped PF | Confidence |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 2026-01-19→2026-03-02 | 2026-03-02→2026-03-16 | atr_mult=3.0 ez=0.55 adx≥18 chop≤55 str≥2 | 12 (0/12) | 16.67 | 0.447 | -3.69 | 0.0 | 0.0 | LOW (<30 trades) |
+| 2 | 2026-03-02→2026-04-13 | 2026-04-13→2026-04-27 | atr_mult=2.0 ez=0.55 adx≥26 chop≤55 str≥2 | 15 (0/15) | 20.0 | 4.228 | -4.07 | 0.0 | 0.0 | LOW (<30 trades) |
+| 3 | 2026-04-13→2026-05-25 | 2026-05-25→2026-06-08 | atr_mult=2.0 ez=0.55 adx≥26 chop≤55 str≥2 | 11 (0/11) | 18.18 | 0.632 | -3.74 | 1.26 | 1.26 | LOW (<30 trades) |
+
+**Recommended params for ETH_USDT** (from most recent accepted window): `{'atr_mult': 2.0, 'entry_zone': 0.55, 'adx_min': 26, 'chop_max': 55, 'min_strength': 2}`
+
+⚠️ **Window 3: skipped signals (PF=1.26) outperformed accepted signals (PF=0.632) -- the regime filter may be too tight here.**
+
+![ETH_USDT equity curve](ETH_USDT_equity_curve.png)
+
+## SOL_USDT
+
+Windows: 3/3 accepted (rest rejected for <30 train trades)
+
+| Window | Train | Test | Params | Test trades (flip/pullback) | Test WR% | Test PF | Test maxDD% | Baseline PF | Skipped PF | Confidence |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 2026-01-19→2026-03-02 | 2026-03-02→2026-03-16 | atr_mult=3.0 ez=0.55 adx≥18 chop≤50 str≥2 | 7 (0/7) | 28.57 | 1.433 | -2.19 | None | None | LOW (<30 trades) |
+| 2 | 2026-03-02→2026-04-13 | 2026-04-13→2026-04-27 | atr_mult=2.5 ez=0.55 adx≥22 chop≤55 str≥2 | 8 (0/8) | 12.5 | 23.098 | -1.24 | inf | inf | LOW (<30 trades) |
+| 3 | 2026-04-13→2026-05-25 | 2026-05-25→2026-06-08 | atr_mult=2.5 ez=0.55 adx≥26 chop≤55 str≥2 | 12 (0/12) | 16.67 | 12.679 | -2.75 | 0.0 | 0.0 | LOW (<30 trades) |
+
+**Recommended params for SOL_USDT** (from most recent accepted window): `{'atr_mult': 2.5, 'entry_zone': 0.55, 'adx_min': 26, 'chop_max': 55, 'min_strength': 2}`
+
+
+![SOL_USDT equity curve](SOL_USDT_equity_curve.png)
+

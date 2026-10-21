@@ -1,0 +1,39 @@
+{
+  "candle_counts": {
+    "15m": 3120,
+    "1h": 779
+  },
+  "collected_at": "2026-10-20T12:14:51.794082Z",
+  "dataset_schema_version": "1",
+  "evaluation_end_at": "2026-10-18T23:45:00Z",
+  "evaluation_start_at": "2026-09-29T00:00:00Z",
+  "first_timestamps": {
+    "15m": "2026-09-16T12:00:00Z",
+    "1h": "2026-09-16T12:00:00Z"
+  },
+  "last_timestamps": {
+    "15m": "2026-10-18T23:45:00Z",
+    "1h": "2026-10-18T22:00:00Z"
+  },
+  "requested_boundaries": {
+    "15m": {
+      "end_at": "2026-10-18T23:45:00Z",
+      "start_at": "2026-09-16T12:00:00Z"
+    },
+    "1h": {
+      "end_at": "2026-10-18T22:00:00Z",
+      "start_at": "2026-09-16T12:00:00Z"
+    }
+  },
+  "sha256": {
+    "15m": "fb12274f5af08e61e27d9ee483425fa7e42c49a899e165a1eb0db56b5eb14569",
+    "1h": "d55401ef71647db2c7c41938498e51fd789f71d98baf50f8ee40986c2281b7c0"
+  },
+  "source": "mexc_futures_public_api",
+  "symbol": "SOL_USDT",
+  "timeframes": [
+    "15m",
+    "1h"
+  ],
+  "warmup_start_at": "2026-09-16T12:00:00Z"
+}

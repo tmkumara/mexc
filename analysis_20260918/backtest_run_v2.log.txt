@@ -1,0 +1,56 @@
+2026-07-18 18:28:27,617 | INFO | [BTC_USDT] walk-forward optimization starting (grid size=243)
+2026-07-18 19:25:57,463 | INFO | [ETH_USDT] walk-forward optimization starting (grid size=243)
+2026-07-18 20:24:35,940 | INFO | [SOL_USDT] walk-forward optimization starting (grid size=243)
+2026-07-18 21:21:49,626 | INFO | Report written to /opt/signals/backtest/reports/phase4_report.md
+# Super Scalper v3 -- Phase 4 Walk-Forward Optimization Report
+
+Methodology: 4 rolling windows (6w train / 2w test), grid searched on train only (min 30 train trades to qualify, ranked by train profit factor), reported numbers are TEST-window (out-of-sample) only.
+
+## BTC_USDT
+
+Windows: 4/4 accepted (rest rejected for <30 train trades)
+
+| Window | Train | Test | Params | Test trades (flip/pullback) | Test WR% | Test PF | Test maxDD% | Baseline PF | Skipped PF | Confidence |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 2025-07-23→2025-09-03 | 2025-09-03→2025-09-17 | atr_mult=2.0 ez=0.55 adx≥18 chop≤45 str≥2 | 14 (0/15) | 42.86 | 2.691 | -3.02 | 0.581 | 0.581 | LOW (<30 trades) |
+| 2 | 2025-09-03→2025-10-15 | 2025-10-15→2025-10-29 | atr_mult=2.0 ez=0.45 adx≥22 chop≤55 str≥2 | 9 (0/9) | 11.11 | 0.203 | -9.08 | 0.457 | 0.457 | LOW (<30 trades) |
+| 3 | 2025-10-15→2025-11-26 | 2025-11-26→2025-12-10 | atr_mult=2.0 ez=0.55 adx≥18 chop≤50 str≥2 | 21 (0/21) | 23.81 | 0.88 | -4.62 | 0.651 | 0.651 | LOW (<30 trades) |
+| 4 | 2025-11-26→2026-01-07 | 2026-01-07→2026-01-21 | atr_mult=2.0 ez=0.55 adx≥26 chop≤50 str≥2 | 16 (0/16) | 12.5 | 1.225 | -7.53 | 0.219 | 0.219 | LOW (<30 trades) |
+
+**Recommended params for BTC_USDT** (from most recent accepted window): `{'atr_mult': 2.0, 'entry_zone': 0.55, 'adx_min': 26, 'chop_max': 50, 'min_strength': 2}`
+
+
+![BTC_USDT equity curve](BTC_USDT_equity_curve.png)
+
+## ETH_USDT
+
+Windows: 4/4 accepted (rest rejected for <30 train trades)
+
+| Window | Train | Test | Params | Test trades (flip/pullback) | Test WR% | Test PF | Test maxDD% | Baseline PF | Skipped PF | Confidence |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 2025-07-23→2025-09-03 | 2025-09-03→2025-09-17 | atr_mult=2.0 ez=0.55 adx≥26 chop≤55 str≥2 | 23 (0/23) | 17.39 | 1.726 | -2.67 | 1.168 | 1.168 | LOW (<30 trades) |
+| 2 | 2025-09-03→2025-10-15 | 2025-10-15→2025-10-29 | atr_mult=2.5 ez=0.55 adx≥26 chop≤50 str≥2 | 9 (0/9) | 0.0 | 0.0 | -4.71 | 0.0 | 0.0 | LOW (<30 trades) |
+| 3 | 2025-10-15→2025-11-26 | 2025-11-26→2025-12-10 | atr_mult=2.0 ez=0.55 adx≥22 chop≤55 str≥2 | 17 (0/17) | 17.65 | 1.134 | -5.12 | 1.304 | 1.304 | LOW (<30 trades) |
+| 4 | 2025-11-26→2026-01-07 | 2026-01-07→2026-01-21 | atr_mult=2.5 ez=0.55 adx≥22 chop≤55 str≥2 | 19 (0/19) | 15.79 | 0.775 | -4.21 | 0.0 | 0.0 | LOW (<30 trades) |
+
+**Recommended params for ETH_USDT** (from most recent accepted window): `{'atr_mult': 2.5, 'entry_zone': 0.55, 'adx_min': 22, 'chop_max': 55, 'min_strength': 2}`
+
+
+![ETH_USDT equity curve](ETH_USDT_equity_curve.png)
+
+## SOL_USDT
+
+Windows: 4/4 accepted (rest rejected for <30 train trades)
+
+| Window | Train | Test | Params | Test trades (flip/pullback) | Test WR% | Test PF | Test maxDD% | Baseline PF | Skipped PF | Confidence |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 2025-07-23→2025-09-03 | 2025-09-03→2025-09-17 | atr_mult=2.0 ez=0.55 adx≥18 chop≤50 str≥2 | 23 (0/23) | 17.39 | 1.253 | -7.76 | 0.251 | 0.251 | LOW (<30 trades) |
+| 2 | 2025-09-03→2025-10-15 | 2025-10-15→2025-10-29 | atr_mult=3.0 ez=0.55 adx≥26 chop≤55 str≥2 | 7 (0/7) | 0.0 | 0.0 | -4.51 | None | None | LOW (<30 trades) |
+| 3 | 2025-10-15→2025-11-26 | 2025-11-26→2025-12-10 | atr_mult=2.5 ez=0.55 adx≥26 chop≤55 str≥2 | 9 (0/9) | 11.11 | 0.43 | -4.37 | 0.0 | 0.0 | LOW (<30 trades) |
+| 4 | 2025-11-26→2026-01-07 | 2026-01-07→2026-01-21 | atr_mult=2.0 ez=0.55 adx≥26 chop≤55 str≥2 | 14 (0/14) | 7.14 | 1.243 | -4.21 | 0.0 | 0.0 | LOW (<30 trades) |
+
+**Recommended params for SOL_USDT** (from most recent accepted window): `{'atr_mult': 2.0, 'entry_zone': 0.55, 'adx_min': 26, 'chop_max': 55, 'min_strength': 2}`
+
+
+![SOL_USDT equity curve](SOL_USDT_equity_curve.png)
+
