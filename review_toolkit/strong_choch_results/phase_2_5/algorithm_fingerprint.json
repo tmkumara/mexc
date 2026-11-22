@@ -1,0 +1,87 @@
+{
+  "evaluation_start_inclusive": "2026-08-03T00:00:00+00:00",
+  "evaluation_end_exclusive": "2026-11-01T00:00:00+00:00",
+  "warmup_start_inclusive": "2026-07-24T00:00:00+00:00",
+  "parameters": {
+    "pivot_left": 3,
+    "pivot_right": 3,
+    "atr_period": 14,
+    "minimum_swing_atr": 1.5,
+    "minimum_body_atr": 0.8,
+    "minimum_break_atr": 0.2,
+    "minimum_body_ratio": 0.6,
+    "minimum_close_position": 0.7
+  },
+  "internal_parameters": {
+    "pivot_left": 3,
+    "pivot_right": 3,
+    "atr_period": 14,
+    "minimum_swing_atr": 0.0,
+    "minimum_body_atr": 0.8,
+    "minimum_break_atr": 0.2,
+    "minimum_body_ratio": 0.6,
+    "minimum_close_position": 0.7
+  },
+  "discovery_range_edge_fraction": 0.25,
+  "algorithm_version": "2.3.0",
+  "fingerprint": {
+    "sha256": "ccd1f9bc44ad2a90a500b10dad2fb31a7eb2bc06f540f748302a2c51c0539999",
+    "files": {
+      "strategy/market_structure/choch.py": "1d3bb8a2b016fae0a440a37715a18acb3cb0d1a9014e486d18e5ea1742b0b49a",
+      "strategy/market_structure/discovery.py": "f03dd051810179b879ff17a89e45734b768cd570b77d7a6b4826e2df61feb399",
+      "strategy/market_structure/internal.py": "6204f67973a4c923a9065079d50b1c6279d89df094c0970b081d1c1d856be2c9",
+      "strategy/market_structure/models.py": "7aaec8efa97c3546057b5dd911d23bdde99eb0610130bc87525057ef8ef26c81",
+      "strategy/market_structure/structure.py": "1c768c4a708ee611d9a094d331f460cc25676110006f776b46cfeb4d7f8e6e70",
+      "strategy/market_structure/swings.py": "b1c64de38dfc6054ccde41e657e291d8b216b825b5cecefd5f4aaf73fea0c201",
+      "research/strong_choch/data.py": "32a741a7be42988c0d07da0627acaa795364babfc7534ff66d94e17b10930349",
+      "research/strong_choch/evaluate.py": "b26f95dfb79d82ac3dbf45f037a5234e83ec6b9749b76b6a0ccba7db2dcc4824",
+      "research/strong_choch/group.py": "3e9cee5ae5101c47b58799d70b21c99378470189659c1d4c02980c0b93aaf9c0",
+      "research/strong_choch/replay.py": "fd504c4b418780f6b81e535ac4330113376743b98f8c17b2c76a75ae0b7776d7"
+    },
+    "validation_sha256": "287f01d0a25b8f9853b8f3810787dfb10e12f297a42b8e7201ebb28580fd17ad"
+  },
+  "development_group_sha256": "8bebe09b3bc0fef76050ccef3d4d35e686f4c1522a912cb0d9d2d03e78717c36",
+  "development_groups": 204,
+  "bands": {
+    "max_displacement_atr": [
+      0.25938880596035857,
+      0.6373956554543936
+    ],
+    "max_swing_atr": [
+      2.416688744047845,
+      3.7773565769159725
+    ],
+    "prior_level_tests": [
+      0.0,
+      1.0
+    ],
+    "oldest_level_age_bars": [
+      8.0,
+      27.333333333333314
+    ],
+    "swing_level_count": [
+      1.0,
+      2.0
+    ]
+  },
+  "metric_definitions": {
+    "max_displacement_atr": "Maximum close beyond a broken level, divided by break-candle ATR",
+    "max_swing_atr": "Maximum swing movement divided by its confirmation ATR",
+    "prior_level_tests": "Sum of prior touch episodes across distinct level identities",
+    "oldest_level_age_bars": "Maximum confirmed level age in completed 4H bars",
+    "swing_level_count": "Number of distinct broken swing identities",
+    "external_level_count": "Any broken level assigned an external role by the event close",
+    "range_break": "Presence of attached confirmed range-break evidence"
+  },
+  "consulted_start": "2026-07-24T00:00:00+00:00",
+  "consulted_end": "2026-11-01T00:00:00+00:00",
+  "warmup_bars": 60,
+  "horizons": [
+    3,
+    6,
+    12,
+    24
+  ],
+  "baseline_seed": 25025,
+  "bootstrap_replicates": 500
+}

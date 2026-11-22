@@ -1,0 +1,3 @@
+detector,correctly_detected,missed,incorrect,true_negatives,reviewed_positives,reviewed_negatives,precision,recall
+frozen,0,0,0,0,0,0,,
+shadow,0,0,0,0,0,0,,

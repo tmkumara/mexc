@@ -1,0 +1,2444 @@
+[
+  {
+    "case_id": "ETH_20260819_1600_U",
+    "first_candle_open": "2026-07-31 08:00:00+00:00",
+    "last_candle_open": "2026-08-19 12:00:00+00:00",
+    "last_candle_close": "2026-08-19 16:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_TREND_ESTABLISHED",
+        "prior": {
+          "state": "bearish_unprotected",
+          "external_high": null,
+          "external_low": 1867.13,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": "2026-08-11 16:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "direction": "bullish",
+          "broken_level": 1922.71,
+          "pivot_timestamp": "2026-08-18 12:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-19 04:00:00+00:00",
+          "resulting_state": "bullish_unprotected",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-08-19 16:00:00+00:00",
+        "latest_establishment_target": 1922.71,
+        "protection_decisions": [
+          {
+            "candidate_price": 1862.5,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 1884.4,
+            "reason": "origin_precedes_target"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_CHOCH",
+        "prior": {
+          "state": "bearish_protected",
+          "external_high": 1937.67,
+          "external_low": 1867.13,
+          "continuation_armed": false,
+          "protected_level": 1937.67,
+          "protected_pivot": "2026-08-09 20:00:00+00:00",
+          "protected_since": "2026-08-11 16:00:00+00:00",
+          "trend_started_at": "2026-08-11 16:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_CHOCH",
+          "direction": "bullish",
+          "broken_level": 1937.67,
+          "pivot_timestamp": "2026-08-09 20:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-10 12:00:00+00:00",
+          "resulting_state": "unknown",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": 1937.67,
+          "protected_since": "2026-08-11 16:00:00+00:00",
+          "strong_rejection_reasons": "insufficient_trend_history"
+        },
+        "protected_pivot": "2026-08-09 20:00:00+00:00",
+        "protected_confirmation": "2026-08-10 12:00:00+00:00",
+        "protected_eligible": "2026-08-10 16:00:00+00:00",
+        "latest_establishment": "2026-08-11 16:00:00+00:00",
+        "latest_establishment_target": 1867.13,
+        "protection_decisions": [
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-11 16:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 1867.13,
+            "target_pivot": "2026-08-10 16:00:00+00:00",
+            "candidate_price": 1940.97,
+            "candidate_pivot": "2026-08-07 12:00:00+00:00",
+            "candidate_confirmation": "2026-08-08 04:00:00+00:00",
+            "first_usable_close": "2026-08-08 08:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-11 16:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 1867.13,
+            "target_pivot": "2026-08-10 16:00:00+00:00",
+            "candidate_price": 1937.67,
+            "candidate_pivot": "2026-08-09 20:00:00+00:00",
+            "candidate_confirmation": "2026-08-10 12:00:00+00:00",
+            "first_usable_close": "2026-08-10 16:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "ETH_20261008_1200_D",
+    "first_candle_open": "2026-09-19 04:00:00+00:00",
+    "last_candle_open": "2026-10-08 08:00:00+00:00",
+    "last_candle_close": "2026-10-08 12:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_CHOCH",
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 2806.65,
+          "external_low": 2562.96,
+          "continuation_armed": true,
+          "protected_level": 2562.96,
+          "protected_pivot": "2026-09-20 00:00:00+00:00",
+          "protected_since": "2026-09-21 12:00:00+00:00",
+          "trend_started_at": "2026-09-21 12:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_CHOCH",
+          "direction": "bearish",
+          "broken_level": 2562.96,
+          "pivot_timestamp": "2026-09-20 00:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-09-20 16:00:00+00:00",
+          "resulting_state": "unknown",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": 2562.96,
+          "protected_since": "2026-09-21 12:00:00+00:00",
+          "strong_rejection_reasons": "insufficient_trend_history"
+        },
+        "protected_pivot": "2026-09-20 00:00:00+00:00",
+        "protected_confirmation": "2026-09-20 16:00:00+00:00",
+        "protected_eligible": "2026-09-20 20:00:00+00:00",
+        "latest_establishment": "2026-09-21 12:00:00+00:00",
+        "latest_establishment_target": 2668.31,
+        "protection_decisions": [
+          {
+            "candidate_price": 2357.01,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 2562.96,
+            "reason": "frozen_post_target_protection_assigned"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "STRONG_EXTERNAL_CHOCH",
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 2806.65,
+          "external_low": 2562.96,
+          "continuation_armed": true,
+          "protected_level": 2562.96,
+          "protected_pivot": "2026-09-20 00:00:00+00:00",
+          "protected_since": "2026-09-21 12:00:00+00:00",
+          "trend_started_at": "2026-08-21 04:00:00+00:00",
+          "continuation_count": 2
+        },
+        "current": {
+          "classification": "STRONG_EXTERNAL_CHOCH",
+          "direction": "bearish",
+          "broken_level": 2562.96,
+          "pivot_timestamp": "2026-09-20 00:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-09-20 16:00:00+00:00",
+          "resulting_state": "unknown",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": 2562.96,
+          "protected_since": "2026-09-21 12:00:00+00:00",
+          "strong_rejection_reasons": ""
+        },
+        "protected_pivot": "2026-09-20 00:00:00+00:00",
+        "protected_confirmation": "2026-09-20 16:00:00+00:00",
+        "protected_eligible": "2026-09-20 20:00:00+00:00",
+        "latest_establishment": "2026-08-21 04:00:00+00:00",
+        "latest_establishment_target": 2336.34,
+        "protection_decisions": [
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1862.5,
+            "candidate_pivot": "2026-08-13 16:00:00+00:00",
+            "candidate_confirmation": "2026-08-14 08:00:00+00:00",
+            "first_usable_close": "2026-08-14 12:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1884.4,
+            "candidate_pivot": "2026-08-18 00:00:00+00:00",
+            "candidate_confirmation": "2026-08-18 16:00:00+00:00",
+            "first_usable_close": "2026-08-18 20:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "BNB_20261030_0000_D",
+    "first_candle_open": "2026-10-10 16:00:00+00:00",
+    "last_candle_open": "2026-10-29 20:00:00+00:00",
+    "last_candle_close": "2026-10-30 00:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": null,
+        "prior": {
+          "state": "bullish_unprotected",
+          "external_high": 763.6,
+          "external_low": null,
+          "continuation_armed": true,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": "2026-10-28 12:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-10-28 12:00:00+00:00",
+        "latest_establishment_target": 756.2,
+        "protection_decisions": [
+          {
+            "candidate_price": 733.5,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 734.6,
+            "reason": "origin_precedes_target"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_CHOCH",
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 763.6,
+          "external_low": 734.6,
+          "continuation_armed": true,
+          "protected_level": 734.6,
+          "protected_pivot": "2026-10-27 08:00:00+00:00",
+          "protected_since": "2026-10-28 12:00:00+00:00",
+          "trend_started_at": "2026-10-28 12:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_CHOCH",
+          "direction": "bearish",
+          "broken_level": 734.6,
+          "pivot_timestamp": "2026-10-27 08:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-10-28 00:00:00+00:00",
+          "resulting_state": "unknown",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": 734.6,
+          "protected_since": "2026-10-28 12:00:00+00:00",
+          "strong_rejection_reasons": "insufficient_trend_history"
+        },
+        "protected_pivot": "2026-10-27 08:00:00+00:00",
+        "protected_confirmation": "2026-10-28 00:00:00+00:00",
+        "protected_eligible": "2026-10-28 04:00:00+00:00",
+        "latest_establishment": "2026-10-28 12:00:00+00:00",
+        "latest_establishment_target": 756.2,
+        "protection_decisions": [
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-10-28 12:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 756.2,
+            "target_pivot": "2026-10-27 12:00:00+00:00",
+            "candidate_price": 733.5,
+            "candidate_pivot": "2026-10-26 08:00:00+00:00",
+            "candidate_confirmation": "2026-10-27 00:00:00+00:00",
+            "first_usable_close": "2026-10-27 04:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-10-28 12:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 756.2,
+            "target_pivot": "2026-10-27 12:00:00+00:00",
+            "candidate_price": 734.6,
+            "candidate_pivot": "2026-10-27 08:00:00+00:00",
+            "candidate_confirmation": "2026-10-28 00:00:00+00:00",
+            "first_usable_close": "2026-10-28 04:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "BNB_20260805_0400_U",
+    "first_candle_open": "2026-07-24 00:00:00+00:00",
+    "last_candle_open": "2026-08-05 00:00:00+00:00",
+    "last_candle_close": "2026-08-05 04:00:00+00:00",
+    "candle_count": 73,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_TREND_ESTABLISHED",
+        "prior": {
+          "state": "unknown",
+          "external_high": null,
+          "external_low": null,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "direction": "bullish",
+          "broken_level": 595.0,
+          "pivot_timestamp": "2026-08-03 16:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-04 08:00:00+00:00",
+          "resulting_state": "bullish_unprotected",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-08-05 04:00:00+00:00",
+        "latest_establishment_target": 595.0,
+        "protection_decisions": [
+          {
+            "candidate_price": 575.2,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 582.3,
+            "reason": "origin_precedes_target"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_TREND_ESTABLISHED",
+        "prior": {
+          "state": "unknown",
+          "external_high": null,
+          "external_low": null,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "direction": "bullish",
+          "broken_level": 595.0,
+          "pivot_timestamp": "2026-08-03 16:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-04 08:00:00+00:00",
+          "resulting_state": "bullish_protected",
+          "protected_level": 582.3,
+          "protected_pivot_timestamp": "2026-08-03 08:00:00+00:00",
+          "associated_protected_level": 582.3,
+          "protected_since": "2026-08-05 04:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-08-03 08:00:00+00:00",
+        "protected_confirmation": "2026-08-04 00:00:00+00:00",
+        "protected_eligible": "2026-08-04 04:00:00+00:00",
+        "latest_establishment": "2026-08-05 04:00:00+00:00",
+        "latest_establishment_target": 595.0,
+        "protection_decisions": [
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-08-05 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 595.0,
+            "target_pivot": "2026-08-03 16:00:00+00:00",
+            "candidate_price": 575.2,
+            "candidate_pivot": "2026-08-01 16:00:00+00:00",
+            "candidate_confirmation": "2026-08-02 08:00:00+00:00",
+            "first_usable_close": "2026-08-02 12:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-08-05 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 595.0,
+            "target_pivot": "2026-08-03 16:00:00+00:00",
+            "candidate_price": 582.3,
+            "candidate_pivot": "2026-08-03 08:00:00+00:00",
+            "candidate_confirmation": "2026-08-04 00:00:00+00:00",
+            "first_usable_close": "2026-08-04 04:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "ETH_20260811_1600_D",
+    "first_candle_open": "2026-07-24 00:00:00+00:00",
+    "last_candle_open": "2026-08-11 12:00:00+00:00",
+    "last_candle_close": "2026-08-11 16:00:00+00:00",
+    "candle_count": 112,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_TREND_ESTABLISHED",
+        "prior": {
+          "state": "unknown",
+          "external_high": null,
+          "external_low": null,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "direction": "bearish",
+          "broken_level": 1867.13,
+          "pivot_timestamp": "2026-08-10 16:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-11 08:00:00+00:00",
+          "resulting_state": "bearish_unprotected",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-08-11 16:00:00+00:00",
+        "latest_establishment_target": 1867.13,
+        "protection_decisions": [
+          {
+            "candidate_price": 1940.97,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 1937.67,
+            "reason": "origin_precedes_target"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_TREND_ESTABLISHED",
+        "prior": {
+          "state": "unknown",
+          "external_high": null,
+          "external_low": null,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "direction": "bearish",
+          "broken_level": 1867.13,
+          "pivot_timestamp": "2026-08-10 16:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-11 08:00:00+00:00",
+          "resulting_state": "bearish_protected",
+          "protected_level": 1937.67,
+          "protected_pivot_timestamp": "2026-08-09 20:00:00+00:00",
+          "associated_protected_level": 1937.67,
+          "protected_since": "2026-08-11 16:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-08-09 20:00:00+00:00",
+        "protected_confirmation": "2026-08-10 12:00:00+00:00",
+        "protected_eligible": "2026-08-10 16:00:00+00:00",
+        "latest_establishment": "2026-08-11 16:00:00+00:00",
+        "latest_establishment_target": 1867.13,
+        "protection_decisions": [
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-11 16:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 1867.13,
+            "target_pivot": "2026-08-10 16:00:00+00:00",
+            "candidate_price": 1940.97,
+            "candidate_pivot": "2026-08-07 12:00:00+00:00",
+            "candidate_confirmation": "2026-08-08 04:00:00+00:00",
+            "first_usable_close": "2026-08-08 08:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-11 16:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 1867.13,
+            "target_pivot": "2026-08-10 16:00:00+00:00",
+            "candidate_price": 1937.67,
+            "candidate_pivot": "2026-08-09 20:00:00+00:00",
+            "candidate_confirmation": "2026-08-10 12:00:00+00:00",
+            "first_usable_close": "2026-08-10 16:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "BNB_20260812_0000_U",
+    "first_candle_open": "2026-07-24 00:00:00+00:00",
+    "last_candle_open": "2026-08-11 20:00:00+00:00",
+    "last_candle_close": "2026-08-12 00:00:00+00:00",
+    "candle_count": 114,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_BOS",
+        "prior": {
+          "state": "bullish_unprotected",
+          "external_high": 613.7,
+          "external_low": null,
+          "continuation_armed": true,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": "2026-08-05 04:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_BOS",
+          "direction": "bullish",
+          "broken_level": 613.7,
+          "pivot_timestamp": "2026-08-08 12:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-09 04:00:00+00:00",
+          "resulting_state": "bullish_unprotected",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-08-05 04:00:00+00:00",
+        "latest_establishment_target": 595.0,
+        "protection_decisions": [
+          {
+            "candidate_price": 575.2,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 582.3,
+            "reason": "origin_precedes_target"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_BOS",
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 613.7,
+          "external_low": 582.3,
+          "continuation_armed": true,
+          "protected_level": 582.3,
+          "protected_pivot": "2026-08-03 08:00:00+00:00",
+          "protected_since": "2026-08-05 04:00:00+00:00",
+          "trend_started_at": "2026-08-05 04:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_BOS",
+          "direction": "bullish",
+          "broken_level": 613.7,
+          "pivot_timestamp": "2026-08-08 12:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-09 04:00:00+00:00",
+          "resulting_state": "bullish_protected",
+          "protected_level": 582.3,
+          "protected_pivot_timestamp": "2026-08-03 08:00:00+00:00",
+          "associated_protected_level": 582.3,
+          "protected_since": "2026-08-05 04:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-08-03 08:00:00+00:00",
+        "protected_confirmation": "2026-08-04 00:00:00+00:00",
+        "protected_eligible": "2026-08-04 04:00:00+00:00",
+        "latest_establishment": "2026-08-05 04:00:00+00:00",
+        "latest_establishment_target": 595.0,
+        "protection_decisions": [
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-08-05 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 595.0,
+            "target_pivot": "2026-08-03 16:00:00+00:00",
+            "candidate_price": 575.2,
+            "candidate_pivot": "2026-08-01 16:00:00+00:00",
+            "candidate_confirmation": "2026-08-02 08:00:00+00:00",
+            "first_usable_close": "2026-08-02 12:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-08-05 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 595.0,
+            "target_pivot": "2026-08-03 16:00:00+00:00",
+            "candidate_price": 582.3,
+            "candidate_pivot": "2026-08-03 08:00:00+00:00",
+            "candidate_confirmation": "2026-08-04 00:00:00+00:00",
+            "first_usable_close": "2026-08-04 04:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "ETH_20260821_0400_U",
+    "first_candle_open": "2026-08-01 20:00:00+00:00",
+    "last_candle_open": "2026-08-21 00:00:00+00:00",
+    "last_candle_close": "2026-08-21 04:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_BOS",
+        "prior": {
+          "state": "bullish_unprotected",
+          "external_high": 2336.34,
+          "external_low": null,
+          "continuation_armed": true,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": "2026-08-19 16:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_BOS",
+          "direction": "bullish",
+          "broken_level": 2336.34,
+          "pivot_timestamp": "2026-08-19 20:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-20 12:00:00+00:00",
+          "resulting_state": "bullish_unprotected",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-08-19 16:00:00+00:00",
+        "latest_establishment_target": 1922.71,
+        "protection_decisions": [
+          {
+            "candidate_price": 1862.5,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 1884.4,
+            "reason": "origin_precedes_target"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_TREND_ESTABLISHED",
+        "prior": {
+          "state": "unknown",
+          "external_high": null,
+          "external_low": null,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "direction": "bullish",
+          "broken_level": 2336.34,
+          "pivot_timestamp": "2026-08-19 20:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-20 12:00:00+00:00",
+          "resulting_state": "bullish_protected",
+          "protected_level": 1884.4,
+          "protected_pivot_timestamp": "2026-08-18 00:00:00+00:00",
+          "associated_protected_level": 1884.4,
+          "protected_since": "2026-08-21 04:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-08-18 00:00:00+00:00",
+        "protected_confirmation": "2026-08-18 16:00:00+00:00",
+        "protected_eligible": "2026-08-18 20:00:00+00:00",
+        "latest_establishment": "2026-08-21 04:00:00+00:00",
+        "latest_establishment_target": 2336.34,
+        "protection_decisions": [
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1862.5,
+            "candidate_pivot": "2026-08-13 16:00:00+00:00",
+            "candidate_confirmation": "2026-08-14 08:00:00+00:00",
+            "first_usable_close": "2026-08-14 12:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1884.4,
+            "candidate_pivot": "2026-08-18 00:00:00+00:00",
+            "candidate_confirmation": "2026-08-18 16:00:00+00:00",
+            "first_usable_close": "2026-08-18 20:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "ETH_20260902_1200_D",
+    "first_candle_open": "2026-08-14 04:00:00+00:00",
+    "last_candle_open": "2026-09-02 08:00:00+00:00",
+    "last_candle_close": "2026-09-02 12:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_TREND_ESTABLISHED",
+        "prior": {
+          "state": "bullish_unprotected",
+          "external_high": 2566.16,
+          "external_low": null,
+          "continuation_armed": true,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": "2026-08-19 16:00:00+00:00",
+          "continuation_count": 1
+        },
+        "current": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "direction": "bearish",
+          "broken_level": 2381.7,
+          "pivot_timestamp": "2026-09-01 16:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-09-02 08:00:00+00:00",
+          "resulting_state": "bearish_unprotected",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-09-02 12:00:00+00:00",
+        "latest_establishment_target": 2381.7,
+        "protection_decisions": [
+          {
+            "candidate_price": 2534.26,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 2488.93,
+            "reason": "origin_precedes_target"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": null,
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 2566.16,
+          "external_low": 1884.4,
+          "continuation_armed": true,
+          "protected_level": 1884.4,
+          "protected_pivot": "2026-08-18 00:00:00+00:00",
+          "protected_since": "2026-08-21 04:00:00+00:00",
+          "trend_started_at": "2026-08-21 04:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-08-18 00:00:00+00:00",
+        "protected_confirmation": "2026-08-18 16:00:00+00:00",
+        "protected_eligible": "2026-08-18 20:00:00+00:00",
+        "latest_establishment": "2026-08-21 04:00:00+00:00",
+        "latest_establishment_target": 2336.34,
+        "protection_decisions": [
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1862.5,
+            "candidate_pivot": "2026-08-13 16:00:00+00:00",
+            "candidate_confirmation": "2026-08-14 08:00:00+00:00",
+            "first_usable_close": "2026-08-14 12:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1884.4,
+            "candidate_pivot": "2026-08-18 00:00:00+00:00",
+            "candidate_confirmation": "2026-08-18 16:00:00+00:00",
+            "first_usable_close": "2026-08-18 20:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "ETH_20260918_2000_U",
+    "first_candle_open": "2026-08-30 12:00:00+00:00",
+    "last_candle_open": "2026-09-18 16:00:00+00:00",
+    "last_candle_close": "2026-09-18 20:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": null,
+        "prior": {
+          "state": "bearish_unprotected",
+          "external_high": null,
+          "external_low": 2354.86,
+          "continuation_armed": true,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": "2026-09-02 12:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-09-02 12:00:00+00:00",
+        "latest_establishment_target": 2381.7,
+        "protection_decisions": [
+          {
+            "candidate_price": 2534.26,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 2488.93,
+            "reason": "origin_precedes_target"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_BOS",
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 2614.33,
+          "external_low": 1884.4,
+          "continuation_armed": true,
+          "protected_level": 1884.4,
+          "protected_pivot": "2026-08-18 00:00:00+00:00",
+          "protected_since": "2026-08-21 04:00:00+00:00",
+          "trend_started_at": "2026-08-21 04:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_BOS",
+          "direction": "bullish",
+          "broken_level": 2614.33,
+          "pivot_timestamp": "2026-09-14 20:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-09-15 12:00:00+00:00",
+          "resulting_state": "bullish_protected",
+          "protected_level": 2357.01,
+          "protected_pivot_timestamp": "2026-09-15 16:00:00+00:00",
+          "associated_protected_level": 2357.01,
+          "protected_since": "2026-09-18 20:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-08-18 00:00:00+00:00",
+        "protected_confirmation": "2026-08-18 16:00:00+00:00",
+        "protected_eligible": "2026-08-18 20:00:00+00:00",
+        "latest_establishment": "2026-08-21 04:00:00+00:00",
+        "latest_establishment_target": 2336.34,
+        "protection_decisions": [
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1862.5,
+            "candidate_pivot": "2026-08-13 16:00:00+00:00",
+            "candidate_confirmation": "2026-08-14 08:00:00+00:00",
+            "first_usable_close": "2026-08-14 12:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1884.4,
+            "candidate_pivot": "2026-08-18 00:00:00+00:00",
+            "candidate_confirmation": "2026-08-18 16:00:00+00:00",
+            "first_usable_close": "2026-08-18 20:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "ETH_20260921_1200_U",
+    "first_candle_open": "2026-09-02 04:00:00+00:00",
+    "last_candle_open": "2026-09-21 08:00:00+00:00",
+    "last_candle_close": "2026-09-21 12:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_TREND_ESTABLISHED",
+        "prior": {
+          "state": "bearish_unprotected",
+          "external_high": null,
+          "external_low": 2354.86,
+          "continuation_armed": true,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": "2026-09-02 12:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "direction": "bullish",
+          "broken_level": 2668.31,
+          "pivot_timestamp": "2026-09-19 16:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-09-20 08:00:00+00:00",
+          "resulting_state": "bullish_protected",
+          "protected_level": 2562.96,
+          "protected_pivot_timestamp": "2026-09-20 00:00:00+00:00",
+          "associated_protected_level": 2562.96,
+          "protected_since": "2026-09-21 12:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-09-20 00:00:00+00:00",
+        "protected_confirmation": "2026-09-20 16:00:00+00:00",
+        "protected_eligible": "2026-09-20 20:00:00+00:00",
+        "latest_establishment": "2026-09-21 12:00:00+00:00",
+        "latest_establishment_target": 2668.31,
+        "protection_decisions": [
+          {
+            "candidate_price": 2357.01,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 2562.96,
+            "reason": "frozen_post_target_protection_assigned"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_BOS",
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 2668.31,
+          "external_low": 2357.01,
+          "continuation_armed": true,
+          "protected_level": 2357.01,
+          "protected_pivot": "2026-09-15 16:00:00+00:00",
+          "protected_since": "2026-09-18 20:00:00+00:00",
+          "trend_started_at": "2026-08-21 04:00:00+00:00",
+          "continuation_count": 1
+        },
+        "current": {
+          "classification": "EXTERNAL_BOS",
+          "direction": "bullish",
+          "broken_level": 2668.31,
+          "pivot_timestamp": "2026-09-19 16:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-09-20 08:00:00+00:00",
+          "resulting_state": "bullish_protected",
+          "protected_level": 2562.96,
+          "protected_pivot_timestamp": "2026-09-20 00:00:00+00:00",
+          "associated_protected_level": 2562.96,
+          "protected_since": "2026-09-21 12:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-09-15 16:00:00+00:00",
+        "protected_confirmation": "2026-09-16 08:00:00+00:00",
+        "protected_eligible": "2026-09-16 12:00:00+00:00",
+        "latest_establishment": "2026-08-21 04:00:00+00:00",
+        "latest_establishment_target": 2336.34,
+        "protection_decisions": [
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1862.5,
+            "candidate_pivot": "2026-08-13 16:00:00+00:00",
+            "candidate_confirmation": "2026-08-14 08:00:00+00:00",
+            "first_usable_close": "2026-08-14 12:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1884.4,
+            "candidate_pivot": "2026-08-18 00:00:00+00:00",
+            "candidate_confirmation": "2026-08-18 16:00:00+00:00",
+            "first_usable_close": "2026-08-18 20:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "BNB_20261028_1200_U",
+    "first_candle_open": "2026-10-09 04:00:00+00:00",
+    "last_candle_open": "2026-10-28 08:00:00+00:00",
+    "last_candle_close": "2026-10-28 12:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_TREND_ESTABLISHED",
+        "prior": {
+          "state": "unknown",
+          "external_high": null,
+          "external_low": null,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "direction": "bullish",
+          "broken_level": 756.2,
+          "pivot_timestamp": "2026-10-27 12:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-10-28 04:00:00+00:00",
+          "resulting_state": "bullish_unprotected",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-10-28 12:00:00+00:00",
+        "latest_establishment_target": 756.2,
+        "protection_decisions": [
+          {
+            "candidate_price": 733.5,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 734.6,
+            "reason": "origin_precedes_target"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_TREND_ESTABLISHED",
+        "prior": {
+          "state": "unknown",
+          "external_high": null,
+          "external_low": null,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "direction": "bullish",
+          "broken_level": 756.2,
+          "pivot_timestamp": "2026-10-27 12:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-10-28 04:00:00+00:00",
+          "resulting_state": "bullish_protected",
+          "protected_level": 734.6,
+          "protected_pivot_timestamp": "2026-10-27 08:00:00+00:00",
+          "associated_protected_level": 734.6,
+          "protected_since": "2026-10-28 12:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-10-27 08:00:00+00:00",
+        "protected_confirmation": "2026-10-28 00:00:00+00:00",
+        "protected_eligible": "2026-10-28 04:00:00+00:00",
+        "latest_establishment": "2026-10-28 12:00:00+00:00",
+        "latest_establishment_target": 756.2,
+        "protection_decisions": [
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-10-28 12:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 756.2,
+            "target_pivot": "2026-10-27 12:00:00+00:00",
+            "candidate_price": 733.5,
+            "candidate_pivot": "2026-10-26 08:00:00+00:00",
+            "candidate_confirmation": "2026-10-27 00:00:00+00:00",
+            "first_usable_close": "2026-10-27 04:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-10-28 12:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 756.2,
+            "target_pivot": "2026-10-27 12:00:00+00:00",
+            "candidate_price": 734.6,
+            "candidate_pivot": "2026-10-27 08:00:00+00:00",
+            "candidate_confirmation": "2026-10-28 00:00:00+00:00",
+            "first_usable_close": "2026-10-28 04:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "ETH_20261007_0400_D",
+    "first_candle_open": "2026-09-17 20:00:00+00:00",
+    "last_candle_open": "2026-10-07 00:00:00+00:00",
+    "last_candle_close": "2026-10-07 04:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": null,
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 2806.65,
+          "external_low": 2562.96,
+          "continuation_armed": true,
+          "protected_level": 2562.96,
+          "protected_pivot": "2026-09-20 00:00:00+00:00",
+          "protected_since": "2026-09-21 12:00:00+00:00",
+          "trend_started_at": "2026-09-21 12:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-09-20 00:00:00+00:00",
+        "protected_confirmation": "2026-09-20 16:00:00+00:00",
+        "protected_eligible": "2026-09-20 20:00:00+00:00",
+        "latest_establishment": "2026-09-21 12:00:00+00:00",
+        "latest_establishment_target": 2668.31,
+        "protection_decisions": [
+          {
+            "candidate_price": 2357.01,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 2562.96,
+            "reason": "frozen_post_target_protection_assigned"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": null,
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 2806.65,
+          "external_low": 2562.96,
+          "continuation_armed": true,
+          "protected_level": 2562.96,
+          "protected_pivot": "2026-09-20 00:00:00+00:00",
+          "protected_since": "2026-09-21 12:00:00+00:00",
+          "trend_started_at": "2026-08-21 04:00:00+00:00",
+          "continuation_count": 2
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-09-20 00:00:00+00:00",
+        "protected_confirmation": "2026-09-20 16:00:00+00:00",
+        "protected_eligible": "2026-09-20 20:00:00+00:00",
+        "latest_establishment": "2026-08-21 04:00:00+00:00",
+        "latest_establishment_target": 2336.34,
+        "protection_decisions": [
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1862.5,
+            "candidate_pivot": "2026-08-13 16:00:00+00:00",
+            "candidate_confirmation": "2026-08-14 08:00:00+00:00",
+            "first_usable_close": "2026-08-14 12:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-08-21 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 2336.34,
+            "target_pivot": "2026-08-19 20:00:00+00:00",
+            "candidate_price": 1884.4,
+            "candidate_pivot": "2026-08-18 00:00:00+00:00",
+            "candidate_confirmation": "2026-08-18 16:00:00+00:00",
+            "first_usable_close": "2026-08-18 20:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "SOL_20261007_1600_D",
+    "first_candle_open": "2026-09-18 08:00:00+00:00",
+    "last_candle_open": "2026-10-07 12:00:00+00:00",
+    "last_candle_close": "2026-10-07 16:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": null,
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 124.92,
+          "external_low": 112.45,
+          "continuation_armed": true,
+          "protected_level": 112.45,
+          "protected_pivot": "2026-09-24 08:00:00+00:00",
+          "protected_since": "2026-09-25 12:00:00+00:00",
+          "trend_started_at": "2026-08-08 04:00:00+00:00",
+          "continuation_count": 9
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-09-24 08:00:00+00:00",
+        "protected_confirmation": "2026-09-25 00:00:00+00:00",
+        "protected_eligible": "2026-09-25 04:00:00+00:00",
+        "latest_establishment": "2026-08-08 04:00:00+00:00",
+        "latest_establishment_target": 74.81,
+        "protection_decisions": [
+          {
+            "candidate_price": 71.9,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 72.29,
+            "reason": "frozen_post_target_protection_assigned"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": null,
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 124.92,
+          "external_low": 112.45,
+          "continuation_armed": true,
+          "protected_level": 112.45,
+          "protected_pivot": "2026-09-24 08:00:00+00:00",
+          "protected_since": "2026-09-25 12:00:00+00:00",
+          "trend_started_at": "2026-08-08 04:00:00+00:00",
+          "continuation_count": 9
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-09-24 08:00:00+00:00",
+        "protected_confirmation": "2026-09-25 00:00:00+00:00",
+        "protected_eligible": "2026-09-25 04:00:00+00:00",
+        "latest_establishment": "2026-08-08 04:00:00+00:00",
+        "latest_establishment_target": 74.81,
+        "protection_decisions": [
+          {
+            "symbol": "SOL_USDT",
+            "timestamp": "2026-08-08 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 74.81,
+            "target_pivot": "2026-08-05 16:00:00+00:00",
+            "candidate_price": 72.29,
+            "candidate_pivot": "2026-08-06 20:00:00+00:00",
+            "candidate_confirmation": "2026-08-07 12:00:00+00:00",
+            "first_usable_close": "2026-08-07 16:00:00+00:00",
+            "accepted": true,
+            "reason": "frozen_post_target_protection_retained"
+          },
+          {
+            "symbol": "SOL_USDT",
+            "timestamp": "2026-08-08 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 74.81,
+            "target_pivot": "2026-08-05 16:00:00+00:00",
+            "candidate_price": 71.9,
+            "candidate_pivot": "2026-08-03 08:00:00+00:00",
+            "candidate_confirmation": "2026-08-04 00:00:00+00:00",
+            "first_usable_close": "2026-08-04 04:00:00+00:00",
+            "accepted": false,
+            "reason": "fallback_not_considered_frozen_protection_assigned"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "SOL_20261007_2000_D",
+    "first_candle_open": "2026-09-18 12:00:00+00:00",
+    "last_candle_open": "2026-10-07 16:00:00+00:00",
+    "last_candle_close": "2026-10-07 20:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": null,
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 124.92,
+          "external_low": 112.45,
+          "continuation_armed": true,
+          "protected_level": 112.45,
+          "protected_pivot": "2026-09-24 08:00:00+00:00",
+          "protected_since": "2026-09-25 12:00:00+00:00",
+          "trend_started_at": "2026-08-08 04:00:00+00:00",
+          "continuation_count": 9
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-09-24 08:00:00+00:00",
+        "protected_confirmation": "2026-09-25 00:00:00+00:00",
+        "protected_eligible": "2026-09-25 04:00:00+00:00",
+        "latest_establishment": "2026-08-08 04:00:00+00:00",
+        "latest_establishment_target": 74.81,
+        "protection_decisions": [
+          {
+            "candidate_price": 71.9,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 72.29,
+            "reason": "frozen_post_target_protection_assigned"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": null,
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 124.92,
+          "external_low": 112.45,
+          "continuation_armed": true,
+          "protected_level": 112.45,
+          "protected_pivot": "2026-09-24 08:00:00+00:00",
+          "protected_since": "2026-09-25 12:00:00+00:00",
+          "trend_started_at": "2026-08-08 04:00:00+00:00",
+          "continuation_count": 9
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-09-24 08:00:00+00:00",
+        "protected_confirmation": "2026-09-25 00:00:00+00:00",
+        "protected_eligible": "2026-09-25 04:00:00+00:00",
+        "latest_establishment": "2026-08-08 04:00:00+00:00",
+        "latest_establishment_target": 74.81,
+        "protection_decisions": [
+          {
+            "symbol": "SOL_USDT",
+            "timestamp": "2026-08-08 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 74.81,
+            "target_pivot": "2026-08-05 16:00:00+00:00",
+            "candidate_price": 72.29,
+            "candidate_pivot": "2026-08-06 20:00:00+00:00",
+            "candidate_confirmation": "2026-08-07 12:00:00+00:00",
+            "first_usable_close": "2026-08-07 16:00:00+00:00",
+            "accepted": true,
+            "reason": "frozen_post_target_protection_retained"
+          },
+          {
+            "symbol": "SOL_USDT",
+            "timestamp": "2026-08-08 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 74.81,
+            "target_pivot": "2026-08-05 16:00:00+00:00",
+            "candidate_price": 71.9,
+            "candidate_pivot": "2026-08-03 08:00:00+00:00",
+            "candidate_confirmation": "2026-08-04 00:00:00+00:00",
+            "first_usable_close": "2026-08-04 04:00:00+00:00",
+            "accepted": false,
+            "reason": "fallback_not_considered_frozen_protection_assigned"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "BNB_20260820_0000_U",
+    "first_candle_open": "2026-07-31 16:00:00+00:00",
+    "last_candle_open": "2026-08-19 20:00:00+00:00",
+    "last_candle_close": "2026-08-20 00:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_BOS",
+        "prior": {
+          "state": "bullish_unprotected",
+          "external_high": 621.1,
+          "external_low": null,
+          "continuation_armed": true,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": "2026-08-05 04:00:00+00:00",
+          "continuation_count": 1
+        },
+        "current": {
+          "classification": "EXTERNAL_BOS",
+          "direction": "bullish",
+          "broken_level": 621.1,
+          "pivot_timestamp": "2026-08-12 00:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-12 16:00:00+00:00",
+          "resulting_state": "bullish_protected",
+          "protected_level": 600.3,
+          "protected_pivot_timestamp": "2026-08-18 12:00:00+00:00",
+          "associated_protected_level": 600.3,
+          "protected_since": "2026-08-20 00:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-08-18 12:00:00+00:00",
+        "protected_confirmation": "2026-08-19 04:00:00+00:00",
+        "protected_eligible": "2026-08-19 08:00:00+00:00",
+        "latest_establishment": "2026-08-05 04:00:00+00:00",
+        "latest_establishment_target": 595.0,
+        "protection_decisions": [
+          {
+            "candidate_price": 575.2,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 582.3,
+            "reason": "origin_precedes_target"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_BOS",
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 621.1,
+          "external_low": 582.3,
+          "continuation_armed": true,
+          "protected_level": 582.3,
+          "protected_pivot": "2026-08-03 08:00:00+00:00",
+          "protected_since": "2026-08-05 04:00:00+00:00",
+          "trend_started_at": "2026-08-05 04:00:00+00:00",
+          "continuation_count": 1
+        },
+        "current": {
+          "classification": "EXTERNAL_BOS",
+          "direction": "bullish",
+          "broken_level": 621.1,
+          "pivot_timestamp": "2026-08-12 00:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-08-12 16:00:00+00:00",
+          "resulting_state": "bullish_protected",
+          "protected_level": 600.3,
+          "protected_pivot_timestamp": "2026-08-18 12:00:00+00:00",
+          "associated_protected_level": 600.3,
+          "protected_since": "2026-08-20 00:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-08-03 08:00:00+00:00",
+        "protected_confirmation": "2026-08-04 00:00:00+00:00",
+        "protected_eligible": "2026-08-04 04:00:00+00:00",
+        "latest_establishment": "2026-08-05 04:00:00+00:00",
+        "latest_establishment_target": 595.0,
+        "protection_decisions": [
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-08-05 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 595.0,
+            "target_pivot": "2026-08-03 16:00:00+00:00",
+            "candidate_price": 575.2,
+            "candidate_pivot": "2026-08-01 16:00:00+00:00",
+            "candidate_confirmation": "2026-08-02 08:00:00+00:00",
+            "first_usable_close": "2026-08-02 12:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-08-05 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 595.0,
+            "target_pivot": "2026-08-03 16:00:00+00:00",
+            "candidate_price": 582.3,
+            "candidate_pivot": "2026-08-03 08:00:00+00:00",
+            "candidate_confirmation": "2026-08-04 00:00:00+00:00",
+            "first_usable_close": "2026-08-04 04:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "ADA_20260919_0400_U",
+    "first_candle_open": "2026-08-30 20:00:00+00:00",
+    "last_candle_open": "2026-09-19 00:00:00+00:00",
+    "last_candle_close": "2026-09-19 04:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": null,
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 0.2343,
+          "external_low": 0.1711,
+          "continuation_armed": true,
+          "protected_level": 0.1711,
+          "protected_pivot": "2026-08-18 00:00:00+00:00",
+          "protected_since": "2026-08-21 16:00:00+00:00",
+          "trend_started_at": "2026-07-30 16:00:00+00:00",
+          "continuation_count": 4
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-08-18 00:00:00+00:00",
+        "protected_confirmation": "2026-08-18 16:00:00+00:00",
+        "protected_eligible": "2026-08-18 20:00:00+00:00",
+        "latest_establishment": "2026-07-30 16:00:00+00:00",
+        "latest_establishment_target": 0.1688,
+        "protection_decisions": [
+          {
+            "candidate_price": 0.1532,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 0.1604,
+            "reason": "frozen_post_target_protection_assigned"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": null,
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 0.2343,
+          "external_low": 0.1711,
+          "continuation_armed": true,
+          "protected_level": 0.1711,
+          "protected_pivot": "2026-08-18 00:00:00+00:00",
+          "protected_since": "2026-08-21 16:00:00+00:00",
+          "trend_started_at": "2026-07-30 16:00:00+00:00",
+          "continuation_count": 4
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-08-18 00:00:00+00:00",
+        "protected_confirmation": "2026-08-18 16:00:00+00:00",
+        "protected_eligible": "2026-08-18 20:00:00+00:00",
+        "latest_establishment": "2026-07-30 16:00:00+00:00",
+        "latest_establishment_target": 0.1688,
+        "protection_decisions": [
+          {
+            "symbol": "ADA_USDT",
+            "timestamp": "2026-07-30 16:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 0.1688,
+            "target_pivot": "2026-07-29 16:00:00+00:00",
+            "candidate_price": 0.1604,
+            "candidate_pivot": "2026-07-29 20:00:00+00:00",
+            "candidate_confirmation": "2026-07-30 12:00:00+00:00",
+            "first_usable_close": "2026-07-30 16:00:00+00:00",
+            "accepted": true,
+            "reason": "frozen_post_target_protection_retained"
+          },
+          {
+            "symbol": "ADA_USDT",
+            "timestamp": "2026-07-30 16:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 0.1688,
+            "target_pivot": "2026-07-29 16:00:00+00:00",
+            "candidate_price": 0.1532,
+            "candidate_pivot": "2026-07-28 00:00:00+00:00",
+            "candidate_confirmation": "2026-07-28 16:00:00+00:00",
+            "first_usable_close": "2026-07-28 20:00:00+00:00",
+            "accepted": false,
+            "reason": "fallback_not_considered_frozen_protection_assigned"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "ADA_20261007_0400_D",
+    "first_candle_open": "2026-09-17 20:00:00+00:00",
+    "last_candle_open": "2026-10-07 00:00:00+00:00",
+    "last_candle_close": "2026-10-07 04:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_CHOCH",
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 0.2824,
+          "external_low": 0.2614,
+          "continuation_armed": true,
+          "protected_level": 0.2614,
+          "protected_pivot": "2026-10-05 16:00:00+00:00",
+          "protected_since": "2026-10-06 12:00:00+00:00",
+          "trend_started_at": "2026-07-30 16:00:00+00:00",
+          "continuation_count": 7
+        },
+        "current": {
+          "classification": "EXTERNAL_CHOCH",
+          "direction": "bearish",
+          "broken_level": 0.2614,
+          "pivot_timestamp": "2026-10-05 16:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-10-06 08:00:00+00:00",
+          "resulting_state": "unknown",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": 0.2614,
+          "protected_since": "2026-10-06 12:00:00+00:00",
+          "strong_rejection_reasons": "weak_close_position"
+        },
+        "protected_pivot": "2026-10-05 16:00:00+00:00",
+        "protected_confirmation": "2026-10-06 08:00:00+00:00",
+        "protected_eligible": "2026-10-06 12:00:00+00:00",
+        "latest_establishment": "2026-07-30 16:00:00+00:00",
+        "latest_establishment_target": 0.1688,
+        "protection_decisions": [
+          {
+            "candidate_price": 0.1532,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 0.1604,
+            "reason": "frozen_post_target_protection_assigned"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_CHOCH",
+        "prior": {
+          "state": "bullish_protected",
+          "external_high": 0.2824,
+          "external_low": 0.2614,
+          "continuation_armed": true,
+          "protected_level": 0.2614,
+          "protected_pivot": "2026-10-05 16:00:00+00:00",
+          "protected_since": "2026-10-06 12:00:00+00:00",
+          "trend_started_at": "2026-07-30 16:00:00+00:00",
+          "continuation_count": 7
+        },
+        "current": {
+          "classification": "EXTERNAL_CHOCH",
+          "direction": "bearish",
+          "broken_level": 0.2614,
+          "pivot_timestamp": "2026-10-05 16:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-10-06 08:00:00+00:00",
+          "resulting_state": "unknown",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": 0.2614,
+          "protected_since": "2026-10-06 12:00:00+00:00",
+          "strong_rejection_reasons": "weak_close_position"
+        },
+        "protected_pivot": "2026-10-05 16:00:00+00:00",
+        "protected_confirmation": "2026-10-06 08:00:00+00:00",
+        "protected_eligible": "2026-10-06 12:00:00+00:00",
+        "latest_establishment": "2026-07-30 16:00:00+00:00",
+        "latest_establishment_target": 0.1688,
+        "protection_decisions": [
+          {
+            "symbol": "ADA_USDT",
+            "timestamp": "2026-07-30 16:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 0.1688,
+            "target_pivot": "2026-07-29 16:00:00+00:00",
+            "candidate_price": 0.1604,
+            "candidate_pivot": "2026-07-29 20:00:00+00:00",
+            "candidate_confirmation": "2026-07-30 12:00:00+00:00",
+            "first_usable_close": "2026-07-30 16:00:00+00:00",
+            "accepted": true,
+            "reason": "frozen_post_target_protection_retained"
+          },
+          {
+            "symbol": "ADA_USDT",
+            "timestamp": "2026-07-30 16:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 0.1688,
+            "target_pivot": "2026-07-29 16:00:00+00:00",
+            "candidate_price": 0.1532,
+            "candidate_pivot": "2026-07-28 00:00:00+00:00",
+            "candidate_confirmation": "2026-07-28 16:00:00+00:00",
+            "first_usable_close": "2026-07-28 20:00:00+00:00",
+            "accepted": false,
+            "reason": "fallback_not_considered_frozen_protection_assigned"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "SOL_20261019_0400_U",
+    "first_candle_open": "2026-09-29 20:00:00+00:00",
+    "last_candle_open": "2026-10-19 00:00:00+00:00",
+    "last_candle_close": "2026-10-19 04:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_CHOCH",
+        "prior": {
+          "state": "bearish_protected",
+          "external_high": 104.75,
+          "external_low": 101.07,
+          "continuation_armed": false,
+          "protected_level": 104.75,
+          "protected_pivot": "2026-10-18 00:00:00+00:00",
+          "protected_since": "2026-10-18 20:00:00+00:00",
+          "trend_started_at": "2026-10-18 20:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_CHOCH",
+          "direction": "bullish",
+          "broken_level": 104.75,
+          "pivot_timestamp": "2026-10-18 00:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-10-18 16:00:00+00:00",
+          "resulting_state": "unknown",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": 104.75,
+          "protected_since": "2026-10-18 20:00:00+00:00",
+          "strong_rejection_reasons": "weak_displacement|poor_body_quality|weak_close_position|insufficient_trend_history"
+        },
+        "protected_pivot": "2026-10-18 00:00:00+00:00",
+        "protected_confirmation": "2026-10-18 16:00:00+00:00",
+        "protected_eligible": "2026-10-18 20:00:00+00:00",
+        "latest_establishment": "2026-10-18 20:00:00+00:00",
+        "latest_establishment_target": 101.07,
+        "protection_decisions": [
+          {
+            "candidate_price": 105.22,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 104.75,
+            "reason": "frozen_post_target_protection_assigned"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_CHOCH",
+        "prior": {
+          "state": "bearish_protected",
+          "external_high": 104.75,
+          "external_low": 101.07,
+          "continuation_armed": false,
+          "protected_level": 104.75,
+          "protected_pivot": "2026-10-18 00:00:00+00:00",
+          "protected_since": "2026-10-18 20:00:00+00:00",
+          "trend_started_at": "2026-10-18 20:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": "EXTERNAL_CHOCH",
+          "direction": "bullish",
+          "broken_level": 104.75,
+          "pivot_timestamp": "2026-10-18 00:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-10-18 16:00:00+00:00",
+          "resulting_state": "unknown",
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": 104.75,
+          "protected_since": "2026-10-18 20:00:00+00:00",
+          "strong_rejection_reasons": "weak_displacement|poor_body_quality|weak_close_position|insufficient_trend_history"
+        },
+        "protected_pivot": "2026-10-18 00:00:00+00:00",
+        "protected_confirmation": "2026-10-18 16:00:00+00:00",
+        "protected_eligible": "2026-10-18 20:00:00+00:00",
+        "latest_establishment": "2026-10-18 20:00:00+00:00",
+        "latest_establishment_target": 101.07,
+        "protection_decisions": [
+          {
+            "symbol": "SOL_USDT",
+            "timestamp": "2026-10-18 20:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 101.07,
+            "target_pivot": "2026-10-17 20:00:00+00:00",
+            "candidate_price": 104.75,
+            "candidate_pivot": "2026-10-18 00:00:00+00:00",
+            "candidate_confirmation": "2026-10-18 16:00:00+00:00",
+            "first_usable_close": "2026-10-18 20:00:00+00:00",
+            "accepted": true,
+            "reason": "frozen_post_target_protection_retained"
+          },
+          {
+            "symbol": "SOL_USDT",
+            "timestamp": "2026-10-18 20:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 101.07,
+            "target_pivot": "2026-10-17 20:00:00+00:00",
+            "candidate_price": 105.22,
+            "candidate_pivot": "2026-10-17 04:00:00+00:00",
+            "candidate_confirmation": "2026-10-17 20:00:00+00:00",
+            "first_usable_close": "2026-10-18 00:00:00+00:00",
+            "accepted": false,
+            "reason": "fallback_not_considered_frozen_protection_assigned"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "BNB_20261020_2000_U",
+    "first_candle_open": "2026-10-01 12:00:00+00:00",
+    "last_candle_open": "2026-10-20 16:00:00+00:00",
+    "last_candle_close": "2026-10-20 20:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": null,
+        "prior": {
+          "state": "unknown",
+          "external_high": null,
+          "external_low": null,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-08-05 04:00:00+00:00",
+        "latest_establishment_target": 595.0,
+        "protection_decisions": [
+          {
+            "candidate_price": 575.2,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 582.3,
+            "reason": "origin_precedes_target"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": null,
+        "prior": {
+          "state": "unknown",
+          "external_high": null,
+          "external_low": null,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-08-05 04:00:00+00:00",
+        "latest_establishment_target": 595.0,
+        "protection_decisions": [
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-08-05 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 595.0,
+            "target_pivot": "2026-08-03 16:00:00+00:00",
+            "candidate_price": 575.2,
+            "candidate_pivot": "2026-08-01 16:00:00+00:00",
+            "candidate_confirmation": "2026-08-02 08:00:00+00:00",
+            "first_usable_close": "2026-08-02 12:00:00+00:00",
+            "accepted": false,
+            "reason": "not_immediate_significant_predecessor_of_target"
+          },
+          {
+            "symbol": "BNB_USDT",
+            "timestamp": "2026-08-05 04:00:00+00:00",
+            "trend": "bullish",
+            "target_price": 595.0,
+            "target_pivot": "2026-08-03 16:00:00+00:00",
+            "candidate_price": 582.3,
+            "candidate_pivot": "2026-08-03 08:00:00+00:00",
+            "candidate_confirmation": "2026-08-04 00:00:00+00:00",
+            "first_usable_close": "2026-08-04 04:00:00+00:00",
+            "accepted": true,
+            "reason": "intact_immediate_significant_pre_target_leg_origin"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "ETH_20261024_1200_D",
+    "first_candle_open": "2026-10-05 04:00:00+00:00",
+    "last_candle_open": "2026-10-24 08:00:00+00:00",
+    "last_candle_close": "2026-10-24 12:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": null,
+        "prior": {
+          "state": "bearish_protected",
+          "external_high": 2537.77,
+          "external_low": 2314.89,
+          "continuation_armed": true,
+          "protected_level": 2537.77,
+          "protected_pivot": "2026-10-13 04:00:00+00:00",
+          "protected_since": "2026-10-15 04:00:00+00:00",
+          "trend_started_at": "2026-10-15 04:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-10-13 04:00:00+00:00",
+        "protected_confirmation": "2026-10-13 20:00:00+00:00",
+        "protected_eligible": "2026-10-14 00:00:00+00:00",
+        "latest_establishment": "2026-10-15 04:00:00+00:00",
+        "latest_establishment_target": 2407.59,
+        "protection_decisions": [
+          {
+            "candidate_price": 2578.8,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 2537.77,
+            "reason": "frozen_post_target_protection_assigned"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": null,
+        "prior": {
+          "state": "bearish_protected",
+          "external_high": 2537.77,
+          "external_low": 2314.89,
+          "continuation_armed": true,
+          "protected_level": 2537.77,
+          "protected_pivot": "2026-10-13 04:00:00+00:00",
+          "protected_since": "2026-10-15 04:00:00+00:00",
+          "trend_started_at": "2026-10-15 04:00:00+00:00",
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-10-13 04:00:00+00:00",
+        "protected_confirmation": "2026-10-13 20:00:00+00:00",
+        "protected_eligible": "2026-10-14 00:00:00+00:00",
+        "latest_establishment": "2026-10-15 04:00:00+00:00",
+        "latest_establishment_target": 2407.59,
+        "protection_decisions": [
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-10-15 04:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 2407.59,
+            "target_pivot": "2026-10-13 00:00:00+00:00",
+            "candidate_price": 2537.77,
+            "candidate_pivot": "2026-10-13 04:00:00+00:00",
+            "candidate_confirmation": "2026-10-13 20:00:00+00:00",
+            "first_usable_close": "2026-10-14 00:00:00+00:00",
+            "accepted": true,
+            "reason": "frozen_post_target_protection_retained"
+          },
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-10-15 04:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 2407.59,
+            "target_pivot": "2026-10-13 00:00:00+00:00",
+            "candidate_price": 2578.8,
+            "candidate_pivot": "2026-10-12 04:00:00+00:00",
+            "candidate_confirmation": "2026-10-12 20:00:00+00:00",
+            "first_usable_close": "2026-10-13 00:00:00+00:00",
+            "accepted": false,
+            "reason": "fallback_not_considered_frozen_protection_assigned"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "ETH_20261030_0000_D",
+    "first_candle_open": "2026-10-10 16:00:00+00:00",
+    "last_candle_open": "2026-10-29 20:00:00+00:00",
+    "last_candle_close": "2026-10-30 00:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": "EXTERNAL_BOS",
+        "prior": {
+          "state": "bearish_protected",
+          "external_high": 2417.23,
+          "external_low": 2281.38,
+          "continuation_armed": true,
+          "protected_level": 2417.23,
+          "protected_pivot": "2026-10-23 12:00:00+00:00",
+          "protected_since": "2026-10-24 16:00:00+00:00",
+          "trend_started_at": "2026-10-15 04:00:00+00:00",
+          "continuation_count": 1
+        },
+        "current": {
+          "classification": "EXTERNAL_BOS",
+          "direction": "bearish",
+          "broken_level": 2281.38,
+          "pivot_timestamp": "2026-10-24 12:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-10-25 04:00:00+00:00",
+          "resulting_state": "bearish_protected",
+          "protected_level": 2391.3,
+          "protected_pivot_timestamp": "2026-10-28 20:00:00+00:00",
+          "associated_protected_level": 2391.3,
+          "protected_since": "2026-10-30 00:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-10-23 12:00:00+00:00",
+        "protected_confirmation": "2026-10-24 04:00:00+00:00",
+        "protected_eligible": "2026-10-24 08:00:00+00:00",
+        "latest_establishment": "2026-10-15 04:00:00+00:00",
+        "latest_establishment_target": 2407.59,
+        "protection_decisions": [
+          {
+            "candidate_price": 2578.8,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 2537.77,
+            "reason": "frozen_post_target_protection_assigned"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": "EXTERNAL_BOS",
+        "prior": {
+          "state": "bearish_protected",
+          "external_high": 2417.23,
+          "external_low": 2281.38,
+          "continuation_armed": true,
+          "protected_level": 2417.23,
+          "protected_pivot": "2026-10-23 12:00:00+00:00",
+          "protected_since": "2026-10-24 16:00:00+00:00",
+          "trend_started_at": "2026-10-15 04:00:00+00:00",
+          "continuation_count": 1
+        },
+        "current": {
+          "classification": "EXTERNAL_BOS",
+          "direction": "bearish",
+          "broken_level": 2281.38,
+          "pivot_timestamp": "2026-10-24 12:00:00+00:00",
+          "pivot_confirmation_timestamp": "2026-10-25 04:00:00+00:00",
+          "resulting_state": "bearish_protected",
+          "protected_level": 2391.3,
+          "protected_pivot_timestamp": "2026-10-28 20:00:00+00:00",
+          "associated_protected_level": 2391.3,
+          "protected_since": "2026-10-30 00:00:00+00:00",
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": "2026-10-23 12:00:00+00:00",
+        "protected_confirmation": "2026-10-24 04:00:00+00:00",
+        "protected_eligible": "2026-10-24 08:00:00+00:00",
+        "latest_establishment": "2026-10-15 04:00:00+00:00",
+        "latest_establishment_target": 2407.59,
+        "protection_decisions": [
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-10-15 04:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 2407.59,
+            "target_pivot": "2026-10-13 00:00:00+00:00",
+            "candidate_price": 2537.77,
+            "candidate_pivot": "2026-10-13 04:00:00+00:00",
+            "candidate_confirmation": "2026-10-13 20:00:00+00:00",
+            "first_usable_close": "2026-10-14 00:00:00+00:00",
+            "accepted": true,
+            "reason": "frozen_post_target_protection_retained"
+          },
+          {
+            "symbol": "ETH_USDT",
+            "timestamp": "2026-10-15 04:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 2407.59,
+            "target_pivot": "2026-10-13 00:00:00+00:00",
+            "candidate_price": 2578.8,
+            "candidate_pivot": "2026-10-12 04:00:00+00:00",
+            "candidate_confirmation": "2026-10-12 20:00:00+00:00",
+            "first_usable_close": "2026-10-13 00:00:00+00:00",
+            "accepted": false,
+            "reason": "fallback_not_considered_frozen_protection_assigned"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case_id": "SOL_20261030_0000_D",
+    "first_candle_open": "2026-10-10 16:00:00+00:00",
+    "last_candle_open": "2026-10-29 20:00:00+00:00",
+    "last_candle_close": "2026-10-30 00:00:00+00:00",
+    "candle_count": 116,
+    "evidence": {
+      "frozen": {
+        "classification": null,
+        "prior": {
+          "state": "unknown",
+          "external_high": null,
+          "external_low": null,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-10-18 20:00:00+00:00",
+        "latest_establishment_target": 101.07,
+        "protection_decisions": [
+          {
+            "candidate_price": 105.22,
+            "reason": "not_latest_active_significant_opposite|origin_precedes_target"
+          },
+          {
+            "candidate_price": 104.75,
+            "reason": "frozen_post_target_protection_assigned"
+          }
+        ]
+      },
+      "shadow": {
+        "classification": null,
+        "prior": {
+          "state": "unknown",
+          "external_high": null,
+          "external_low": null,
+          "continuation_armed": false,
+          "protected_level": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "continuation_count": 0
+        },
+        "current": {
+          "classification": null,
+          "direction": null,
+          "broken_level": null,
+          "pivot_timestamp": null,
+          "pivot_confirmation_timestamp": null,
+          "resulting_state": null,
+          "protected_level": null,
+          "protected_pivot_timestamp": null,
+          "associated_protected_level": null,
+          "protected_since": null,
+          "strong_rejection_reasons": null
+        },
+        "protected_pivot": null,
+        "protected_confirmation": null,
+        "protected_eligible": null,
+        "latest_establishment": "2026-10-18 20:00:00+00:00",
+        "latest_establishment_target": 101.07,
+        "protection_decisions": [
+          {
+            "symbol": "SOL_USDT",
+            "timestamp": "2026-10-18 20:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 101.07,
+            "target_pivot": "2026-10-17 20:00:00+00:00",
+            "candidate_price": 104.75,
+            "candidate_pivot": "2026-10-18 00:00:00+00:00",
+            "candidate_confirmation": "2026-10-18 16:00:00+00:00",
+            "first_usable_close": "2026-10-18 20:00:00+00:00",
+            "accepted": true,
+            "reason": "frozen_post_target_protection_retained"
+          },
+          {
+            "symbol": "SOL_USDT",
+            "timestamp": "2026-10-18 20:00:00+00:00",
+            "trend": "bearish",
+            "target_price": 101.07,
+            "target_pivot": "2026-10-17 20:00:00+00:00",
+            "candidate_price": 105.22,
+            "candidate_pivot": "2026-10-17 04:00:00+00:00",
+            "candidate_confirmation": "2026-10-17 20:00:00+00:00",
+            "first_usable_close": "2026-10-18 00:00:00+00:00",
+            "accepted": false,
+            "reason": "fallback_not_considered_frozen_protection_assigned"
+          }
+        ]
+      }
+    }
+  }
+]

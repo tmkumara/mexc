@@ -1,0 +1,38 @@
+{
+  "algorithm_version": "2.3.0",
+  "symbol": "ADA_USDT",
+  "timeframe": "4h",
+  "source_timeframe": "15m",
+  "source_sha256": "219f28423eea46e80f6986e3055ab1a1f89cccbb93f5d4d142947190969b3a84",
+  "executed_at": "2026-11-22T23:02:50.669319+05:30",
+  "as_of": "2026-11-01T05:30:00+05:30",
+  "evaluation_start_inclusive": "2026-08-03T05:30:00+05:30",
+  "evaluation_end_exclusive": "2026-11-01T05:30:00+05:30",
+  "warmup_start_inclusive": "2026-07-24T05:30:00+05:30",
+  "warmup_end_exclusive": "2026-08-03T05:30:00+05:30",
+  "warmup_candles": 60,
+  "processed_candles": 600,
+  "evaluated_candles": 540,
+  "dropped_trailing_source_rows": 0,
+  "parameters": {
+    "pivot_left": 3,
+    "pivot_right": 3,
+    "atr_period": 14,
+    "minimum_swing_atr": 1.5,
+    "minimum_body_atr": 0.8,
+    "minimum_break_atr": 0.2,
+    "minimum_body_ratio": 0.6,
+    "minimum_close_position": 0.7
+  },
+  "internal_parameters": {
+    "pivot_left": 3,
+    "pivot_right": 3,
+    "atr_period": 14,
+    "minimum_swing_atr": 0.0,
+    "minimum_body_atr": 0.8,
+    "minimum_break_atr": 0.2,
+    "minimum_body_ratio": 0.6,
+    "minimum_close_position": 0.7
+  },
+  "discovery_range_edge_fraction": 0.25
+}

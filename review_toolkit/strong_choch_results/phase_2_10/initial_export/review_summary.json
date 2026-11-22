@@ -1,0 +1,32 @@
+{
+  "total_cases": 22,
+  "reviewed_cases": 0,
+  "unreviewed_cases": 22,
+  "ambiguous_cases": 0,
+  "definitive_cases": 0,
+  "reviewer_disagreements": [],
+  "strong_classification_disagreements": [
+    "ETH_20261008_1200_D"
+  ],
+  "strong_accuracy": null,
+  "frozen": {
+    "correctly_detected": 0,
+    "missed": 0,
+    "incorrect": 0,
+    "true_negatives": 0,
+    "reviewed_positives": 0,
+    "reviewed_negatives": 0,
+    "precision": null,
+    "recall": null
+  },
+  "shadow": {
+    "correctly_detected": 0,
+    "missed": 0,
+    "incorrect": 0,
+    "true_negatives": 0,
+    "reviewed_positives": 0,
+    "reviewed_negatives": 0,
+    "precision": null,
+    "recall": null
+  }
+}

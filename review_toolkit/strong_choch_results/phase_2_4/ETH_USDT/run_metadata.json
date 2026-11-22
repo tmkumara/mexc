@@ -1,0 +1,38 @@
+{
+  "algorithm_version": "2.3.0",
+  "symbol": "ETH_USDT",
+  "timeframe": "4h",
+  "source_timeframe": "15m",
+  "source_sha256": "f5e0c4b5ca09e08a64b631a4f3c63559fd19c960d63a2a453845a3393efbc2b2",
+  "executed_at": "2026-11-22T23:02:51.522968+05:30",
+  "as_of": "2026-11-01T05:30:00+05:30",
+  "evaluation_start_inclusive": "2026-08-03T05:30:00+05:30",
+  "evaluation_end_exclusive": "2026-11-01T05:30:00+05:30",
+  "warmup_start_inclusive": "2026-07-24T05:30:00+05:30",
+  "warmup_end_exclusive": "2026-08-03T05:30:00+05:30",
+  "warmup_candles": 60,
+  "processed_candles": 600,
+  "evaluated_candles": 540,
+  "dropped_trailing_source_rows": 0,
+  "parameters": {
+    "pivot_left": 3,
+    "pivot_right": 3,
+    "atr_period": 14,
+    "minimum_swing_atr": 1.5,
+    "minimum_body_atr": 0.8,
+    "minimum_break_atr": 0.2,
+    "minimum_body_ratio": 0.6,
+    "minimum_close_position": 0.7
+  },
+  "internal_parameters": {
+    "pivot_left": 3,
+    "pivot_right": 3,
+    "atr_period": 14,
+    "minimum_swing_atr": 0.0,
+    "minimum_body_atr": 0.8,
+    "minimum_break_atr": 0.2,
+    "minimum_body_ratio": 0.6,
+    "minimum_close_position": 0.7
+  },
+  "discovery_range_edge_fraction": 0.25
+}
