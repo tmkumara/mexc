@@ -5,10 +5,6 @@ from collections import Counter
 import json
 from pathlib import Path
 
-from .evaluate import read_rows
-from .replay import write_json
-
-
 LABELS = {
     "UNREVIEWED", "CORRECT_CHoCH", "MISSED_CHoCH", "FALSE_CHoCH", "CORRECT_BOS",
     "MISSED_BOS", "ORDINARY_BREAK", "AMBIGUOUS",
@@ -59,6 +55,8 @@ def evaluate(rows):
 
 
 def main():
+    from .review.io import read_rows, write_json
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path)

@@ -15,6 +15,7 @@ from telegram.constants import ParseMode
 import database as db
 import reports
 from config import TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, LKT, STRATEGY_NAME
+from telegram_review_integration import attach_review
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/resume — Resume signals\n\n"
         "/help — This message"
     )
+    review = context.application.bot_data.get("choch_review")
+    if review and review.authorize(update):
+        text += "\n/review — Private historical CHoCH review"
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
@@ -257,4 +261,5 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("status",  cmd_status))
     app.add_handler(CommandHandler("pause",   cmd_pause))
     app.add_handler(CommandHandler("resume",  cmd_resume))
+    attach_review(app)
     return app

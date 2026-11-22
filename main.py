@@ -345,7 +345,10 @@ async def main():
     async with app:
         await app.initialize()
         await app.start()
-        await app.updater.start_polling(drop_pending_updates=True)
+        await app.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=[] if "choch_review" in app.bot_data else None,
+        )
 
         logger.info("Bot is running. Press Ctrl+C to stop.")
 

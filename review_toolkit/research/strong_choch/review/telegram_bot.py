@@ -2,13 +2,14 @@
 
 import json
 import logging
+import re
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
-from ..data import utc
 from .evaluation import report
+from .io import utc
 from .queue import BUTTONS, LABELS
 from .service import parse_callback
 
@@ -27,9 +28,12 @@ HELP = (
 
 
 class TelegramReview:
-    def __init__(self, service, chart_dir, manifest_path):
+    def __init__(self, service, chart_dir, manifest_path, *, integrated=False, disabled_marker=None):
         self.service = service
         self.chart_dir = chart_dir
+        self.integrated = integrated
+        self.disabled_marker = disabled_marker
+        self.callback_prefix = "choch_review:" if integrated else "r:"
         self.manifest = {row["case_id"]: row for row in json.loads(manifest_path.read_text(encoding="utf-8"))}
         for case in service.cases.values():
             row = self.manifest.get(case.case_id)
@@ -42,7 +46,12 @@ class TelegramReview:
 
     def authorize(self, update):
         user, chat = update.effective_user, update.effective_chat
-        return bool(user and chat and self.service.authorized(user.id, chat.type))
+        if not (user and chat and self.service.authorized(user.id, chat.type)):
+            return False
+        try:
+            return not (self.disabled_marker and self.disabled_marker.exists())
+        except OSError:
+            return False
 
     def state(self, reviewer, case):
         return self.service.storage.effective(reviewer, case.case_id) or {}
@@ -51,7 +60,7 @@ class TelegramReview:
         version = state.get("review_version", 0)
 
         def button(action, name):
-            return InlineKeyboardButton(name, callback_data=f"r:{action}:{case.case_id}:{version}")
+            return InlineKeyboardButton(name, callback_data=f"{self.callback_prefix}{action}:{case.case_id}:{version}")
 
         return InlineKeyboardMarkup([
             [button("vc", BUTTONS["vc"]), button("nc", BUTTONS["nc"])],
@@ -69,20 +78,27 @@ class TelegramReview:
         protection = [row.get(f"{engine}_prior_protected_level") or "none"
                       for engine in ("frozen", "shadow")]
         decision = (state.get("review_label") or "UNREVIEWED").replace("_", " ")
+        grouped = row.get("grouped_broken_levels")
+        grouped_text = f"Grouped levels: {grouped[:100]}\n" if grouped else ""
         return (
             f"Structure review {index}/{len(self.service.order)} · {case.case_id}\n"
             f"{case.symbol} · 4H · {case.timestamp[:16].replace('T', ' ')} UTC · {direction}\n"
             f"Close {row['close']}\n"
             f"Frozen: {labels[0]} | prior protection {protection[0]}\n"
             f"Shadow: {labels[1]} | prior protection {protection[1]}\n"
+            f"Broken level (frozen / shadow): {row.get('frozen_broken_level') or '—'} / "
+            f"{row.get('shadow_broken_level') or '—'}\n"
+            f"{grouped_text}"
             f"Your review: {decision}\n"
             "What does the structure support at this close?"
         )
 
     async def show(self, update, context, case):
         if case is None:
+            previous = "/review_previous" if self.integrated else "/previous"
+            direct = "/review_case" if self.integrated else "/case"
             await context.bot.send_message(chat_id=update.effective_chat.id,
-                                           text="No other unreviewed cases. Use /previous or /case to revisit one.")
+                                           text=f"No other unreviewed cases. Use {previous} or {direct} to revisit one.")
             return
         reviewer = update.effective_user.id
         state = self.state(reviewer, case)
@@ -129,9 +145,19 @@ class TelegramReview:
         text = update.effective_message.text
         pieces = text.split(maxsplit=2)
         command = pieces[0].split("@")[0].casefold()
+        help_text = HELP
+        if self.integrated:
+            help_text = re.sub(r"/(next|previous|progress|case|skip|undo|summary|help|reason)\b",
+                               r"/review_\1", HELP)
+            if command == "/review":
+                command = "/next"
+            elif command.startswith("/review_"):
+                command = "/" + command.removeprefix("/review_")
+            else:
+                return
         try:
             if command in ("/start", "/help"):
-                message = HELP
+                message = help_text
                 if command == "/start":
                     current = self.service.storage.cursor(reviewer)
                     message = "Authorized reviewer.\n" + (f"Last case: {current}\n\n" if current else "\n") + HELP
@@ -170,6 +196,8 @@ class TelegramReview:
                 message += "\nStrong accuracy requires a separate human judgment."
         except ValueError as exc:
             message = str(exc)
+            if self.integrated:
+                message = re.sub(r"/(next|case|reason)\b", r"/review_\1", message)
         await context.bot.send_message(chat_id=chat, text=message)
 
     async def callback(self, update, context):
@@ -180,7 +208,11 @@ class TelegramReview:
             return
         reviewer = update.effective_user.id
         try:
-            action, case_id, version = parse_callback(query.data)
+            payload = query.data
+            if (not isinstance(payload, str) or len(payload.encode("utf-8")) > 64
+                    or not payload.startswith(self.callback_prefix)):
+                raise ValueError("Invalid review button")
+            action, case_id, version = parse_callback("r:" + payload[len(self.callback_prefix):])
             case = self.service.case(reviewer, case_id)
             if action in LABELS:
                 changed = self.service.decide(reviewer, case_id, action, version, query.id)
@@ -191,7 +223,10 @@ class TelegramReview:
                                                      reply_markup=self.keyboard(case, state))
                 return
         except ValueError as exc:
-            await query.answer(str(exc), show_alert=True)
+            message = str(exc)
+            if self.integrated:
+                message = re.sub(r"/(next|case)\b", r"/review_\1", message)
+            await query.answer(message, show_alert=True)
             return
         await query.answer()
         if action == "dt":

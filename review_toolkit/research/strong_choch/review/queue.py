@@ -6,8 +6,7 @@ from pathlib import Path
 import re
 from types import MappingProxyType
 
-from ..data import utc
-from ..evaluate import read_rows
+from .io import read_rows, utc
 
 
 LABELS = {

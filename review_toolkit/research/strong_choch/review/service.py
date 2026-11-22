@@ -26,7 +26,7 @@ class Service:
         self.allowed = frozenset(allowed)
 
     def authorized(self, reviewer, chat_type):
-        return chat_type == "private" and reviewer in self.allowed
+        return chat_type == "private" and type(reviewer) is int and reviewer in self.allowed
 
     def require(self, reviewer):
         if reviewer not in self.allowed:

@@ -3,7 +3,7 @@
 from collections import defaultdict
 
 from ..accuracy_evaluation import evaluate as evaluate_phase6
-from ..replay import write_json, write_rows
+from .io import write_json, write_rows
 
 
 CHOCH = {"EXTERNAL_CHOCH", "STRONG_EXTERNAL_CHOCH"}
