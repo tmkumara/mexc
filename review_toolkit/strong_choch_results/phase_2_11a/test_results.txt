@@ -1,0 +1,28 @@
+Phase 2.11a focused test run — 2026-11-22T19:49:30Z — Python 3.12.14
+Base revision: f975e0b (uncommitted Phase 2.11a changes on top)
+
+== Bot integration (tests/test_integrated_*.py)
+...
+----------------------------------------------------------------------
+Ran 10 tests in 0.566s
+
+OK
+== Whole repo tests/ discovery (python -m unittest discover -s tests)
+Ran 19 = 10 real tests (the integration tests above, all pass) + 9 import-error placeholders.
+The 9 other test modules could not be imported here: "No module named 'pytest'" (pytest/pandas are not installed
+in this offline environment). Environmental, unchanged from the Phase 2.10.1 baseline; not a regression.
+
+== Toolkit: Phase 2.10 review (tests/test_telegram_review.py)
+Ran 10 tests in 0.223s
+
+OK
+== Toolkit: Phase 2.11a second opinion (tests/test_second_opinion.py)
+Ran 15 tests in 0.479s
+
+OK
+== Frozen detector fingerprint
+frozen lock : ccd1f9bc44ad2a90a500b10dad2fb31a7eb2bc06f540f748302a2c51c0539999
+current     : ccd1f9bc44ad2a90a500b10dad2fb31a7eb2bc06f540f748302a2c51c0539999
+MATCH
+== Detector / strategy source diff vs f975e0b (expect empty)
+(end of diff)

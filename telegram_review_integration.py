@@ -13,6 +13,7 @@ from telegram.error import TelegramError
 LOGGER = logging.getLogger(__name__)
 RELEASE = Path(__file__).resolve().parent
 ASSETS = RELEASE / "review_toolkit/strong_choch_results/phase_2_10"
+SECOND_ASSETS = RELEASE / "review_toolkit/strong_choch_results/phase_2_11a"
 DEFAULT_DB = "/var/lib/mexc-choch-review/review.sqlite3"
 COMMANDS = (
     "review", "review_next", "review_previous", "review_progress", "review_skip",
@@ -81,3 +82,50 @@ def attach_review(app):
     app.add_handler(CallbackQueryHandler(callback, pattern=r"^choch_review:"))
     app.bot_data["choch_review"] = adapter
     LOGGER.info("Private CHoCH review enabled (%d cases)", len(cases))
+    attach_second_opinion(app, adapter, cases, allowed, path)
+
+
+def attach_second_opinion(app, first, cases, allowed, first_path):
+    """Phase 2.11a second pass: separate SQLite file, same bot, same authorization."""
+    if os.getenv("MEXC_REVIEW_SECOND_ENABLED", "1") == "0":
+        return
+    try:
+        from review_toolkit.research.strong_choch.review.second_opinion import (
+            SecondOpinionService, SecondOpinionStorage, load_manifest)
+        from review_toolkit.research.strong_choch.review.telegram_second import (
+            COMMANDS as SECOND_COMMANDS, HELP_SUFFIX, PREFIX, SecondOpinionReview)
+
+        manifest_path = Path(os.getenv("MEXC_REVIEW_SECOND_MANIFEST_PATH")
+                             or SECOND_ASSETS / "second_opinion_queue.json")
+        manifest = load_manifest(manifest_path)
+        for row in manifest.values():
+            if not (manifest_path.parent / row["chart"]).is_file():
+                raise FileNotFoundError(row["chart"])
+        path = private_database_path(os.getenv("MEXC_REVIEW_SECOND_STORAGE_PATH")
+                                     or str(first_path.parent / "second_opinion.sqlite3"))
+        if path == first_path:
+            raise ValueError("Second-opinion storage must be separate from the first pass")
+        service = SecondOpinionService(manifest, {case.case_id: case for case in cases},
+                                       SecondOpinionStorage(path), allowed, first.service.storage)
+        adapter = SecondOpinionReview(service, manifest_path.parent, disabled_marker=first.disabled_marker)
+    except (ImportError, OSError, ValueError, TypeError, KeyError, sqlite3.Error) as exc:
+        LOGGER.warning("CHoCH second-opinion review disabled at startup (%s)", type(exc).__name__)
+        return
+
+    async def command(update, context):
+        try:
+            await adapter.command(update, context)
+        except (TelegramError, OSError, sqlite3.Error) as exc:
+            LOGGER.warning("CHoCH second-opinion command failed (%s)", type(exc).__name__)
+
+    async def callback(update, context):
+        try:
+            await adapter.callback(update, context)
+        except (TelegramError, OSError, sqlite3.Error) as exc:
+            LOGGER.warning("CHoCH second-opinion callback failed (%s)", type(exc).__name__)
+
+    app.add_handler(CommandHandler(SECOND_COMMANDS, command, filters=filters.ChatType.PRIVATE))
+    app.add_handler(CallbackQueryHandler(callback, pattern="^" + PREFIX))
+    app.bot_data["choch_review_second"] = adapter
+    first.help_suffix = HELP_SUFFIX
+    LOGGER.info("Private CHoCH second-opinion review enabled (%d cases)", len(manifest))

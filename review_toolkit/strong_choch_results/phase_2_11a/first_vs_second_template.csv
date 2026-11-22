@@ -1,0 +1,7 @@
+case_id,selection_reason,frozen_classification,shadow_classification,first_pass_label,second_pass_label,second_pass_reason,second_pass_note,changed,follow_up
+ADA_20260919_0400_U,First-pass Valid CHoCH conflicts with the recorded trend: upward break inside an external uptrend; prior trend start was off the Phase 2.10 chart.,NONE,NONE,VALID_CHOCH,,,,,
+ETH_20261008_1200_D,Both detectors report CHoCH (shadow Strong) but first pass said Not CHoCH; only Strong case; range breakdown vs reversal question.,EXTERNAL_CHOCH,STRONG_EXTERNAL_CHOCH,NOT_CHOCH,,,,,
+BNB_20261020_2000_U,First-pass Valid CHoCH while both detectors were in an unknown state; possible missed CHoCH.,NONE,NONE,VALID_CHOCH,,,,,
+ETH_20260819_1600_U,"Frozen/shadow CHoCH disagreement (shadow CHoCH, frozen new trend); range breakout vs reversal.",EXTERNAL_TREND_ESTABLISHED,EXTERNAL_CHOCH,NOT_CHOCH,,,,,
+ETH_20261024_1200_D,First-pass label was Ambiguous; internal break in the trend direction.,NONE,NONE,AMBIGUOUS,,,,,
+ETH_20260821_0400_U,"Three-way disagreement: frozen BOS, shadow new trend, first pass Ordinary Break.",EXTERNAL_BOS,EXTERNAL_TREND_ESTABLISHED,ORDINARY_BREAK,,,,,

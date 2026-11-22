@@ -38,11 +38,33 @@ def main():
         command.add_argument("--storage", type=Path)
         if action == "export":
             command.add_argument("--output", type=Path, required=True)
+    second = commands.add_parser("prepare-second")
+    second.add_argument("--source", type=Path, default=ROOT / "phase_2_4")
+    second.add_argument("--queue", type=Path, default=DEFAULT / "review_queue.csv")
+    second.add_argument("--freeze", type=Path, default=ROOT / "phase_2_5/algorithm_fingerprint.json")
+    second.add_argument("--first-pass", type=Path, help="first-pass review_decisions.csv export (read only)")
+    second.add_argument("--output", type=Path, default=ROOT / "phase_2_11a")
+    second_export = commands.add_parser("export-second")
+    second_export.add_argument("--manifest", type=Path, default=ROOT / "phase_2_11a/second_opinion_queue.json")
+    second_export.add_argument("--storage", type=Path, required=True)
+    second_export.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.action == "prepare":
         from .chart import prepare
         count = prepare(args.source, args.queue, args.freeze, args.output)
         print(f"Prepared {count} review cases and paired charts in {args.output}")
+        return
+    if args.action == "prepare-second":
+        from .clarity import prepare_second
+        count = prepare_second(args.source, args.queue, args.freeze, args.first_pass, args.output)
+        print(f"Prepared {count} second-opinion cases in {args.output}")
+        return
+    if args.action == "export-second":
+        from .second_opinion import SecondOpinionStorage, export_second, load_manifest
+        if not args.storage.is_file():
+            parser.error("Second-opinion storage file not found")
+        count = export_second(load_manifest(args.manifest), SecondOpinionStorage(args.storage), args.output)
+        print(f"Exported {count} second-opinion history rows to {args.output}")
         return
     load_dotenv()
     queue_path = args.queue or Path(os.getenv("MEXC_REVIEW_QUEUE_PATH") or DEFAULT / "review_queue.csv")

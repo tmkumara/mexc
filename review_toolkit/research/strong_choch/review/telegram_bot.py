@@ -28,11 +28,13 @@ HELP = (
 
 
 class TelegramReview:
-    def __init__(self, service, chart_dir, manifest_path, *, integrated=False, disabled_marker=None):
+    def __init__(self, service, chart_dir, manifest_path, *, integrated=False, disabled_marker=None,
+                 help_suffix=""):
         self.service = service
         self.chart_dir = chart_dir
         self.integrated = integrated
         self.disabled_marker = disabled_marker
+        self.help_suffix = help_suffix
         self.callback_prefix = "choch_review:" if integrated else "r:"
         self.manifest = {row["case_id"]: row for row in json.loads(manifest_path.read_text(encoding="utf-8"))}
         for case in service.cases.values():
@@ -148,7 +150,7 @@ class TelegramReview:
         help_text = HELP
         if self.integrated:
             help_text = re.sub(r"/(next|previous|progress|case|skip|undo|summary|help|reason)\b",
-                               r"/review_\1", HELP)
+                               r"/review_\1", HELP) + self.help_suffix
             if command == "/review":
                 command = "/next"
             elif command.startswith("/review_"):

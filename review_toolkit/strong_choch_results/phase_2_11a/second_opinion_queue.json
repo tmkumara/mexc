@@ -1,0 +1,1606 @@
+{
+  "round": "phase_2_11a",
+  "fingerprint": "ccd1f9bc44ad2a90a500b10dad2fb31a7eb2bc06f540f748302a2c51c0539999",
+  "source_queue": "strong_choch_results/phase_2_10/review_queue.csv",
+  "cases": [
+    {
+      "case_id": "ADA_20260919_0400_U",
+      "symbol": "ADA_USDT",
+      "close_time": "2026-09-19T04:00:00+00:00",
+      "direction": "up",
+      "close": 0.231,
+      "high": 0.2352,
+      "low": 0.2246,
+      "chart": "charts/ADA_20260919_0400_U.png",
+      "explanation": "explanations/ADA_20260919_0400_U.md",
+      "first_candle_open": "2026-07-27T16:00:00+00:00",
+      "last_candle_close": "2026-09-19T04:00:00+00:00",
+      "candle_count": 321,
+      "context_incomplete": false,
+      "dataset_start": "2026-07-24T00:00:00+00:00",
+      "engines": {
+        "frozen": {
+          "classification": "",
+          "prior_state": "bullish_protected",
+          "trend": "BULLISH",
+          "protected_level": 0.1711,
+          "protected_kind": "low",
+          "protected_pivot": "2026-08-18T00:00:00+00:00",
+          "protected_since": "2026-08-21T16:00:00+00:00",
+          "trend_started_at": "2026-07-30T16:00:00+00:00",
+          "bos_count": 4,
+          "external_high": 0.2343,
+          "external_low": 0.1711,
+          "boundary": 0.2343,
+          "broken_level": null,
+          "broken_pivot": null,
+          "resulting_state": null,
+          "strong_reasons": [],
+          "establishing": {
+            "level": 0.1688,
+            "pivot": "2026-07-29T16:00:00+00:00",
+            "direction": "BULLISH"
+          },
+          "bos_events": [
+            {
+              "level": 0.1761,
+              "at": "2026-08-02T04:00:00+00:00"
+            },
+            {
+              "level": 0.1921,
+              "at": "2026-08-03T16:00:00+00:00"
+            },
+            {
+              "level": 0.1993,
+              "at": "2026-08-06T16:00:00+00:00"
+            },
+            {
+              "level": 0.2116,
+              "at": "2026-08-21T16:00:00+00:00"
+            }
+          ],
+          "boundary_pivot": "2026-08-22T20:00:00+00:00",
+          "last_event": {
+            "kind": "bos",
+            "direction": "BULLISH",
+            "at": "2026-08-21T16:00:00+00:00",
+            "level": 0.2116
+          }
+        },
+        "shadow": {
+          "classification": "",
+          "prior_state": "bullish_protected",
+          "trend": "BULLISH",
+          "protected_level": 0.1711,
+          "protected_kind": "low",
+          "protected_pivot": "2026-08-18T00:00:00+00:00",
+          "protected_since": "2026-08-21T16:00:00+00:00",
+          "trend_started_at": "2026-07-30T16:00:00+00:00",
+          "bos_count": 4,
+          "external_high": 0.2343,
+          "external_low": 0.1711,
+          "boundary": 0.2343,
+          "broken_level": null,
+          "broken_pivot": null,
+          "resulting_state": null,
+          "strong_reasons": [],
+          "establishing": {
+            "level": 0.1688,
+            "pivot": "2026-07-29T16:00:00+00:00",
+            "direction": "BULLISH"
+          },
+          "bos_events": [
+            {
+              "level": 0.1761,
+              "at": "2026-08-02T04:00:00+00:00"
+            },
+            {
+              "level": 0.1921,
+              "at": "2026-08-03T16:00:00+00:00"
+            },
+            {
+              "level": 0.1993,
+              "at": "2026-08-06T16:00:00+00:00"
+            },
+            {
+              "level": 0.2116,
+              "at": "2026-08-21T16:00:00+00:00"
+            }
+          ],
+          "boundary_pivot": "2026-08-22T20:00:00+00:00",
+          "last_event": {
+            "kind": "bos",
+            "direction": "BULLISH",
+            "at": "2026-08-21T16:00:00+00:00",
+            "level": 0.2116
+          }
+        }
+      },
+      "detector_answers": [
+        "MINOR_BREAK",
+        "NO_VALID_BREAK"
+      ],
+      "differences": [],
+      "selection_reason": "First-pass Valid CHoCH conflicts with the recorded trend: upward break inside an external uptrend; prior trend start was off the Phase 2.10 chart.",
+      "first_pass_label": "VALID_CHOCH",
+      "swings": [
+        {
+          "kind": "low",
+          "price": 0.1532,
+          "pivot": "2026-07-28T00:00:00+00:00",
+          "confirmed": "2026-07-28T16:00:00+00:00",
+          "index": 24,
+          "significant": true,
+          "label": "SL"
+        },
+        {
+          "kind": "high",
+          "price": 0.1688,
+          "pivot": "2026-07-29T16:00:00+00:00",
+          "confirmed": "2026-07-30T08:00:00+00:00",
+          "index": 34,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 0.1604,
+          "pivot": "2026-07-29T20:00:00+00:00",
+          "confirmed": "2026-07-30T12:00:00+00:00",
+          "index": 35,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 0.1761,
+          "pivot": "2026-07-30T12:00:00+00:00",
+          "confirmed": "2026-07-31T04:00:00+00:00",
+          "index": 39,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 0.1666,
+          "pivot": "2026-07-31T12:00:00+00:00",
+          "confirmed": "2026-08-01T04:00:00+00:00",
+          "index": 45,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 0.1921,
+          "pivot": "2026-08-02T12:00:00+00:00",
+          "confirmed": "2026-08-03T04:00:00+00:00",
+          "index": 57,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 0.1816,
+          "pivot": "2026-08-03T08:00:00+00:00",
+          "confirmed": "2026-08-04T00:00:00+00:00",
+          "index": 62,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 0.1993,
+          "pivot": "2026-08-04T04:00:00+00:00",
+          "confirmed": "2026-08-04T20:00:00+00:00",
+          "index": 67,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 0.1857,
+          "pivot": "2026-08-06T00:00:00+00:00",
+          "confirmed": "2026-08-06T16:00:00+00:00",
+          "index": 78,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 0.2116,
+          "pivot": "2026-08-06T16:00:00+00:00",
+          "confirmed": "2026-08-07T08:00:00+00:00",
+          "index": 82,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 0.1804,
+          "pivot": "2026-08-12T20:00:00+00:00",
+          "confirmed": "2026-08-13T12:00:00+00:00",
+          "index": 119,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 0.1865,
+          "pivot": "2026-08-13T08:00:00+00:00",
+          "confirmed": "2026-08-14T00:00:00+00:00",
+          "index": 122,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 0.1778,
+          "pivot": "2026-08-14T12:00:00+00:00",
+          "confirmed": "2026-08-15T04:00:00+00:00",
+          "index": 129,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 0.1818,
+          "pivot": "2026-08-15T00:00:00+00:00",
+          "confirmed": "2026-08-15T16:00:00+00:00",
+          "index": 132,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 0.1711,
+          "pivot": "2026-08-18T00:00:00+00:00",
+          "confirmed": "2026-08-18T16:00:00+00:00",
+          "index": 150,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 0.2343,
+          "pivot": "2026-08-22T20:00:00+00:00",
+          "confirmed": "2026-08-23T12:00:00+00:00",
+          "index": 179,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 0.2134,
+          "pivot": "2026-08-23T04:00:00+00:00",
+          "confirmed": "2026-08-23T20:00:00+00:00",
+          "index": 181,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 0.2306,
+          "pivot": "2026-08-23T12:00:00+00:00",
+          "confirmed": "2026-08-24T04:00:00+00:00",
+          "index": 183,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 0.2022,
+          "pivot": "2026-08-26T16:00:00+00:00",
+          "confirmed": "2026-08-27T08:00:00+00:00",
+          "index": 202,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 0.218,
+          "pivot": "2026-08-28T00:00:00+00:00",
+          "confirmed": "2026-08-28T16:00:00+00:00",
+          "index": 210,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 0.1988,
+          "pivot": "2026-08-29T08:00:00+00:00",
+          "confirmed": "2026-08-30T00:00:00+00:00",
+          "index": 218,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 0.2061,
+          "pivot": "2026-08-30T16:00:00+00:00",
+          "confirmed": "2026-08-31T08:00:00+00:00",
+          "index": 226,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 0.1893,
+          "pivot": "2026-08-30T20:00:00+00:00",
+          "confirmed": "2026-08-31T12:00:00+00:00",
+          "index": 227,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 0.2028,
+          "pivot": "2026-09-01T04:00:00+00:00",
+          "confirmed": "2026-09-01T20:00:00+00:00",
+          "index": 235,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 0.1918,
+          "pivot": "2026-09-02T08:00:00+00:00",
+          "confirmed": "2026-09-03T00:00:00+00:00",
+          "index": 242,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 0.2271,
+          "pivot": "2026-09-04T04:00:00+00:00",
+          "confirmed": "2026-09-04T20:00:00+00:00",
+          "index": 253,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 0.2091,
+          "pivot": "2026-09-05T00:00:00+00:00",
+          "confirmed": "2026-09-05T16:00:00+00:00",
+          "index": 258,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 0.2237,
+          "pivot": "2026-09-06T00:00:00+00:00",
+          "confirmed": "2026-09-06T16:00:00+00:00",
+          "index": 264,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 0.2152,
+          "pivot": "2026-09-06T12:00:00+00:00",
+          "confirmed": "2026-09-07T04:00:00+00:00",
+          "index": 267,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 0.2264,
+          "pivot": "2026-09-07T00:00:00+00:00",
+          "confirmed": "2026-09-07T16:00:00+00:00",
+          "index": 270,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 0.2141,
+          "pivot": "2026-09-07T04:00:00+00:00",
+          "confirmed": "2026-09-07T20:00:00+00:00",
+          "index": 271,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 0.2321,
+          "pivot": "2026-09-08T16:00:00+00:00",
+          "confirmed": "2026-09-09T08:00:00+00:00",
+          "index": 280,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 0.2021,
+          "pivot": "2026-09-13T20:00:00+00:00",
+          "confirmed": "2026-09-14T12:00:00+00:00",
+          "index": 311,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 0.2159,
+          "pivot": "2026-09-14T20:00:00+00:00",
+          "confirmed": "2026-09-15T12:00:00+00:00",
+          "index": 317,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 0.1902,
+          "pivot": "2026-09-16T16:00:00+00:00",
+          "confirmed": "2026-09-17T08:00:00+00:00",
+          "index": 328,
+          "significant": true,
+          "label": "LL"
+        }
+      ],
+      "position": 1,
+      "caption": "Second opinion 1/6 \u00b7 ADA_20260919_0400_U\nADA_USDT \u00b7 4H close 2026-09-19 04:00 UTC \u00b7 break UP \u00b7 close 0.231\nFrozen: No external event \u00b7 prior BULLISH, protected low 0.1711\nShadow: No external event \u00b7 prior BULLISH, protected low 0.1711\nDetectors agree\nTap Explain for a plain-English walkthrough. Which answer fits this close?",
+      "explanation_text": "ADA_20260919_0400_U \u2014 ADA_USDT 4H, candle closing 2026-09-19 04:00 UTC\n\nBEFORE THE BREAK\n- Frozen: BULLISH trend. It became bullish at the close of 07-30 16:00 when price closed above the swing 0.1688. 4 BOS since then. Protected low: 0.1711 (swing at 08-18 00:00, protecting since 08-21 16:00).\n- Shadow: BULLISH trend. It became bullish at the close of 07-30 16:00 when price closed above the swing 0.1688. 4 BOS since then. Protected low: 0.1711 (swing at 08-18 00:00, protecting since 08-21 16:00).\n- Last significant confirmed swings (oldest first): HH 0.2264, LL 0.2141, HH 0.2321, LL 0.2021, LH 0.2159, LL 0.1902.\n\nAT THE BREAK\n- This 4H candle closed at 0.231 (high 0.2352, low 0.2246), breaking up.\n- Confirmed swing levels its close crossed: 0.2306.\n- Frozen: the break is in the SAME direction as the prior bullish trend. Relevant level: 0.2343 (its trend boundary); the close is NOT beyond it (above = beyond).\n- Shadow: the break is in the SAME direction as the prior bullish trend. Relevant level: 0.2343 (its trend boundary); the close is NOT beyond it (above = beyond).\n\nDETECTOR INTERPRETATION\n- Frozen reports no external event: the close did not cross the protected low 0.1711 or its trend boundary 0.2343.\n- Shadow reports no external event: the close did not cross the protected low 0.1711 or its trend boundary 0.2343.\n- The detectors agree on every recorded field.\n\nMISSING OR WEAK EVIDENCE\n- No missing structural evidence recorded by either detector.\n\nNeither detector's answer is assumed correct. The chart and this text stop at this close."
+    },
+    {
+      "case_id": "ETH_20261008_1200_D",
+      "symbol": "ETH_USDT",
+      "close_time": "2026-10-08T12:00:00+00:00",
+      "direction": "down",
+      "close": 2536.28,
+      "high": 2569.46,
+      "low": 2525.78,
+      "chart": "charts/ETH_20261008_1200_D.png",
+      "explanation": "explanations/ETH_20261008_1200_D.md",
+      "first_candle_open": "2026-08-17T20:00:00+00:00",
+      "last_candle_close": "2026-10-08T12:00:00+00:00",
+      "candle_count": 310,
+      "context_incomplete": false,
+      "dataset_start": "2026-07-24T00:00:00+00:00",
+      "engines": {
+        "frozen": {
+          "classification": "EXTERNAL_CHOCH",
+          "prior_state": "bullish_protected",
+          "trend": "BULLISH",
+          "protected_level": 2562.96,
+          "protected_kind": "low",
+          "protected_pivot": "2026-09-20T00:00:00+00:00",
+          "protected_since": "2026-09-21T12:00:00+00:00",
+          "trend_started_at": "2026-09-21T12:00:00+00:00",
+          "bos_count": 0,
+          "external_high": 2806.65,
+          "external_low": 2562.96,
+          "boundary": 2806.65,
+          "broken_level": 2562.96,
+          "broken_pivot": "2026-09-20T00:00:00+00:00",
+          "resulting_state": "unknown",
+          "strong_reasons": [
+            "insufficient_trend_history"
+          ],
+          "establishing": {
+            "level": 2668.31,
+            "pivot": "2026-09-19T16:00:00+00:00",
+            "direction": "BULLISH"
+          },
+          "bos_events": [],
+          "boundary_pivot": "2026-09-21T20:00:00+00:00",
+          "last_event": {
+            "kind": "trend_established",
+            "direction": "BULLISH",
+            "at": "2026-09-21T12:00:00+00:00",
+            "level": 2668.31
+          }
+        },
+        "shadow": {
+          "classification": "STRONG_EXTERNAL_CHOCH",
+          "prior_state": "bullish_protected",
+          "trend": "BULLISH",
+          "protected_level": 2562.96,
+          "protected_kind": "low",
+          "protected_pivot": "2026-09-20T00:00:00+00:00",
+          "protected_since": "2026-09-21T12:00:00+00:00",
+          "trend_started_at": "2026-08-21T04:00:00+00:00",
+          "bos_count": 2,
+          "external_high": 2806.65,
+          "external_low": 2562.96,
+          "boundary": 2806.65,
+          "broken_level": 2562.96,
+          "broken_pivot": "2026-09-20T00:00:00+00:00",
+          "resulting_state": "unknown",
+          "strong_reasons": [],
+          "establishing": {
+            "level": 2336.34,
+            "pivot": "2026-08-19T20:00:00+00:00",
+            "direction": "BULLISH"
+          },
+          "bos_events": [
+            {
+              "level": 2614.33,
+              "at": "2026-09-18T20:00:00+00:00"
+            },
+            {
+              "level": 2668.31,
+              "at": "2026-09-21T12:00:00+00:00"
+            }
+          ],
+          "boundary_pivot": "2026-09-21T20:00:00+00:00",
+          "last_event": {
+            "kind": "bos",
+            "direction": "BULLISH",
+            "at": "2026-09-21T12:00:00+00:00",
+            "level": 2668.31
+          }
+        }
+      },
+      "detector_answers": [
+        "CHOCH_REVERSAL"
+      ],
+      "differences": [
+        "classification (CHoCH vs Strong CHoCH)",
+        "trend start (09-21 12:00 vs 08-21 04:00)",
+        "BOS count (0 vs 2)"
+      ],
+      "selection_reason": "Both detectors report CHoCH (shadow Strong) but first pass said Not CHoCH; only Strong case; range breakdown vs reversal question.",
+      "first_pass_label": "NOT_CHOCH",
+      "swings": [
+        {
+          "kind": "high",
+          "price": 1918.0,
+          "pivot": "2026-08-17T20:00:00+00:00",
+          "confirmed": "2026-08-18T12:00:00+00:00",
+          "index": 149,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 1884.4,
+          "pivot": "2026-08-18T00:00:00+00:00",
+          "confirmed": "2026-08-18T16:00:00+00:00",
+          "index": 150,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2549.1,
+          "pivot": "2026-08-21T20:00:00+00:00",
+          "confirmed": "2026-08-22T12:00:00+00:00",
+          "index": 173,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2355.59,
+          "pivot": "2026-08-23T04:00:00+00:00",
+          "confirmed": "2026-08-23T20:00:00+00:00",
+          "index": 181,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2532.44,
+          "pivot": "2026-08-24T12:00:00+00:00",
+          "confirmed": "2026-08-25T04:00:00+00:00",
+          "index": 189,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2413.43,
+          "pivot": "2026-08-25T20:00:00+00:00",
+          "confirmed": "2026-08-26T12:00:00+00:00",
+          "index": 197,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2566.16,
+          "pivot": "2026-08-27T08:00:00+00:00",
+          "confirmed": "2026-08-28T00:00:00+00:00",
+          "index": 206,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2403.81,
+          "pivot": "2026-08-28T16:00:00+00:00",
+          "confirmed": "2026-08-29T08:00:00+00:00",
+          "index": 214,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2534.26,
+          "pivot": "2026-08-30T16:00:00+00:00",
+          "confirmed": "2026-08-31T08:00:00+00:00",
+          "index": 226,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2385.47,
+          "pivot": "2026-08-30T20:00:00+00:00",
+          "confirmed": "2026-08-31T12:00:00+00:00",
+          "index": 227,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2488.93,
+          "pivot": "2026-08-31T16:00:00+00:00",
+          "confirmed": "2026-09-01T08:00:00+00:00",
+          "index": 232,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2354.86,
+          "pivot": "2026-09-02T08:00:00+00:00",
+          "confirmed": "2026-09-03T00:00:00+00:00",
+          "index": 242,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2546.3,
+          "pivot": "2026-09-04T08:00:00+00:00",
+          "confirmed": "2026-09-05T00:00:00+00:00",
+          "index": 254,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2430.71,
+          "pivot": "2026-09-04T12:00:00+00:00",
+          "confirmed": "2026-09-05T04:00:00+00:00",
+          "index": 255,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2523.35,
+          "pivot": "2026-09-06T04:00:00+00:00",
+          "confirmed": "2026-09-06T20:00:00+00:00",
+          "index": 265,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2459.0,
+          "pivot": "2026-09-06T12:00:00+00:00",
+          "confirmed": "2026-09-07T04:00:00+00:00",
+          "index": 267,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2535.72,
+          "pivot": "2026-09-07T00:00:00+00:00",
+          "confirmed": "2026-09-07T16:00:00+00:00",
+          "index": 270,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2440.22,
+          "pivot": "2026-09-08T12:00:00+00:00",
+          "confirmed": "2026-09-09T04:00:00+00:00",
+          "index": 279,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2522.66,
+          "pivot": "2026-09-09T08:00:00+00:00",
+          "confirmed": "2026-09-10T00:00:00+00:00",
+          "index": 284,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2403.91,
+          "pivot": "2026-09-10T12:00:00+00:00",
+          "confirmed": "2026-09-11T04:00:00+00:00",
+          "index": 291,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2545.52,
+          "pivot": "2026-09-12T12:00:00+00:00",
+          "confirmed": "2026-09-13T04:00:00+00:00",
+          "index": 303,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2460.63,
+          "pivot": "2026-09-13T12:00:00+00:00",
+          "confirmed": "2026-09-14T04:00:00+00:00",
+          "index": 309,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2614.33,
+          "pivot": "2026-09-14T20:00:00+00:00",
+          "confirmed": "2026-09-15T12:00:00+00:00",
+          "index": 317,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2357.01,
+          "pivot": "2026-09-15T16:00:00+00:00",
+          "confirmed": "2026-09-16T08:00:00+00:00",
+          "index": 322,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2668.31,
+          "pivot": "2026-09-19T16:00:00+00:00",
+          "confirmed": "2026-09-20T08:00:00+00:00",
+          "index": 346,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2562.96,
+          "pivot": "2026-09-20T00:00:00+00:00",
+          "confirmed": "2026-09-20T16:00:00+00:00",
+          "index": 348,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2806.65,
+          "pivot": "2026-09-21T20:00:00+00:00",
+          "confirmed": "2026-09-22T12:00:00+00:00",
+          "index": 359,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2714.55,
+          "pivot": "2026-09-22T04:00:00+00:00",
+          "confirmed": "2026-09-22T20:00:00+00:00",
+          "index": 361,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2787.63,
+          "pivot": "2026-09-23T04:00:00+00:00",
+          "confirmed": "2026-09-23T20:00:00+00:00",
+          "index": 367,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2626.61,
+          "pivot": "2026-09-24T08:00:00+00:00",
+          "confirmed": "2026-09-25T00:00:00+00:00",
+          "index": 374,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2742.53,
+          "pivot": "2026-09-25T08:00:00+00:00",
+          "confirmed": "2026-09-26T00:00:00+00:00",
+          "index": 380,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2662.4,
+          "pivot": "2026-09-26T20:00:00+00:00",
+          "confirmed": "2026-09-27T12:00:00+00:00",
+          "index": 389,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2722.0,
+          "pivot": "2026-09-27T08:00:00+00:00",
+          "confirmed": "2026-09-28T00:00:00+00:00",
+          "index": 392,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2634.0,
+          "pivot": "2026-09-28T04:00:00+00:00",
+          "confirmed": "2026-09-28T20:00:00+00:00",
+          "index": 397,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2747.84,
+          "pivot": "2026-09-29T12:00:00+00:00",
+          "confirmed": "2026-09-30T04:00:00+00:00",
+          "index": 405,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2656.32,
+          "pivot": "2026-09-30T04:00:00+00:00",
+          "confirmed": "2026-09-30T20:00:00+00:00",
+          "index": 409,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2777.81,
+          "pivot": "2026-10-02T08:00:00+00:00",
+          "confirmed": "2026-10-03T00:00:00+00:00",
+          "index": 422,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2649.0,
+          "pivot": "2026-10-02T16:00:00+00:00",
+          "confirmed": "2026-10-03T08:00:00+00:00",
+          "index": 424,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2738.68,
+          "pivot": "2026-10-04T20:00:00+00:00",
+          "confirmed": "2026-10-05T12:00:00+00:00",
+          "index": 437,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2677.89,
+          "pivot": "2026-10-05T16:00:00+00:00",
+          "confirmed": "2026-10-06T08:00:00+00:00",
+          "index": 442,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2723.95,
+          "pivot": "2026-10-06T12:00:00+00:00",
+          "confirmed": "2026-10-07T04:00:00+00:00",
+          "index": 447,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2536.02,
+          "pivot": "2026-10-07T16:00:00+00:00",
+          "confirmed": "2026-10-08T08:00:00+00:00",
+          "index": 454,
+          "significant": true,
+          "label": "LL"
+        }
+      ],
+      "position": 2,
+      "caption": "Second opinion 2/6 \u00b7 ETH_20261008_1200_D\nETH_USDT \u00b7 4H close 2026-10-08 12:00 UTC \u00b7 break DOWN \u00b7 close 2536.28\nFrozen: CHoCH \u00b7 prior BULLISH, protected low 2562.96\nShadow: Strong CHoCH \u00b7 prior BULLISH, protected low 2562.96\nDetectors differ on: classification (CHoCH vs Strong CHoCH)\nTap Explain for a plain-English walkthrough. Which answer fits this close?",
+      "explanation_text": "ETH_20261008_1200_D \u2014 ETH_USDT 4H, candle closing 2026-10-08 12:00 UTC\n\nBEFORE THE BREAK\n- Frozen: BULLISH trend. It became bullish at the close of 09-21 12:00 when price closed above the swing 2668.31. No BOS since then. Protected low: 2562.96 (swing at 09-20 00:00, protecting since 09-21 12:00).\n- Shadow: BULLISH trend. It became bullish at the close of 08-21 04:00 when price closed above the swing 2336.34. 2 BOS since then. Protected low: 2562.96 (swing at 09-20 00:00, protecting since 09-21 12:00).\n- Last significant confirmed swings (oldest first): HH 2777.81, LL 2649.00, LH 2738.68, HL 2677.89, LH 2723.95, LL 2536.02.\n\nAT THE BREAK\n- This 4H candle closed at 2536.28 (high 2569.46, low 2525.78), breaking down.\n- Confirmed swing levels its close crossed: 2562.96.\n- Frozen: the break is AGAINST the prior bullish trend. Relevant level: 2562.96 (the level it reports as broken); the close is beyond it (below = beyond).\n- Shadow: the break is AGAINST the prior bullish trend. Relevant level: 2562.96 (the level it reports as broken); the close is beyond it (below = beyond).\n\nDETECTOR INTERPRETATION\n- Frozen reports CHoCH because the close (2536.28) went below the protected low 2562.96 that it was using to guard the bullish trend. It is not labelled Strong because the prior trend was counted as too young.\n- Shadow reports Strong CHoCH because the close (2536.28) went below the protected low 2562.96 that it was using to guard the bullish trend. It is labelled Strong: it dates the trend from 08-21 04:00 with 2 BOS before this break, and the break candle passed its quality checks.\n- The detectors differ on: classification (CHoCH vs Strong CHoCH); trend start (09-21 12:00 vs 08-21 04:00); BOS count (0 vs 2).\n\nMISSING OR WEAK EVIDENCE\n- Frozen's trend has no BOS yet (single leg since 09-21 12:00).\n\nNeither detector's answer is assumed correct. The chart and this text stop at this close."
+    },
+    {
+      "case_id": "BNB_20261020_2000_U",
+      "symbol": "BNB_USDT",
+      "close_time": "2026-10-20T20:00:00+00:00",
+      "direction": "up",
+      "close": 739.9,
+      "high": 740.5,
+      "low": 734.2,
+      "chart": "charts/BNB_20261020_2000_U.png",
+      "explanation": "explanations/BNB_20261020_2000_U.md",
+      "first_candle_open": "2026-10-07T16:00:00+00:00",
+      "last_candle_close": "2026-10-20T20:00:00+00:00",
+      "candle_count": 79,
+      "context_incomplete": false,
+      "dataset_start": "2026-07-24T00:00:00+00:00",
+      "engines": {
+        "frozen": {
+          "classification": "",
+          "prior_state": "unknown",
+          "trend": "UNKNOWN",
+          "protected_level": null,
+          "protected_kind": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "bos_count": 0,
+          "external_high": null,
+          "external_low": null,
+          "boundary": null,
+          "broken_level": null,
+          "broken_pivot": null,
+          "resulting_state": null,
+          "strong_reasons": [],
+          "establishing": null,
+          "bos_events": [],
+          "boundary_pivot": null,
+          "last_event": {
+            "kind": "choch",
+            "direction": "BEARISH",
+            "at": "2026-10-08T16:00:00+00:00",
+            "level": 746.3
+          }
+        },
+        "shadow": {
+          "classification": "",
+          "prior_state": "unknown",
+          "trend": "UNKNOWN",
+          "protected_level": null,
+          "protected_kind": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "bos_count": 0,
+          "external_high": null,
+          "external_low": null,
+          "boundary": null,
+          "broken_level": null,
+          "broken_pivot": null,
+          "resulting_state": null,
+          "strong_reasons": [],
+          "establishing": null,
+          "bos_events": [],
+          "boundary_pivot": null,
+          "last_event": {
+            "kind": "choch",
+            "direction": "BEARISH",
+            "at": "2026-10-08T16:00:00+00:00",
+            "level": 746.3
+          }
+        }
+      },
+      "detector_answers": [
+        "MINOR_BREAK",
+        "NO_VALID_BREAK"
+      ],
+      "differences": [],
+      "selection_reason": "First-pass Valid CHoCH while both detectors were in an unknown state; possible missed CHoCH.",
+      "first_pass_label": "VALID_CHOCH",
+      "swings": [
+        {
+          "kind": "high",
+          "price": 777.9,
+          "pivot": "2026-10-08T00:00:00+00:00",
+          "confirmed": "2026-10-08T16:00:00+00:00",
+          "index": 456,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 718.4,
+          "pivot": "2026-10-08T16:00:00+00:00",
+          "confirmed": "2026-10-09T08:00:00+00:00",
+          "index": 460,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 759.7,
+          "pivot": "2026-10-11T16:00:00+00:00",
+          "confirmed": "2026-10-12T08:00:00+00:00",
+          "index": 478,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 709.4,
+          "pivot": "2026-10-15T00:00:00+00:00",
+          "confirmed": "2026-10-15T16:00:00+00:00",
+          "index": 498,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 737.3,
+          "pivot": "2026-10-16T08:00:00+00:00",
+          "confirmed": "2026-10-17T00:00:00+00:00",
+          "index": 506,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 711.8,
+          "pivot": "2026-10-17T20:00:00+00:00",
+          "confirmed": "2026-10-18T12:00:00+00:00",
+          "index": 515,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 726.1,
+          "pivot": "2026-10-18T08:00:00+00:00",
+          "confirmed": "2026-10-19T00:00:00+00:00",
+          "index": 518,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 706.5,
+          "pivot": "2026-10-18T20:00:00+00:00",
+          "confirmed": "2026-10-19T12:00:00+00:00",
+          "index": 521,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 735.0,
+          "pivot": "2026-10-19T20:00:00+00:00",
+          "confirmed": "2026-10-20T12:00:00+00:00",
+          "index": 527,
+          "significant": true,
+          "label": "HH"
+        }
+      ],
+      "position": 3,
+      "caption": "Second opinion 3/6 \u00b7 BNB_20261020_2000_U\nBNB_USDT \u00b7 4H close 2026-10-20 20:00 UTC \u00b7 break UP \u00b7 close 739.90\nFrozen: No external event \u00b7 prior UNKNOWN\nShadow: No external event \u00b7 prior UNKNOWN\nDetectors agree\nTap Explain for a plain-English walkthrough. Which answer fits this close?",
+      "explanation_text": "BNB_20261020_2000_U \u2014 BNB_USDT 4H, candle closing 2026-10-20 20:00 UTC\n\nBEFORE THE BREAK\n- Frozen: trend UNKNOWN (no established direction). Its last external event was a CHoCH (bearish) at 10-08 16:00 through 746.30; after a CHoCH the detector waits for a new trend setup before it can label CHoCH or BOS again.\n- Shadow: trend UNKNOWN (no established direction). Its last external event was a CHoCH (bearish) at 10-08 16:00 through 746.30; after a CHoCH the detector waits for a new trend setup before it can label CHoCH or BOS again.\n- Last significant confirmed swings (oldest first): LL 709.40, LH 737.30, HL 711.80, LH 726.10, LL 706.50, HH 735.00.\n\nAT THE BREAK\n- This 4H candle closed at 739.90 (high 740.50, low 734.20), breaking up.\n- Confirmed swing levels its close crossed: 735.00, 736.40, 737.30.\n- Frozen: no established trend to compare the break direction against. Relevant level: 737.30 (the furthest confirmed swing crossed by this close); the close is beyond it (above = beyond).\n- Shadow: no established trend to compare the break direction against. Relevant level: 737.30 (the furthest confirmed swing crossed by this close); the close is beyond it (above = beyond).\n\nDETECTOR INTERPRETATION\n- Frozen reports no external event: it had no established trend at this time, so it cannot raise a CHoCH or BOS, and no new trend setup qualified on this close.\n- Shadow reports no external event: it had no established trend at this time, so it cannot raise a CHoCH or BOS, and no new trend setup qualified on this close.\n- The detectors agree on every recorded field.\n\nMISSING OR WEAK EVIDENCE\n- Frozen has no established trend, so it cannot judge CHoCH vs BOS here.\n- Shadow has no established trend, so it cannot judge CHoCH vs BOS here.\n\nNeither detector's answer is assumed correct. The chart and this text stop at this close."
+    },
+    {
+      "case_id": "ETH_20260819_1600_U",
+      "symbol": "ETH_USDT",
+      "close_time": "2026-08-19T16:00:00+00:00",
+      "direction": "up",
+      "close": 2085.19,
+      "high": 2126.24,
+      "low": 1921.6,
+      "chart": "charts/ETH_20260819_1600_U.png",
+      "explanation": "explanations/ETH_20260819_1600_U.md",
+      "first_candle_open": "2026-08-08T12:00:00+00:00",
+      "last_candle_close": "2026-08-19T16:00:00+00:00",
+      "candle_count": 67,
+      "context_incomplete": false,
+      "dataset_start": "2026-07-24T00:00:00+00:00",
+      "engines": {
+        "frozen": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "prior_state": "bearish_unprotected",
+          "trend": "BEARISH",
+          "protected_level": null,
+          "protected_kind": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": "2026-08-11T16:00:00+00:00",
+          "bos_count": 0,
+          "external_high": null,
+          "external_low": 1867.13,
+          "boundary": 1867.13,
+          "broken_level": 1922.71,
+          "broken_pivot": "2026-08-18T12:00:00+00:00",
+          "resulting_state": "bullish_unprotected",
+          "strong_reasons": [],
+          "establishing": {
+            "level": 1867.13,
+            "pivot": "2026-08-10T16:00:00+00:00",
+            "direction": "BEARISH"
+          },
+          "bos_events": [],
+          "boundary_pivot": "2026-08-10T16:00:00+00:00",
+          "last_event": {
+            "kind": "trend_established",
+            "direction": "BEARISH",
+            "at": "2026-08-11T16:00:00+00:00",
+            "level": 1867.13
+          }
+        },
+        "shadow": {
+          "classification": "EXTERNAL_CHOCH",
+          "prior_state": "bearish_protected",
+          "trend": "BEARISH",
+          "protected_level": 1937.67,
+          "protected_kind": "high",
+          "protected_pivot": "2026-08-09T20:00:00+00:00",
+          "protected_since": "2026-08-11T16:00:00+00:00",
+          "trend_started_at": "2026-08-11T16:00:00+00:00",
+          "bos_count": 0,
+          "external_high": 1937.67,
+          "external_low": 1867.13,
+          "boundary": 1867.13,
+          "broken_level": 1937.67,
+          "broken_pivot": "2026-08-09T20:00:00+00:00",
+          "resulting_state": "unknown",
+          "strong_reasons": [
+            "insufficient_trend_history"
+          ],
+          "establishing": {
+            "level": 1867.13,
+            "pivot": "2026-08-10T16:00:00+00:00",
+            "direction": "BEARISH"
+          },
+          "bos_events": [],
+          "boundary_pivot": "2026-08-10T16:00:00+00:00",
+          "last_event": {
+            "kind": "trend_established",
+            "direction": "BEARISH",
+            "at": "2026-08-11T16:00:00+00:00",
+            "level": 1867.13
+          }
+        }
+      },
+      "detector_answers": [
+        "CHOCH_REVERSAL",
+        "MINOR_BREAK",
+        "NO_VALID_BREAK"
+      ],
+      "differences": [
+        "classification (New trend (no protected level broken) vs CHoCH)",
+        "prior state (bearish_unprotected vs bearish_protected)",
+        "protected level (n/a vs 1937.67)"
+      ],
+      "selection_reason": "Frozen/shadow CHoCH disagreement (shadow CHoCH, frozen new trend); range breakout vs reversal.",
+      "first_pass_label": "NOT_CHOCH",
+      "swings": [
+        {
+          "kind": "low",
+          "price": 1911.38,
+          "pivot": "2026-08-09T00:00:00+00:00",
+          "confirmed": "2026-08-09T16:00:00+00:00",
+          "index": 96,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 1937.67,
+          "pivot": "2026-08-09T20:00:00+00:00",
+          "confirmed": "2026-08-10T12:00:00+00:00",
+          "index": 101,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 1867.13,
+          "pivot": "2026-08-10T16:00:00+00:00",
+          "confirmed": "2026-08-11T08:00:00+00:00",
+          "index": 106,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 1924.65,
+          "pivot": "2026-08-12T12:00:00+00:00",
+          "confirmed": "2026-08-13T04:00:00+00:00",
+          "index": 117,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 1862.5,
+          "pivot": "2026-08-13T16:00:00+00:00",
+          "confirmed": "2026-08-14T08:00:00+00:00",
+          "index": 124,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 1918.0,
+          "pivot": "2026-08-17T20:00:00+00:00",
+          "confirmed": "2026-08-18T12:00:00+00:00",
+          "index": 149,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 1884.4,
+          "pivot": "2026-08-18T00:00:00+00:00",
+          "confirmed": "2026-08-18T16:00:00+00:00",
+          "index": 150,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 1922.71,
+          "pivot": "2026-08-18T12:00:00+00:00",
+          "confirmed": "2026-08-19T04:00:00+00:00",
+          "index": 153,
+          "significant": true,
+          "label": "HH"
+        }
+      ],
+      "position": 4,
+      "caption": "Second opinion 4/6 \u00b7 ETH_20260819_1600_U\nETH_USDT \u00b7 4H close 2026-08-19 16:00 UTC \u00b7 break UP \u00b7 close 2085.19\nFrozen: New trend (no protected level broken) \u00b7 prior BEARISH, no protected level\nShadow: CHoCH \u00b7 prior BEARISH, protected high 1937.67\nDetectors differ on: classification (New trend (no protected level broken) vs CHoCH)\nTap Explain for a plain-English walkthrough. Which answer fits this close?",
+      "explanation_text": "ETH_20260819_1600_U \u2014 ETH_USDT 4H, candle closing 2026-08-19 16:00 UTC\n\nBEFORE THE BREAK\n- Frozen: BEARISH trend. It became bearish at the close of 08-11 16:00 when price closed below the swing 1867.13. No BOS since then. No protected level was assigned.\n- Shadow: BEARISH trend. It became bearish at the close of 08-11 16:00 when price closed below the swing 1867.13. No BOS since then. Protected high: 1937.67 (swing at 08-09 20:00, protecting since 08-11 16:00).\n- Last significant confirmed swings (oldest first): LL 1867.13, LH 1924.65, LL 1862.50, LH 1918.00, HL 1884.40, HH 1922.71.\n\nAT THE BREAK\n- This 4H candle closed at 2085.19 (high 2126.24, low 1921.60), breaking up.\n- Confirmed swing levels its close crossed: 1922.71, 1924.65, 1925.85, 1927.19, 1928.95, 1935.00, 1936.95, 1937.67 \u2026.\n- Frozen: the break is AGAINST the prior bearish trend. Relevant level: 1922.71 (the level it reports as broken); the close is beyond it (above = beyond).\n- Shadow: the break is AGAINST the prior bearish trend. Relevant level: 1937.67 (the level it reports as broken); the close is beyond it (above = beyond).\n\nDETECTOR INTERPRETATION\n- Frozen reports a new trend start, not a CHoCH: its bearish trend had no protected level, so nothing protected could be broken. A fresh swing sequence plus the close above 1922.71 set a new direction.\n- Shadow reports CHoCH because the close (2085.19) went above the protected high 1937.67 that it was using to guard the bearish trend. It is not labelled Strong because the prior trend was counted as too young.\n- The detectors differ on: classification (New trend (no protected level broken) vs CHoCH); prior state (bearish_unprotected vs bearish_protected); protected level (n/a vs 1937.67).\n\nMISSING OR WEAK EVIDENCE\n- Frozen has a bearish trend but no protected level.\n- Shadow's trend has no BOS yet (single leg since 08-11 16:00).\n\nNeither detector's answer is assumed correct. The chart and this text stop at this close."
+    },
+    {
+      "case_id": "ETH_20261024_1200_D",
+      "symbol": "ETH_USDT",
+      "close_time": "2026-10-24T12:00:00+00:00",
+      "direction": "down",
+      "close": 2364.6,
+      "high": 2374.91,
+      "low": 2356.05,
+      "chart": "charts/ETH_20261024_1200_D.png",
+      "explanation": "explanations/ETH_20261024_1200_D.md",
+      "first_candle_open": "2026-10-11T00:00:00+00:00",
+      "last_candle_close": "2026-10-24T12:00:00+00:00",
+      "candle_count": 81,
+      "context_incomplete": false,
+      "dataset_start": "2026-07-24T00:00:00+00:00",
+      "engines": {
+        "frozen": {
+          "classification": "",
+          "prior_state": "bearish_protected",
+          "trend": "BEARISH",
+          "protected_level": 2537.77,
+          "protected_kind": "high",
+          "protected_pivot": "2026-10-13T04:00:00+00:00",
+          "protected_since": "2026-10-15T04:00:00+00:00",
+          "trend_started_at": "2026-10-15T04:00:00+00:00",
+          "bos_count": 0,
+          "external_high": 2537.77,
+          "external_low": 2314.89,
+          "boundary": 2314.89,
+          "broken_level": null,
+          "broken_pivot": null,
+          "resulting_state": null,
+          "strong_reasons": [],
+          "establishing": {
+            "level": 2407.59,
+            "pivot": "2026-10-13T00:00:00+00:00",
+            "direction": "BEARISH"
+          },
+          "bos_events": [],
+          "boundary_pivot": "2026-10-15T00:00:00+00:00",
+          "last_event": {
+            "kind": "trend_established",
+            "direction": "BEARISH",
+            "at": "2026-10-15T04:00:00+00:00",
+            "level": 2407.59
+          }
+        },
+        "shadow": {
+          "classification": "",
+          "prior_state": "bearish_protected",
+          "trend": "BEARISH",
+          "protected_level": 2537.77,
+          "protected_kind": "high",
+          "protected_pivot": "2026-10-13T04:00:00+00:00",
+          "protected_since": "2026-10-15T04:00:00+00:00",
+          "trend_started_at": "2026-10-15T04:00:00+00:00",
+          "bos_count": 0,
+          "external_high": 2537.77,
+          "external_low": 2314.89,
+          "boundary": 2314.89,
+          "broken_level": null,
+          "broken_pivot": null,
+          "resulting_state": null,
+          "strong_reasons": [],
+          "establishing": {
+            "level": 2407.59,
+            "pivot": "2026-10-13T00:00:00+00:00",
+            "direction": "BEARISH"
+          },
+          "bos_events": [],
+          "boundary_pivot": "2026-10-15T00:00:00+00:00",
+          "last_event": {
+            "kind": "trend_established",
+            "direction": "BEARISH",
+            "at": "2026-10-15T04:00:00+00:00",
+            "level": 2407.59
+          }
+        }
+      },
+      "detector_answers": [
+        "MINOR_BREAK",
+        "NO_VALID_BREAK"
+      ],
+      "differences": [],
+      "selection_reason": "First-pass label was Ambiguous; internal break in the trend direction.",
+      "first_pass_label": "AMBIGUOUS",
+      "swings": [
+        {
+          "kind": "high",
+          "price": 2578.8,
+          "pivot": "2026-10-12T04:00:00+00:00",
+          "confirmed": "2026-10-12T20:00:00+00:00",
+          "index": 481,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2407.59,
+          "pivot": "2026-10-13T00:00:00+00:00",
+          "confirmed": "2026-10-13T16:00:00+00:00",
+          "index": 486,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2537.77,
+          "pivot": "2026-10-13T04:00:00+00:00",
+          "confirmed": "2026-10-13T20:00:00+00:00",
+          "index": 487,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2314.89,
+          "pivot": "2026-10-15T00:00:00+00:00",
+          "confirmed": "2026-10-15T16:00:00+00:00",
+          "index": 498,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2492.94,
+          "pivot": "2026-10-16T08:00:00+00:00",
+          "confirmed": "2026-10-17T00:00:00+00:00",
+          "index": 506,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2327.52,
+          "pivot": "2026-10-18T16:00:00+00:00",
+          "confirmed": "2026-10-19T08:00:00+00:00",
+          "index": 520,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2445.55,
+          "pivot": "2026-10-19T08:00:00+00:00",
+          "confirmed": "2026-10-20T00:00:00+00:00",
+          "index": 524,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2370.98,
+          "pivot": "2026-10-20T00:00:00+00:00",
+          "confirmed": "2026-10-20T16:00:00+00:00",
+          "index": 528,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2525.25,
+          "pivot": "2026-10-21T16:00:00+00:00",
+          "confirmed": "2026-10-22T08:00:00+00:00",
+          "index": 538,
+          "significant": true,
+          "label": "HH"
+        },
+        {
+          "kind": "low",
+          "price": 2359.02,
+          "pivot": "2026-10-22T16:00:00+00:00",
+          "confirmed": "2026-10-23T08:00:00+00:00",
+          "index": 544,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 2417.23,
+          "pivot": "2026-10-23T12:00:00+00:00",
+          "confirmed": "2026-10-24T04:00:00+00:00",
+          "index": 549,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 2350.56,
+          "pivot": "2026-10-23T20:00:00+00:00",
+          "confirmed": "2026-10-24T12:00:00+00:00",
+          "index": 551,
+          "significant": true,
+          "label": "LL"
+        }
+      ],
+      "position": 5,
+      "caption": "Second opinion 5/6 \u00b7 ETH_20261024_1200_D\nETH_USDT \u00b7 4H close 2026-10-24 12:00 UTC \u00b7 break DOWN \u00b7 close 2364.60\nFrozen: No external event \u00b7 prior BEARISH, protected high 2537.77\nShadow: No external event \u00b7 prior BEARISH, protected high 2537.77\nDetectors agree\nTap Explain for a plain-English walkthrough. Which answer fits this close?",
+      "explanation_text": "ETH_20261024_1200_D \u2014 ETH_USDT 4H, candle closing 2026-10-24 12:00 UTC\n\nBEFORE THE BREAK\n- Frozen: BEARISH trend. It became bearish at the close of 10-15 04:00 when price closed below the swing 2407.59. No BOS since then. Protected high: 2537.77 (swing at 10-13 04:00, protecting since 10-15 04:00).\n- Shadow: BEARISH trend. It became bearish at the close of 10-15 04:00 when price closed below the swing 2407.59. No BOS since then. Protected high: 2537.77 (swing at 10-13 04:00, protecting since 10-15 04:00).\n- Last significant confirmed swings (oldest first): LH 2445.55, HL 2370.98, HH 2525.25, LL 2359.02, LH 2417.23, LL 2350.56.\n\nAT THE BREAK\n- This 4H candle closed at 2364.60 (high 2374.91, low 2356.05), breaking down.\n- Confirmed swing levels its close crossed: 2370.98.\n- Frozen: the break is in the SAME direction as the prior bearish trend. Relevant level: 2314.89 (its trend boundary); the close is NOT beyond it (below = beyond).\n- Shadow: the break is in the SAME direction as the prior bearish trend. Relevant level: 2314.89 (its trend boundary); the close is NOT beyond it (below = beyond).\n\nDETECTOR INTERPRETATION\n- Frozen reports no external event: the close did not cross the protected high 2537.77 or its trend boundary 2314.89.\n- Shadow reports no external event: the close did not cross the protected high 2537.77 or its trend boundary 2314.89.\n- The detectors agree on every recorded field.\n\nMISSING OR WEAK EVIDENCE\n- Frozen's trend has no BOS yet (single leg since 10-15 04:00).\n- Shadow's trend has no BOS yet (single leg since 10-15 04:00).\n\nNeither detector's answer is assumed correct. The chart and this text stop at this close."
+    },
+    {
+      "case_id": "ETH_20260821_0400_U",
+      "symbol": "ETH_USDT",
+      "close_time": "2026-08-21T04:00:00+00:00",
+      "direction": "up",
+      "close": 2339.89,
+      "high": 2379.95,
+      "low": 2323.91,
+      "chart": "charts/ETH_20260821_0400_U.png",
+      "explanation": "explanations/ETH_20260821_0400_U.md",
+      "first_candle_open": "2026-08-11T04:00:00+00:00",
+      "last_candle_close": "2026-08-21T04:00:00+00:00",
+      "candle_count": 60,
+      "context_incomplete": false,
+      "dataset_start": "2026-07-24T00:00:00+00:00",
+      "engines": {
+        "frozen": {
+          "classification": "EXTERNAL_BOS",
+          "prior_state": "bullish_unprotected",
+          "trend": "BULLISH",
+          "protected_level": null,
+          "protected_kind": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": "2026-08-19T16:00:00+00:00",
+          "bos_count": 0,
+          "external_high": 2336.34,
+          "external_low": null,
+          "boundary": 2336.34,
+          "broken_level": 2336.34,
+          "broken_pivot": "2026-08-19T20:00:00+00:00",
+          "resulting_state": "bullish_unprotected",
+          "strong_reasons": [],
+          "establishing": {
+            "level": 1922.71,
+            "pivot": "2026-08-18T12:00:00+00:00",
+            "direction": "BULLISH"
+          },
+          "bos_events": [],
+          "boundary_pivot": "2026-08-19T20:00:00+00:00",
+          "last_event": {
+            "kind": "trend_established",
+            "direction": "BULLISH",
+            "at": "2026-08-19T16:00:00+00:00",
+            "level": 1922.71
+          }
+        },
+        "shadow": {
+          "classification": "EXTERNAL_TREND_ESTABLISHED",
+          "prior_state": "unknown",
+          "trend": "UNKNOWN",
+          "protected_level": null,
+          "protected_kind": null,
+          "protected_pivot": null,
+          "protected_since": null,
+          "trend_started_at": null,
+          "bos_count": 0,
+          "external_high": null,
+          "external_low": null,
+          "boundary": null,
+          "broken_level": 2336.34,
+          "broken_pivot": "2026-08-19T20:00:00+00:00",
+          "resulting_state": "bullish_protected",
+          "strong_reasons": [],
+          "establishing": null,
+          "bos_events": [],
+          "boundary_pivot": null,
+          "last_event": {
+            "kind": "choch",
+            "direction": "BULLISH",
+            "at": "2026-08-19T16:00:00+00:00",
+            "level": 1937.67
+          }
+        }
+      },
+      "detector_answers": [
+        "BOS_CONTINUATION",
+        "MINOR_BREAK",
+        "NO_VALID_BREAK"
+      ],
+      "differences": [
+        "classification (BOS vs New trend (no protected level broken))",
+        "prior state (bullish_unprotected vs unknown)",
+        "trend start (08-19 16:00 vs n/a)"
+      ],
+      "selection_reason": "Three-way disagreement: frozen BOS, shadow new trend, first pass Ordinary Break.",
+      "first_pass_label": "ORDINARY_BREAK",
+      "swings": [
+        {
+          "kind": "high",
+          "price": 1924.65,
+          "pivot": "2026-08-12T12:00:00+00:00",
+          "confirmed": "2026-08-13T04:00:00+00:00",
+          "index": 117,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 1862.5,
+          "pivot": "2026-08-13T16:00:00+00:00",
+          "confirmed": "2026-08-14T08:00:00+00:00",
+          "index": 124,
+          "significant": true,
+          "label": "LL"
+        },
+        {
+          "kind": "high",
+          "price": 1918.0,
+          "pivot": "2026-08-17T20:00:00+00:00",
+          "confirmed": "2026-08-18T12:00:00+00:00",
+          "index": 149,
+          "significant": true,
+          "label": "LH"
+        },
+        {
+          "kind": "low",
+          "price": 1884.4,
+          "pivot": "2026-08-18T00:00:00+00:00",
+          "confirmed": "2026-08-18T16:00:00+00:00",
+          "index": 150,
+          "significant": true,
+          "label": "HL"
+        },
+        {
+          "kind": "high",
+          "price": 2336.34,
+          "pivot": "2026-08-19T20:00:00+00:00",
+          "confirmed": "2026-08-20T12:00:00+00:00",
+          "index": 161,
+          "significant": true,
+          "label": "HH"
+        }
+      ],
+      "position": 6,
+      "caption": "Second opinion 6/6 \u00b7 ETH_20260821_0400_U\nETH_USDT \u00b7 4H close 2026-08-21 04:00 UTC \u00b7 break UP \u00b7 close 2339.89\nFrozen: BOS \u00b7 prior BULLISH, no protected level\nShadow: New trend (no protected level broken) \u00b7 prior UNKNOWN\nDetectors differ on: classification (BOS vs New trend (no protected level broken))\nTap Explain for a plain-English walkthrough. Which answer fits this close?",
+      "explanation_text": "ETH_20260821_0400_U \u2014 ETH_USDT 4H, candle closing 2026-08-21 04:00 UTC\n\nBEFORE THE BREAK\n- Frozen: BULLISH trend. It became bullish at the close of 08-19 16:00 when price closed above the swing 1922.71. No BOS since then. No protected level was assigned.\n- Shadow: trend UNKNOWN (no established direction). Its last external event was a CHoCH (bullish) at 08-19 16:00 through 1937.67; after a CHoCH the detector waits for a new trend setup before it can label CHoCH or BOS again.\n- Last significant confirmed swings (oldest first): LH 1924.65, LL 1862.50, LH 1918.00, HL 1884.40, HH 2336.34.\n\nAT THE BREAK\n- This 4H candle closed at 2339.89 (high 2379.95, low 2323.91), breaking up.\n- Confirmed swing levels its close crossed: 2336.34.\n- Frozen: the break is in the SAME direction as the prior bullish trend. Relevant level: 2336.34 (the level it reports as broken); the close is beyond it (above = beyond).\n- Shadow: no established trend to compare the break direction against. Relevant level: 2336.34 (the level it reports as broken); the close is beyond it (above = beyond).\n\nDETECTOR INTERPRETATION\n- Frozen reports BOS because the close went above its trend boundary 2336.34 in the direction of its bullish trend.\n- Shadow reports a new trend start, not a CHoCH: it had no established trend, so nothing protected could be broken. A fresh swing sequence plus the close above 2336.34 set a new direction.\n- The detectors differ on: classification (BOS vs New trend (no protected level broken)); prior state (bullish_unprotected vs unknown); trend start (08-19 16:00 vs n/a).\n\nMISSING OR WEAK EVIDENCE\n- Frozen has a bullish trend but no protected level.\n- Shadow has no established trend, so it cannot judge CHoCH vs BOS here.\n\nNeither detector's answer is assumed correct. The chart and this text stop at this close."
+    }
+  ]
+}
