@@ -153,8 +153,8 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from rsi_public_alerts import NAME
-    from config import DRY_RUN, MAX_DAILY_SIGNALS, WHITELISTED_COINS
+    from nwe_rsi_public_alerts import NAME, SYMBOLS
+    from config import DRY_RUN, MAX_DAILY_SIGNALS
 
     state = "Paused" if paused else "Dry run" if DRY_RUN else "Running"
     msg = "\n".join([
@@ -163,11 +163,11 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Strategy: {_code(NAME)}",
         "Timeframe: 4H",
         "Scan: :18 UTC after each 4H close",
-        "Confirmation volume: at least 1.5× prior 20-bar average",
-        "Stop: 1.25% from entry reference",
-        "Time exit: 24 hours",
+        "Entry: Envelope re-entry with RSI(14) excursion",
+        "Target: +30% modeled net ROI at 20× before funding",
+        "Stop and time exit: None",
         f"Daily alert cap: {_code(MAX_DAILY_SIGNALS)}",
-        f"Pairs: {_code(', '.join(WHITELISTED_COINS))}",
+        f"Contracts scanned: {_code(len(SYMBOLS))}",
     ])
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
 

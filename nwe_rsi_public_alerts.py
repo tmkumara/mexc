@@ -1,0 +1,143 @@
+"""Public Telegram alerts for the 40-contract NWE + RSI strategy."""
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from html import escape
+import logging
+from math import isfinite
+
+import pandas as pd
+
+import bot
+import database
+from config import (DRY_RUN, MAX_DAILY_SIGNALS, MIN_CANDLE_SETTLE_SECONDS, SCAN_WORKERS,
+                    TELEGRAM_CHANNEL_ID)
+from mexc_client import get_klines
+from nwe_rsi_local import signal_frame
+
+
+NAME = "4H Nadaraya-Watson Envelope + RSI"
+BASES = ("ADA BNB ETH SOL BTC XRP DOGE LINK AVAX LTC BCH DOT TRX SUI NEAR UNI AAVE XLM "
+         "ATOM ARB OP ETC APT INJ ICP HBAR RUNE ALGO FET GRT MANA SAND WIF SEI TIA JUP PYTH ENS CRV COMP")
+SYMBOLS = tuple(f"{base}_USDT" for base in BASES.split())
+INTERVAL = pd.Timedelta(hours=4)
+DELAY = pd.Timedelta(minutes=15)
+PAGE = 520
+LEVERAGE = 20
+ROI = .30
+FEE = .0006
+SLIPPAGE = .0002
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Alert:
+    symbol: str
+    direction: str
+    signal_at: datetime
+    entry: float
+    target: float
+    close: float
+    band: float
+    rsi: float
+    excursion_rsi: float
+
+
+def target_price(entry, side):
+    """Indicative traded target for +30% net before unknown funding."""
+    slipped_entry = entry*(1+side*SLIPPAGE)
+    execution = slipped_entry*(side+FEE+ROI/LEVERAGE)/(side-FEE)
+    return execution/(1-side*SLIPPAGE)
+
+
+def _utc(frame):
+    frame = frame.copy()
+    frame.index = pd.to_datetime(frame.index, utc=True)
+    return frame
+
+
+def _candidate(symbol, bars, signal_at):
+    bars = _utc(bars)
+    closed = bars.loc[bars.index < signal_at,"close"]
+    expected = pd.date_range(signal_at-2*PAGE*INTERVAL, signal_at, freq=INTERVAL, inclusive="left")
+    if not closed.index.equals(expected) or not closed.map(lambda value: isfinite(value) and value>0).all():
+        raise ValueError("4H history incomplete, unaligned or invalid")
+    latest = signal_frame(closed).iloc[-1]
+    if latest.signal not in ("LONG","SHORT"):
+        return None
+    return latest
+
+
+def _history(symbol, signal_at):
+    pieces = []
+    for end in (signal_at-PAGE*INTERVAL, signal_at):
+        start = end-PAGE*INTERVAL
+        pieces.append(get_klines(symbol,"4h",count=PAGE,start=int(start.timestamp()),
+                                 end=int(end.timestamp())-1))
+    return pd.concat(pieces)
+
+
+def find_alert(symbol, signal_at):
+    latest = _candidate(symbol,_history(symbol,signal_at),signal_at)
+    if latest is None:
+        return None
+    reference_at=signal_at+DELAY
+    bar=_utc(get_klines(symbol,"15m",count=4))
+    if bar.index.has_duplicates or reference_at not in bar.index:
+        raise ValueError("Required 15m entry reference unavailable")
+    entry=float(bar.at[reference_at,"open"])
+    if not isfinite(entry) or entry<=0:
+        raise ValueError("Invalid entry reference")
+    side=1 if latest.signal=="LONG" else -1
+    return Alert(symbol,latest.signal,signal_at,entry,target_price(entry,side),latest.close,
+                 latest.lower if side==1 else latest.upper,latest.rsi14,latest.excursion_rsi)
+
+
+def _scan_one(symbol, signal_at):
+    try:
+        return find_alert(symbol,signal_at),True
+    except Exception:
+        logger.exception("NWE-RSI scan failed for %s",symbol)
+        return None,False
+
+
+def format_alert(alert):
+    band="lower" if alert.direction=="LONG" else "upper"
+    return (
+        "<b>4H Nadaraya + RSI</b>\n"
+        f"<b>{escape(alert.symbol)} · {escape(alert.direction)}</b>\n"
+        f"Signal close: {alert.signal_at:%Y-%m-%d %H:%M} UTC\n"
+        f"Setup: Closed back inside the {band} band ({alert.band:.8g})\n"
+        f"RSI(14): {alert.excursion_rsi:.1f} at excursion → {alert.rsi:.1f} at signal\n"
+        f"Entry reference: {alert.entry:.8g}\n"
+        f"Target reference: {alert.target:.8g} (+30% modeled net ROI at 20×, before funding)\n"
+        "Stop-loss: None · Time exit: None\n"
+        "Alert only. Actual fills, funding and liquidation can change outcomes."
+    )
+
+
+async def scan(app):
+    if bot.paused:
+        return
+    now=datetime.now(timezone.utc)
+    cutoff=pd.Timestamp(now)-pd.Timedelta(seconds=MIN_CANDLE_SETTLE_SECONDS)
+    boundary=cutoff.floor("4h")
+    if not boundary+DELAY<=cutoff<boundary+2*DELAY:
+        return
+    loop=asyncio.get_running_loop()
+    with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as pool:
+        results=await asyncio.gather(*(loop.run_in_executor(pool,_scan_one,symbol,boundary) for symbol in SYMBOLS))
+    alerts=[alert for alert,_ in results if alert is not None]
+    logger.info("NWE-RSI scan: %d/%d histories checked, %d candidates",
+                sum(ok for _,ok in results),len(SYMBOLS),len(alerts))
+    for alert in alerts:
+        if DRY_RUN:
+            logger.info("NWE-RSI dry-run alert: %s %s",alert.symbol,alert.direction)
+            continue
+        if not database.reserve_rsi_alert(alert.symbol,alert.signal_at,now,MAX_DAILY_SIGNALS):
+            continue
+        try:
+            await app.bot.send_message(chat_id=TELEGRAM_CHANNEL_ID,text=format_alert(alert),parse_mode="HTML")
+        except Exception:
+            logger.exception("NWE-RSI alert delivery failed; reservation retained for %s",alert.symbol)

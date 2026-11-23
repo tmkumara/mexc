@@ -1,8 +1,8 @@
 """
-Main entry point for 4H RSI alerts and legacy outcome tracking.
+Main entry point for 4H NWE-RSI alerts and legacy outcome tracking.
 
 Scheduler jobs / background tasks:
-  At :18 UTC after every 4H close: scan for confirmed high-volume RSI divergence.
+  At :18 UTC after every 4H close: scan for NWE-RSI re-entry alerts.
   Every OUTCOME_CHECK_MINUTES — outcome checker (plain single TP/SL, no
   breakeven).
   23:55 daily     — daily report
@@ -26,7 +26,7 @@ from telegram.ext import Application
 import database as db
 import strategy
 import bot as tg
-import rsi_public_alerts
+import nwe_rsi_public_alerts
 import coin_scanner
 from outcome_check import check_tp_sl
 from market_data import get_market_klines
@@ -284,8 +284,8 @@ async def check_outcomes(app: Application) -> None:
 
 async def main():
     logger.info("Starting MEXC Signal Bot")
-    logger.info("Public alert strategy: %s", rsi_public_alerts.NAME)
-    logger.info("Whitelisted coins: %s", ", ".join(WHITELISTED_COINS))
+    logger.info("Public alert strategy: %s", nwe_rsi_public_alerts.NAME)
+    logger.info("NWE-RSI basket: %d contracts", len(nwe_rsi_public_alerts.SYMBOLS))
     logger.info("Dry run: %s", "enabled" if DRY_RUN else "disabled")
 
     db.init_db()
@@ -302,7 +302,7 @@ async def main():
     )
 
     scheduler.add_job(
-        rsi_public_alerts.scan,
+        nwe_rsi_public_alerts.scan,
         CronTrigger(hour="0,4,8,12,16,20", minute=18),
         args=[app],
         id="signal_scanner",
@@ -330,7 +330,7 @@ async def main():
 
     scheduler.start()
 
-    logger.info("RSI alerts scheduled at :18 UTC after each 4H close; legacy outcomes every %dm",
+    logger.info("NWE-RSI alerts scheduled at :18 UTC after each 4H close; legacy outcomes every %dm",
                 OUTCOME_CHECK_MINUTES)
 
     async with app:
