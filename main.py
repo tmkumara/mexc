@@ -1,13 +1,8 @@
 """
-Main entry point — SMC Structure + Squeeze Momentum v1.
+Main entry point for 4H RSI alerts and legacy outcome tracking.
 
 Scheduler jobs / background tasks:
-  Every SCAN_INTERVAL_MINUTES (default 15m) — scan_and_fire_signals: scans
-  the hardcoded coin whitelist (config.WHITELISTED_COINS) for a fresh
-  structure-break + squeeze-momentum confluence on ENTRY_TF (30m), and
-  fires signals directly (no pending-setup state machine, unlike the
-  retired Zero-Lag MTF Pullback v1) within the daily/gap/concurrent/
-  direction limits.
+  At :18 UTC after every 4H close: scan for confirmed high-volume RSI divergence.
   Every OUTCOME_CHECK_MINUTES — outcome checker (plain single TP/SL, no
   breakeven).
   23:55 daily     — daily report
@@ -31,6 +26,7 @@ from telegram.ext import Application
 import database as db
 import strategy
 import bot as tg
+import rsi_public_alerts
 import coin_scanner
 from outcome_check import check_tp_sl
 from market_data import get_market_klines
@@ -288,11 +284,8 @@ async def check_outcomes(app: Application) -> None:
 
 async def main():
     logger.info("Starting MEXC Signal Bot")
-    logger.info("Strategy: %s", STRATEGY_NAME)
-    logger.info("Entry/Trend TF: %s / %s", ENTRY_TF, TREND_TF)
+    logger.info("Public alert strategy: %s", rsi_public_alerts.NAME)
     logger.info("Whitelisted coins: %s", ", ".join(WHITELISTED_COINS))
-    logger.info("Min signal score: %.1f/10", SIGNAL_SCORE_THRESHOLD)
-    logger.info("RR: 1:%.0f  Min win ROI: %.0f%%  Leverage: %dx", RISK_REWARD_RATIO, MIN_WIN_ROI_PCT, LEVERAGE)
     logger.info("Dry run: %s", "enabled" if DRY_RUN else "disabled")
 
     db.init_db()
@@ -309,8 +302,8 @@ async def main():
     )
 
     scheduler.add_job(
-        scan_and_fire_signals,
-        IntervalTrigger(minutes=SCAN_INTERVAL_MINUTES),
+        rsi_public_alerts.scan,
+        CronTrigger(hour="0,4,8,12,16,20", minute=18),
         args=[app],
         id="signal_scanner",
     )
@@ -337,10 +330,8 @@ async def main():
 
     scheduler.start()
 
-    logger.info(
-        "Scheduler started — scan every %dm, outcome every %dm",
-        SCAN_INTERVAL_MINUTES, OUTCOME_CHECK_MINUTES,
-    )
+    logger.info("RSI alerts scheduled at :18 UTC after each 4H close; legacy outcomes every %dm",
+                OUTCOME_CHECK_MINUTES)
 
     async with app:
         await app.initialize()

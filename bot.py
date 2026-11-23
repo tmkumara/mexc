@@ -153,72 +153,22 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    import coin_scanner
+    from rsi_public_alerts import NAME
+    from config import DRY_RUN, MAX_DAILY_SIGNALS, WHITELISTED_COINS
 
-    from config import (
-        STRATEGY_NAME,
-        MACRO_TF, TREND_TF, PULLBACK_TF, ENTRY_TF,
-        MIN_SIGNAL_SCORE,
-        TP_ROI_PCT, SL_ROI_PCT,
-        ZERO_LAG_LENGTH, ZERO_LAG_MULTIPLIER,
-        PULLBACK_DISTANCE_PCT,
-        PENDING_EXPIRY_CANDLES,
-        SCAN_INTERVAL_MINUTES,
-        MONITOR_INTERVAL_MINUTES,
-        OUTCOME_CHECK_MINUTES,
-        MAX_CONCURRENT_SIGNALS, MAX_ACTIVE_LONG_SIGNALS, MAX_ACTIVE_SHORT_SIGNALS,
-        SIGNAL_COOLDOWN_MINUTES,
-        MAX_DAILY_SIGNALS, MIN_DAILY_SIGNAL_GAP_MINUTES,
-        LEVERAGE, COINGLASS_API_KEY,
-        TOP_N_COINS, COIN_POOL_MIN_VOLUME_USD, COIN_POOL_MIN_SELECTED,
-        SIGNAL_EXPIRE_HOURS,
-    )
-
-    state  = "⏸ PAUSED" if paused else "▶️ RUNNING"
-    coins  = coin_scanner.get_cached_coins()
-    active_long  = db.count_active_signals_by_direction("LONG")
-    active_short = db.count_active_signals_by_direction("SHORT")
-
-    today_start   = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=tz.utc)
-    signals_today = db.count_signals_since(today_start)
-    last_sig      = db.latest_signal_time()
-    last_sig_str  = last_sig.astimezone(LKT).strftime("%H:%M LKT") if last_sig else "none"
-
-    pairs_str = "  ".join(s.replace("_USDT", "") for s in coins[:20])
-    cg_status = "SET" if COINGLASS_API_KEY else "not set"
-
+    state = "Paused" if paused else "Dry run" if DRY_RUN else "Running"
     msg = "\n".join([
-        "📡 <b>Scanner Status</b>",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"State:       {_code(state)}",
-        f"Strategy:    {_code(STRATEGY_NAME)}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"TF:          {_code(f'{MACRO_TF}/{TREND_TF}/{PULLBACK_TF}/{ENTRY_TF}')}",
-        f"Min score:   {_code(f'{MIN_SIGNAL_SCORE:.0f}/100')}",
-        f"Zero-lag:    {_code(f'len={ZERO_LAG_LENGTH} mult={ZERO_LAG_MULTIPLIER}')}  {_italic(f'pullback {PULLBACK_DISTANCE_PCT*100:.2f}%')}",
-        f"TP / SL:     {_code(f'+{TP_ROI_PCT:.1f}% / -{SL_ROI_PCT:.1f}% ROI')}",
-        f"Pending exp: {_code(f'{PENDING_EXPIRY_CANDLES} candles')}",
-        f"Leverage:    {_code(f'{LEVERAGE}x  Isolated')}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"Scan every:  {_code(f'{SCAN_INTERVAL_MINUTES}min')}",
-        f"Monitor:     {_code(f'every {MONITOR_INTERVAL_MINUTES} min')}",
-        f"Outcome chk: {_code(f'every {OUTCOME_CHECK_MINUTES} min')}",
-        f"Cooldown:    {_code(f'{SIGNAL_COOLDOWN_MINUTES} min per coin')}",
-        f"Timeout:     {_code(f'{SIGNAL_EXPIRE_HOURS}h')}",
-        f"Daily cap:   {_code(f'{signals_today}/{MAX_DAILY_SIGNALS}  (min gap {MIN_DAILY_SIGNAL_GAP_MINUTES} min)')}",
-        f"Active:      {_code(f'{active_long}/{MAX_ACTIVE_LONG_SIGNALS} LONG, {active_short}/{MAX_ACTIVE_SHORT_SIGNALS} SHORT')}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"Pool size:   {_code(f'{len(coins)} / {TOP_N_COINS} (min {COIN_POOL_MIN_SELECTED})')}",
-        f"Min volume:  {_code(f'${COIN_POOL_MIN_VOLUME_USD:,.0f}')}",
-        f"CoinGlass:   {_code(cg_status)}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"Today:       {_code(f'{signals_today} signals')}",
-        f"Last signal: {_code(last_sig_str)}",
-        "━━━━━━━━━━━━━━━━━━━━",
-        f"Pool ({len(coins)}):  {_code(pairs_str)}",
-        f"Time (LKT):  {_code(datetime.now(LKT).strftime('%H:%M'))}",
+        "<b>Scanner status</b>",
+        f"State: {_code(state)}",
+        f"Strategy: {_code(NAME)}",
+        "Timeframe: 4H",
+        "Scan: :18 UTC after each 4H close",
+        "Confirmation volume: at least 1.5× prior 20-bar average",
+        "Stop: 1.25% from entry reference",
+        "Time exit: 24 hours",
+        f"Daily alert cap: {_code(MAX_DAILY_SIGNALS)}",
+        f"Pairs: {_code(', '.join(WHITELISTED_COINS))}",
     ])
-
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
 
 

@@ -458,3 +458,20 @@ def count_pending_setups() -> int:
             "SELECT COUNT(*) FROM pending_setups WHERE status IN ('pending_pullback', 'pending_breakout')"
         ).fetchone()
         return row[0]
+
+
+def reserve_rsi_alert(symbol, signal_at, now, day_limit):
+    """Reserve an alert once per candle across restarts."""
+    with _conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("""CREATE TABLE IF NOT EXISTS rsi_public_alerts (
+            symbol TEXT NOT NULL, signal_at TEXT NOT NULL, reserved_at TEXT NOT NULL,
+            PRIMARY KEY(symbol, signal_at)
+        )""")
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        count = conn.execute("SELECT count(*) FROM rsi_public_alerts WHERE reserved_at >= ?",
+                             (midnight.isoformat(),)).fetchone()[0]
+        if count >= day_limit:
+            return False
+        return conn.execute("INSERT OR IGNORE INTO rsi_public_alerts VALUES (?, ?, ?)",
+                            (symbol, signal_at.isoformat(), now.isoformat())).rowcount == 1
