@@ -11,7 +11,7 @@ import pandas as pd
 
 import bot
 import database
-from config import (DRY_RUN, MAX_DAILY_SIGNALS, MIN_CANDLE_SETTLE_SECONDS, SCAN_WORKERS,
+from config import (DRY_RUN, LKT, MAX_DAILY_SIGNALS, MIN_CANDLE_SETTLE_SECONDS, SCAN_WORKERS,
                     TELEGRAM_CHANNEL_ID)
 from mexc_client import get_klines
 from nwe_rsi_local import signal_frame
@@ -103,18 +103,24 @@ def _scan_one(symbol, signal_at):
 
 
 def format_alert(alert):
-    band="lower" if alert.direction=="LONG" else "upper"
-    return (
-        "<b>4H Nadaraya + RSI</b>\n"
-        f"<b>{escape(alert.symbol)} · {escape(alert.direction)}</b>\n"
-        f"Signal close: {alert.signal_at:%Y-%m-%d %H:%M} UTC\n"
-        f"Setup: Closed back inside the {band} band ({alert.band:.8g})\n"
-        f"RSI(14): {alert.excursion_rsi:.1f} at excursion → {alert.rsi:.1f} at signal\n"
-        f"Entry reference: {alert.entry:.8g}\n"
-        f"Target reference: {alert.target:.8g} (+30% modeled net ROI at 20×, before funding)\n"
-        "Stop-loss: None · Time exit: None\n"
-        "Alert only. Actual fills, funding and liquidation can change outcomes."
-    )
+    is_long = alert.direction == "LONG"
+    marker = "🟢" if is_long else "🔴"
+    band = "lower" if is_long else "upper"
+    pair = escape(alert.symbol.replace("_", "/"))
+    local_time = alert.signal_at.astimezone(LKT).strftime("%Y-%m-%d %H:%M LKT")
+    return "\n".join((
+        f"{marker} <b>{escape(alert.direction)} — {pair} Futures</b>",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"📍 Entry: <code>{alert.entry:.8g}</code>",
+        f"🎯 TP: <code>{alert.target:.8g}</code> <i>+30% modeled net ROI before funding</i>",
+        "🛑 SL: None",
+        f"⚡ Leverage: <code>{LEVERAGE}×</code> <i>(modeled)</i>",
+        f"🧭 Setup: 4H close back inside the {band} band · RSI {alert.excursion_rsi:.1f} → {alert.rsi:.1f}",
+        "📈 Strategy: Nadaraya–Watson + RSI",
+        "━━━━━━━━━━━━━━━━━━━━",
+        f"⏰ Signal close: <code>{local_time}</code>",
+        "⚠️ <i>Alert only. Actual fills, fees and funding may vary.</i>",
+    ))
 
 
 async def scan(app):
