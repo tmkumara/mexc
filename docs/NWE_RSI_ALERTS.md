@@ -9,3 +9,9 @@ The production workflow restarts the bot and dashboard after a push to main. Rol
 ## Envelope attribution
 
 Nadaraya–Watson Envelope [LuxAlgo], © LuxAlgo, licensed CC BY-NC-SA 4.0 (https://creativecommons.org/licenses/by-nc-sa/4.0/). The Python adaptation in nwe_rsi_local.py implements the supplied endpoint calculation, omits the repainting chart mode, and adds local 4H Wilder RSI and envelope re-entry rules. The adapted module is distributed under CC BY-NC-SA 4.0. This release is for the channel's confirmed noncommercial use.
+
+## Manual order watch
+
+New channel alerts include **Mark order placed**. Telegram channel admins can press it to start monitoring the alert entry using MEXC's public last price. The button changes to **Stop watching**. Marking confirms the operator's intent and does not verify an exchange fill. Alerts already posted before this release do not acquire buttons.
+
+The watcher checks once a minute. At 20x, a 1% favorable move from the alert reference triggers a reminder to move the stop to the actual entry. The reminder replies to the original alert and the persisted watch ends after successful delivery. A trigger is retained if the Telegram send fails so the watcher can retry. The bot does not authenticate with the trading API, place or edit an order, or know whether the position is still open. Short-lived threshold touches between polls can be missed.

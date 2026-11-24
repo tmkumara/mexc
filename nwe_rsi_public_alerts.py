@@ -11,6 +11,7 @@ import pandas as pd
 
 import bot
 import database
+import nwe_order_watch
 from config import (DRY_RUN, LKT, MAX_DAILY_SIGNALS, MIN_CANDLE_SETTLE_SECONDS, SCAN_WORKERS,
                     TELEGRAM_CHANNEL_ID)
 from mexc_client import get_klines
@@ -144,6 +145,8 @@ async def scan(app):
         if not database.reserve_rsi_alert(alert.symbol,alert.signal_at,now,MAX_DAILY_SIGNALS):
             continue
         try:
-            await app.bot.send_message(chat_id=TELEGRAM_CHANNEL_ID,text=format_alert(alert),parse_mode="HTML")
+            order_id=await asyncio.to_thread(nwe_order_watch.register,alert,LEVERAGE)
+            await app.bot.send_message(chat_id=TELEGRAM_CHANNEL_ID,text=format_alert(alert),parse_mode="HTML",
+                                       reply_markup=nwe_order_watch.keyboard(order_id))
         except Exception:
             logger.exception("NWE-RSI alert delivery failed; reservation retained for %s",alert.symbol)

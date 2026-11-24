@@ -26,6 +26,7 @@ from telegram.ext import Application
 import database as db
 import strategy
 import bot as tg
+import nwe_order_watch
 import nwe_rsi_public_alerts
 import coin_scanner
 from outcome_check import check_tp_sl
@@ -289,8 +290,10 @@ async def main():
     logger.info("Dry run: %s", "enabled" if DRY_RUN else "disabled")
 
     db.init_db()
+    nwe_order_watch.init_db()
 
     app = tg.build_app()
+    nwe_order_watch.attach(app)
 
     scheduler = AsyncIOScheduler(
         timezone="UTC",
@@ -314,6 +317,10 @@ async def main():
         args=[app],
         id="outcome_checker",
     )
+
+    scheduler.add_job(nwe_order_watch.watch, IntervalTrigger(minutes=1), args=[app],
+                      id="nwe_order_watch", max_instances=1)
+    logger.info("NWE order watch scheduled every minute")
 
     async def _daily(app=app):
         await tg.auto_daily_report(type("ctx", (), {"application": app})())
