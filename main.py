@@ -303,7 +303,7 @@ async def main():
 
     scheduler.add_job(
         nwe_rsi_public_alerts.scan,
-        CronTrigger(hour="0,4,8,12,16,20", minute=18),
+        CronTrigger(hour="0,4,8,12,16,20", minute=18, timezone="UTC"),
         args=[app],
         id="signal_scanner",
     )
