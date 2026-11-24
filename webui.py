@@ -1,42 +1,30 @@
-"""
-Dashboard for the MEXC Signal Bot.
-
-Run:
-    python webui.py
-
-URL:
-    http://<server>:6060/?token=<WEBUI_TOKEN>
-
-Set in .env:
-    WEBUI_TOKEN=1997
-    WEBUI_PORT=6060
-
-This dashboard reads from SQLite directly and shows:
-    - Signal performance
-    - Recent signals
-    - Active LONG/SHORT signal counts
-    - Current strategy configuration
-
-Frontend communication:
-    - Primary: WebSocket /ws?token=<WEBUI_TOKEN>
-    - Fallback: REST /api/data?token=<WEBUI_TOKEN>
-"""
+"""Read-only dashboard for the live NWE-RSI scanner and legacy signal history."""
 
 import asyncio
+from hashlib import pbkdf2_hmac
+import json
+from hmac import compare_digest, digest
+from urllib.parse import parse_qs
 import os
 import sqlite3
+from secrets import token_bytes
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 load_dotenv()
 
-WEBUI_TOKEN = os.getenv("WEBUI_TOKEN", "mexc123")
+WEBUI_TOKEN = os.getenv("WEBUI_TOKEN", "")
+AUTH_COOKIE = "mexc_dashboard_session"
+PUBLIC_PATH = "/mexc/dashboard/"
+CREDENTIAL_FILE = Path(os.getenv("MEXC_DASHBOARD_CREDENTIAL_FILE", "/etc/mexc-dashboard/credentials.json"))
+LOCAL_SESSION_KEY = token_bytes(32)
 PORT = int(os.getenv("WEBUI_PORT", 6060))
 DB_PATH = os.getenv("DB_PATH", "signals.db")
 
@@ -207,55 +195,39 @@ def get_recent_signals(limit: int = 30) -> list[dict]:
     return rows
 
 
-def get_runtime_status() -> dict:
-    active_long  = _count_table("signals", "status = 'pending' AND direction = 'LONG'")
-    active_short = _count_table("signals", "status = 'pending' AND direction = 'SHORT'")
+def get_order_watches() -> list[dict]:
+    if not _table_exists("nwe_order_watch"):
+        return []
+    return _query("""
+        SELECT symbol, direction, entry, leverage, signal_at, status, trigger_price, notified_at
+        FROM nwe_order_watch ORDER BY id DESC LIMIT 50
+    """)
 
+
+def get_runtime_status() -> dict:
     return {
         "db_exists": _db_exists(),
-        "active_long_signals": active_long,
-        "active_short_signals": active_short,
-        "active_signals": active_long + active_short,
+        "alerts_today": _count_table("nwe_order_watch", "signal_at >= ?", (
+            datetime.now(timezone.utc).replace(hour=0,minute=0,second=0,microsecond=0).isoformat(),)),
+        "watching": _count_table("nwe_order_watch", "status IN ('watching','triggered')"),
+        "reminders_sent": _count_table("nwe_order_watch", "status = 'notified'"),
     }
 
 
 def get_strategy_config() -> dict:
-    """Return dashboard-safe strategy/runtime configuration for Zero-Lag MTF Pullback v1."""
+    from nwe_rsi_public_alerts import NAME, SYMBOLS, LEVERAGE, ROI
+
+    now = datetime.now(timezone.utc)
+    next_scan = now.replace(hour=(now.hour // 4)*4, minute=18, second=0, microsecond=0)
+    if next_scan <= now:
+        next_scan += timedelta(hours=4)
+    local = next_scan.astimezone(timezone(timedelta(hours=5,minutes=30)))
     return {
-        "strategy": _safe_config_value("STRATEGY_NAME", "Zero-Lag MTF Pullback v1"),
-        "macro_tf": _safe_config_value("MACRO_TF", "—"),
-        "trend_tf": _safe_config_value("TREND_TF", "—"),
-        "pullback_tf": _safe_config_value("PULLBACK_TF", "—"),
-        "entry_tf": _safe_config_value("ENTRY_TF", "—"),
-        "min_signal_score": _safe_config_value("MIN_SIGNAL_SCORE", "—"),
-        "tp_roi_pct": _safe_config_value("TP_ROI_PCT", "—"),
-        "sl_roi_pct": _safe_config_value("SL_ROI_PCT", "—"),
-        "zero_lag_length": _safe_config_value("ZERO_LAG_LENGTH", "—"),
-        "zero_lag_multiplier": _safe_config_value("ZERO_LAG_MULTIPLIER", "—"),
-        "pullback_distance_pct": _safe_config_value("PULLBACK_DISTANCE_PCT", "—"),
-        "pending_expiry_candles": _safe_config_value("PENDING_EXPIRY_CANDLES", "—"),
-
-        "top_n_coins": _safe_config_value("TOP_N_COINS", "—"),
-        "min_volume_usd": _safe_config_value("COIN_POOL_MIN_VOLUME_USD", "—"),
-
-        "leverage": _safe_config_value("LEVERAGE", "—"),
-
-        "max_daily_signals": _safe_config_value("MAX_DAILY_SIGNALS", "—"),
-        "min_daily_signal_gap_minutes": _safe_config_value("MIN_DAILY_SIGNAL_GAP_MINUTES", "—"),
-        "max_concurrent_signals": _safe_config_value("MAX_CONCURRENT_SIGNALS", "—"),
-        "max_active_long_signals": _safe_config_value("MAX_ACTIVE_LONG_SIGNALS", "—"),
-        "max_active_short_signals": _safe_config_value("MAX_ACTIVE_SHORT_SIGNALS", "—"),
-        "cooldown_minutes": _safe_config_value("SIGNAL_COOLDOWN_MINUTES", "—"),
-        "scan_workers": _safe_config_value("SCAN_WORKERS", "—"),
-
-        "crypto_futures_only": _safe_config_value("CRYPTO_FUTURES_ONLY", True),
+        "strategy": NAME, "timeframe": "4H", "coins": len(SYMBOLS),
+        "next_scan_lkt": local.strftime("%b %d · %I:%M %p LKT"),
+        "leverage": LEVERAGE, "tp_roi_pct": 100*ROI,
         "dry_run": _safe_config_value("DRY_RUN", True),
     }
-
-
-def get_pending_setups() -> list[dict]:
-    import database as db
-    return db.get_pending_setups("pending_pullback", limit=50) + db.get_pending_setups("pending_breakout", limit=50)
 
 
 def build_payload() -> dict:
@@ -268,7 +240,7 @@ def build_payload() -> dict:
         "week": get_stats(week),
         "alltime": get_stats(),
         "recent": get_recent_signals(30),
-        "pending_setups": get_pending_setups(),
+        "order_watches": get_order_watches(),
         "runtime": get_runtime_status(),
         "config": get_strategy_config(),
         "server_time": now.strftime("%Y-%m-%d %H:%M UTC"),
@@ -278,20 +250,68 @@ def build_payload() -> dict:
 
 # ── API endpoints ─────────────────────────────────────────────────
 
-def _auth(token: str):
-    if token != WEBUI_TOKEN:
-        raise HTTPException(status_code=401, detail="Invalid token")
+def _proxy_login(request) -> bool:
+    return request.headers.get("x-forwarded-prefix") == PUBLIC_PATH.rstrip("/")
+
+
+def _credentials():
+    try:
+        return json.loads(CREDENTIAL_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _valid_admin(params) -> bool:
+    record = _credentials()
+    if not record:
+        return False
+    username = params.get("username", [""])[0]
+    password = params.get("password", [""])[0]
+    candidate = pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(record["salt"]), 310000)
+    return compare_digest(username.encode(), record["username"].encode()) and compare_digest(
+        candidate, bytes.fromhex(record["hash"]))
+
+
+def _session_key(request):
+    if not _proxy_login(request):
+        return LOCAL_SESSION_KEY
+    record = _credentials()
+    return bytes.fromhex(record["session_key"]) if record else None
+
+
+def _session_value(key, expiry) -> str:
+    return f"{expiry}."+digest(key, str(expiry).encode(), "sha256").hex()
+
+
+def _valid_token(token: str) -> bool:
+    return bool(WEBUI_TOKEN and compare_digest(token.encode(), WEBUI_TOKEN.encode()))
+
+
+def _authorized(request, token: str = "") -> bool:
+    if not _proxy_login(request) and _valid_token(token):
+        return True
+    cookie = request.cookies.get(AUTH_COOKIE, "")
+    expiry, _, _ = cookie.partition(".")
+    if not expiry.isdecimal() or len(expiry) > 12 or int(expiry) <= time.time():
+        return False
+    key = _session_key(request)
+    return bool(key and compare_digest(cookie.encode(), _session_value(key, int(expiry)).encode()))
+
+
+def _auth(request: Request, token: str):
+    if not _authorized(request, token):
+        raise HTTPException(status_code=401, detail="Dashboard sign-in required")
 
 
 @app.get("/api/data")
-async def api_data(token: str = Query("")):
-    _auth(token)
-    return JSONResponse(build_payload())
+async def api_data(request: Request, token: str = Query("")):
+    _auth(request, token)
+    return JSONResponse(build_payload(), headers=PRIVATE_HEADERS)
 
 
 @app.get("/api/health")
-async def api_health(token: str = Query("")):
-    _auth(token)
+async def api_health(request: Request, token: str = Query("")):
+    _auth(request, token)
 
     now = datetime.now(timezone.utc)
 
@@ -307,7 +327,7 @@ async def api_health(token: str = Query("")):
 async def ws_dashboard(websocket: WebSocket):
     token = websocket.query_params.get("token", "")
 
-    if token != WEBUI_TOKEN:
+    if not _authorized(websocket, token):
         await websocket.close(code=1008)
         return
 
@@ -335,7 +355,7 @@ HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Zero-Lag MTF Pullback Dashboard</title>
+<title>MEXC Futures Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -734,8 +754,8 @@ tr:hover td {
 <header class="header">
   <div class="header-inner">
     <div>
-      <div class="logo"><span>📡</span> Zero-Lag MTF Pullback Bot</div>
-      <div class="logo-sub">4H/1H Zero-Lag Trend + 15m Pullback + 5m Crossover Confirmation</div>
+      <div class="logo"><span>📡</span> MEXC Futures Dashboard</div>
+      <div class="logo-sub">4H Nadaraya–Watson Envelope + RSI</div>
     </div>
     <div class="meta">
       <span class="status-pill connecting" id="wsStatus"><span class="status-dot"></span>Connecting</span>
@@ -756,7 +776,7 @@ tr:hover td {
     <button class="refresh-btn" onclick="manualRefresh()">↻ Refresh</button>
   </div>
 
-  <div class="section-title">Performance</div>
+  <div class="section-title">Legacy signal performance</div>
   <div class="grid stats-grid">
     <div class="card"><div class="card-label">Signals</div><div class="card-value white" id="c-total">—</div><div class="card-small">Total selected period</div></div>
     <div class="card"><div class="card-label">Wins</div><div class="card-value green" id="c-wins">—</div><div class="card-small">Closed in profit</div></div>
@@ -775,24 +795,24 @@ tr:hover td {
 
   <div class="section-title">Runtime State</div>
   <div class="grid runtime-grid">
-    <div class="card"><div class="card-label">Active LONG</div><div class="card-value green" id="r-active-long">—</div><div class="card-small">of max active LONG signals</div></div>
-    <div class="card"><div class="card-label">Active SHORT</div><div class="card-value red" id="r-active-short">—</div><div class="card-small">of max active SHORT signals</div></div>
-    <div class="card"><div class="card-label">Active Signals</div><div class="card-value yellow" id="r-active">—</div><div class="card-small">Open signal outcomes</div></div>
+    <div class="card"><div class="card-label">Alerts today</div><div class="card-value green" id="r-active-long">—</div><div class="card-small">UTC day, registered alerts</div></div>
+    <div class="card"><div class="card-label">Watching now</div><div class="card-value red" id="r-active-short">—</div><div class="card-small">Manually marked orders</div></div>
+    <div class="card"><div class="card-label">Reminders sent</div><div class="card-value yellow" id="r-active">—</div><div class="card-small">Completed breakeven watches</div></div>
   </div>
 
   <div class="section-title">Current Strategy Setup</div>
   <div class="grid config-grid">
-    <div class="card"><div class="card-label">Timeframe</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">EMA200 trend + EMA20/50 pullback</div></div>
-    <div class="card"><div class="card-label">Min Score</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">0-100 quality gate</div></div>
-    <div class="card"><div class="card-label">Entry Buffer</div><div class="card-value green" id="cfg-confirm">—</div><div class="card-small" id="cfg-confirm-sub">—</div></div>
-    <div class="card"><div class="card-label">Risk Model</div><div class="card-value orange" id="cfg-rr">—</div><div class="card-small" id="cfg-rr-sub">—</div></div>
+    <div class="card"><div class="card-label">Timeframe</div><div class="card-value cyan" id="cfg-tf">—</div><div class="card-small">Completed NWE + RSI candles</div></div>
+    <div class="card"><div class="card-label">Contracts</div><div class="card-value purple" id="cfg-quality">—</div><div class="card-small">MEXC USDT perpetuals</div></div>
+    <div class="card"><div class="card-label">Next scan</div><div class="card-value green" id="cfg-confirm">—</div><div class="card-small" id="cfg-confirm-sub">—</div></div>
+    <div class="card"><div class="card-label">Target reference</div><div class="card-value orange" id="cfg-rr">—</div><div class="card-small" id="cfg-rr-sub">—</div></div>
   </div>
 
   <section class="panel">
     <div class="panel-head">
       <div>
-        <div class="panel-title">Pending Setups</div>
-        <div class="panel-subtitle">Armed, waiting for entry breakout confirmation</div>
+        <div class="panel-title">Order Watch</div>
+        <div class="panel-subtitle">Telegram alerts and manual breakeven watches</div>
       </div>
       <span class="badge badge-config" id="pending-count">—</span>
     </div>
@@ -804,10 +824,10 @@ tr:hover td {
             <th>Dir</th>
             <th>Status</th>
             <th>Entry</th>
-            <th>Pullback</th>
-            <th>ZLEMA 15m</th>
-            <th>Score</th>
-            <th>Armed</th>
+            <th>Leverage</th>
+            <th>Trigger price</th>
+            <th>Signal close UTC</th>
+            <th>Reminder UTC</th>
           </tr>
         </thead>
         <tbody id="pendingRows"></tbody>
@@ -818,8 +838,8 @@ tr:hover td {
   <section class="panel">
     <div class="panel-head">
       <div>
-        <div class="panel-title">Recent Signals</div>
-        <div class="panel-subtitle">Telegram signals and their outcomes</div>
+        <div class="panel-title">Legacy Signals</div>
+        <div class="panel-subtitle">Historical scanner outcomes</div>
       </div>
       <span class="badge badge-config" id="signal-count">—</span>
     </div>
@@ -845,7 +865,6 @@ tr:hover td {
 </main>
 
 <script>
-const TOKEN = new URLSearchParams(location.search).get("token") || "";
 let period = "today";
 let data = null;
 let socket = null;
@@ -864,7 +883,7 @@ function setPeriod(p) {
 function wsUrl() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const base = location.pathname.replace(/\/+$/, "");
-  return `${protocol}//${location.host}${base}/ws?token=${encodeURIComponent(TOKEN)}`;
+  return `${protocol}//${location.host}${base}/ws`;
 }
 
 function setWsStatus(state) {
@@ -934,10 +953,10 @@ function scheduleReconnect() {
 async function manualRefresh() {
   try {
     const base = location.pathname.replace(/\/+$/, "");
-    const res = await fetch(`${base}/api/data?token=${encodeURIComponent(TOKEN)}`);
+    const res = await fetch(`${base}/api/data`);
 
     if (res.status === 401) {
-      document.body.innerHTML = "<div style='padding:2rem;color:#ff5c6c;font-family:sans-serif'>401 — Invalid token. Add ?token=YOUR_TOKEN to the URL.</div>";
+      location.reload();
       return;
     }
 
@@ -986,30 +1005,30 @@ function renderStats() {
 function renderRuntime() {
   const r = data.runtime;
 
-  set("r-active-long", r.active_long_signals);
-  set("r-active-short", r.active_short_signals);
-  set("r-active", r.active_signals);
+  set("r-active-long", r.alerts_today);
+  set("r-active-short", r.watching);
+  set("r-active", r.reminders_sent);
 }
 
 function renderConfig() {
   const c = data.config;
 
-  set("cfg-tf", `${c.macro_tf}/${c.trend_tf}/${c.pullback_tf}/${c.entry_tf}`);
-  set("cfg-quality", `score ≥ ${c.min_signal_score}`);
-  set("cfg-confirm", `len=${c.zero_lag_length} mult=${c.zero_lag_multiplier}`);
-  set("cfg-confirm-sub", `pullback ${(c.pullback_distance_pct * 100).toFixed(2)}%, expires after ${c.pending_expiry_candles} candles`);
-  set("cfg-rr", `+${c.tp_roi_pct}% / -${c.sl_roi_pct}%`);
-  set("cfg-rr-sub", `${c.leverage}x  no breakeven`);
+  set("cfg-tf", c.timeframe);
+  set("cfg-quality", c.coins);
+  set("cfg-confirm", c.next_scan_lkt);
+  set("cfg-confirm-sub", c.dry_run ? "Dry run" : "Public Telegram alerts");
+  set("cfg-rr", `+${c.tp_roi_pct}%`);
+  set("cfg-rr-sub", `${c.leverage}× modeled net before funding · no initial stop`);
 }
 
 function renderPendingSetups() {
-  const rows = data.pending_setups || [];
-  set("pending-count", rows.length + " armed");
+  const rows = data.order_watches || [];
+  set("pending-count", rows.length + " recorded");
 
   const tbody = document.getElementById("pendingRows");
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No pending setups armed.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No NWE alerts recorded yet.</div></td></tr>`;
     return;
   }
 
@@ -1022,11 +1041,11 @@ function renderPendingSetups() {
         <td><strong>${sym}</strong></td>
         <td><span class="badge badge-${dir}">${r.direction}</span></td>
         <td>${r.status || "—"}</td>
+        <td>${fmtNum(r.entry)}</td>
+        <td>${r.leverage}×</td>
         <td>${fmtNum(r.trigger_price)}</td>
-        <td>${fmtNum(r.pullback_price)}</td>
-        <td>${fmtNum(r.zlema_15m)}</td>
-        <td>${fmtNum(r.score)}</td>
-        <td>${r.created_at || "—"}</td>
+        <td>${r.signal_at || "—"}</td>
+        <td>${r.notified_at || "—"}</td>
       </tr>
     `;
   }).join("");
@@ -1088,19 +1107,59 @@ manualRefresh();
 """
 
 
-@app.get("/")
-async def index(token: str = Query("")):
-    if token != WEBUI_TOKEN:
-        return HTMLResponse(
-            "<div style='font-family:monospace;padding:2rem;color:#ff5c6c'>"
-            "401 — Invalid token. Add <code>?token=YOUR_TOKEN</code> to the URL.</div>",
-            status_code=401,
-        )
+LOGIN_HTML = """<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>MEXC dashboard sign-in</title>
+<body style="background:#101623;color:#f1f5ff;font:16px system-ui;max-width:25rem;margin:12vh auto;padding:1rem">
+<h1>MEXC Dashboard</h1>
+<form method="post">
+<label for="token">Dashboard password</label><br>
+<input id="token" name="token" type="password" autocomplete="current-password" required
+       style="margin:8px 0;padding:8px;width:100%;box-sizing:border-box">
+<button type="submit">Sign in</button>
+</form></body></html>"""
 
-    return HTMLResponse(HTML)
+ADMIN_LOGIN_HTML = LOGIN_HTML.replace(
+    '<label for="token">', '<label for="username">Username</label><br>'
+    '<input id="username" name="username" autocomplete="username" required '
+    'style="margin:8px 0;padding:8px;width:100%;box-sizing:border-box"><br><label for="token">'
+).replace('name="token"', 'name="password"')
+
+PRIVATE_HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+
+
+def _sign_in(request):
+    response = RedirectResponse("./", status_code=303, headers=PRIVATE_HEADERS)
+    proxied = _proxy_login(request)
+    expiry = int(time.time())+86400
+    response.set_cookie(AUTH_COOKIE, _session_value(_session_key(request),expiry), max_age=86400, httponly=True,
+                        path=PUBLIC_PATH if proxied else "/",
+                        secure=proxied or request.url.scheme=="https", samesite="strict")
+    return response
+
+
+@app.get("/")
+async def index(request: Request, token: str = Query("")):
+    if not _proxy_login(request) and _valid_token(token):
+        return _sign_in(request)
+    form = ADMIN_LOGIN_HTML if _proxy_login(request) else LOGIN_HTML
+    return HTMLResponse(HTML if _authorized(request) else form, headers=PRIVATE_HEADERS)
+
+
+@app.post("/")
+async def login(request: Request):
+    body = await request.body()
+    if len(body) <= 1024:
+        params = parse_qs(body.decode("utf-8", errors="replace"))
+        authorized = (await asyncio.to_thread(_valid_admin, params) if _proxy_login(request)
+                      else _valid_token(params.get("token", [""])[0]))
+        if authorized:
+            return _sign_in(request)
+    form = ADMIN_LOGIN_HTML if _proxy_login(request) else LOGIN_HTML
+    return HTMLResponse(form.replace("<form", '<p role="alert">Incorrect dashboard password.</p><form'),
+                        status_code=401, headers=PRIVATE_HEADERS)
 
 
 if __name__ == "__main__":
-    print(f"Dashboard → http://0.0.0.0:{PORT}/?token={WEBUI_TOKEN}")
-    print(f"WebSocket → ws://0.0.0.0:{PORT}/ws?token={WEBUI_TOKEN}")
+    print(f"Dashboard listening on port {PORT}")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
