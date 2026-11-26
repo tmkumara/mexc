@@ -26,19 +26,23 @@ def init_db():
                 symbol TEXT NOT NULL, direction TEXT NOT NULL, entry REAL NOT NULL,
                 leverage INTEGER NOT NULL, signal_at TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'unmarked',
+                timeframe TEXT NOT NULL DEFAULT '4H',
                 chat_id INTEGER, message_id INTEGER, marked_by INTEGER, marked_at TEXT,
                 trigger_price REAL, notified_at TEXT,
                 UNIQUE(symbol, signal_at)
             )
         """)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(nwe_order_watch)")}
+        if "timeframe" not in columns:
+            conn.execute("ALTER TABLE nwe_order_watch ADD COLUMN timeframe TEXT NOT NULL DEFAULT '4H'")
 
 
 def register(alert, leverage):
     with _conn() as conn:
         inserted = conn.execute("""
-            INSERT OR IGNORE INTO nwe_order_watch(symbol,direction,entry,leverage,signal_at)
-            VALUES (?,?,?,?,?)
-        """, (alert.symbol, alert.direction, alert.entry, leverage, alert.signal_at.isoformat()))
+            INSERT OR IGNORE INTO nwe_order_watch(symbol,direction,entry,leverage,signal_at,timeframe)
+            VALUES (?,?,?,?,?,?)
+        """, (alert.symbol, alert.direction, alert.entry, leverage, alert.signal_at.isoformat(), getattr(alert,"timeframe","4H")))
         if inserted.rowcount:
             return inserted.lastrowid
         row = conn.execute("SELECT id FROM nwe_order_watch WHERE symbol=? AND signal_at=?",
@@ -173,7 +177,7 @@ async def watch(app):
         side=1 if order["direction"]=="LONG" else -1
         gross=100*order["leverage"]*side*(order["trigger_price"]/order["entry"]-1)
         pair=escape(order["symbol"].replace("_","/"))
-        text=(f"🔔 <b>Move stop to entry · {pair} {order['direction']}</b>\n"
+        text=(f"🔔 <b>Move stop to entry · {pair} {order['direction']} · {escape(order['timeframe'])}</b>\n"
               f"Modeled gross ROI: <b>{gross:+.1f}%</b> at {order['leverage']}×\n"
               f"Alert entry: <code>{order['entry']:.8g}</code> · MEXC last price: "
               f"<code>{order['trigger_price']:.8g}</code>\n"

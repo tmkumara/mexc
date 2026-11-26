@@ -198,8 +198,10 @@ def get_recent_signals(limit: int = 30) -> list[dict]:
 def get_order_watches() -> list[dict]:
     if not _table_exists("nwe_order_watch"):
         return []
-    return _query("""
-        SELECT symbol, direction, entry, leverage, signal_at, status, trigger_price, notified_at
+    columns = {row["name"] for row in _query("PRAGMA table_info(nwe_order_watch)")}
+    timeframe = "timeframe" if "timeframe" in columns else "'4H' AS timeframe"
+    return _query(f"""
+        SELECT symbol, {timeframe}, direction, entry, leverage, signal_at, status, trigger_price, notified_at
         FROM nwe_order_watch ORDER BY id DESC LIMIT 50
     """)
 
@@ -218,12 +220,12 @@ def get_strategy_config() -> dict:
     from nwe_rsi_public_alerts import NAME, SYMBOLS, LEVERAGE, ROI
 
     now = datetime.now(timezone.utc)
-    next_scan = now.replace(hour=(now.hour // 4)*4, minute=18, second=0, microsecond=0)
+    next_scan = now.replace(minute=18, second=0, microsecond=0)
     if next_scan <= now:
-        next_scan += timedelta(hours=4)
+        next_scan += timedelta(hours=1)
     local = next_scan.astimezone(timezone(timedelta(hours=5,minutes=30)))
     return {
-        "strategy": NAME, "timeframe": "4H", "coins": len(SYMBOLS),
+        "strategy": NAME, "timeframe": "1H / 4H", "coins": len(SYMBOLS),
         "next_scan_lkt": local.strftime("%b %d · %I:%M %p LKT"),
         "leverage": LEVERAGE, "tp_roi_pct": 100*ROI,
         "dry_run": _safe_config_value("DRY_RUN", True),
@@ -755,7 +757,7 @@ tr:hover td {
   <div class="header-inner">
     <div>
       <div class="logo"><span>📡</span> MEXC Futures Dashboard</div>
-      <div class="logo-sub">4H Nadaraya–Watson Envelope + RSI</div>
+      <div class="logo-sub">1H / 4H Nadaraya–Watson Envelope + RSI</div>
     </div>
     <div class="meta">
       <span class="status-pill connecting" id="wsStatus"><span class="status-dot"></span>Connecting</span>
@@ -1038,7 +1040,7 @@ function renderPendingSetups() {
 
     return `
       <tr>
-        <td><strong>${sym}</strong></td>
+        <td><strong>${sym}</strong> · ${r.timeframe}</td>
         <td><span class="badge badge-${dir}">${r.direction}</span></td>
         <td>${r.status || "—"}</td>
         <td>${fmtNum(r.entry)}</td>

@@ -45,8 +45,8 @@ def test_get_stats_reports_breakevens_and_excludes_from_win_rate(temp_db):
 
 def test_get_strategy_config_reports_live_scanner():
     cfg = webui.get_strategy_config()
-    assert cfg["strategy"] == "4H Nadaraya-Watson Envelope + RSI"
-    assert cfg["timeframe"] == "4H"
+    assert cfg["strategy"] == "1H / 4H Nadaraya-Watson Envelope + RSI"
+    assert cfg["timeframe"] == "1H / 4H"
     assert cfg["coins"] == 40
     assert cfg["tp_roi_pct"] == 30
     assert cfg["leverage"] == 20

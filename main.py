@@ -1,8 +1,8 @@
 """
-Main entry point for 4H NWE-RSI alerts and legacy outcome tracking.
+Main entry point for 1H/4H NWE-RSI alerts and legacy outcome tracking.
 
 Scheduler jobs / background tasks:
-  At :18 UTC after every 4H close: scan for NWE-RSI re-entry alerts.
+  At :18 UTC every hour: scan for 1H and due 4H NWE-RSI re-entry alerts.
   Every OUTCOME_CHECK_MINUTES — outcome checker (plain single TP/SL, no
   breakeven).
   23:55 daily     — daily report
@@ -306,7 +306,7 @@ async def main():
 
     scheduler.add_job(
         nwe_rsi_public_alerts.scan,
-        CronTrigger(hour="0,4,8,12,16,20", minute=18, timezone="UTC"),
+        CronTrigger(minute=18, timezone="UTC"),
         args=[app],
         id="signal_scanner",
     )
@@ -337,7 +337,7 @@ async def main():
 
     scheduler.start()
 
-    logger.info("NWE-RSI alerts scheduled at :18 UTC after each 4H close; legacy outcomes every %dm",
+    logger.info("NWE-RSI alerts scheduled hourly at :18 UTC; 4H included at matching closes; legacy outcomes every %dm",
                 OUTCOME_CHECK_MINUTES)
 
     async with app:
